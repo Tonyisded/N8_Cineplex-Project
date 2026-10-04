@@ -1,0 +1,12 @@
+Poster assets are localized for a non-commercial interface prototype.
+Dune: Part Two — https://upload.wikimedia.org/wikipedia/en/5/52/Dune_Part_Two_poster.jpeg
+Film reference — https://en.wikipedia.org/wiki/Dune:_Part_Two
+Interstellar — https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg
+Inception — https://image.tmdb.org/t/p/w500/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg
+Oppenheimer — https://image.tmdb.org/t/p/w500/ptpr0kGAckfQkJeJIt8st5dglvd.jpg
+The Batman — https://image.tmdb.org/t/p/w500/74xTEgt7R36Fpooo50r9T25onhq.jpg
+Spirited Away — https://image.tmdb.org/t/p/w500/39wmItIWsg5sZMyRUHLkWBcuVCM.jpg
+Dune image: 259x384. Other poster images: 500x750.
+Film scheduling and Vietnamese age badges are illustrative demo values.
+All images render at their natural aspect ratio and are served locally.
+Design tokens: assets/app.css. Component behavior and sample data: assets/app.js.
