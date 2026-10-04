@@ -1,8 +1,5 @@
 ﻿# Cineplex Compose UI v2
 
-## Nguồn thiết kế
-`design/cineplex-v2/` không tồn tại trong workspace. Bản mới thực tế nằm ở `design/signin-signup/`: index.html tải cineplex.css, movies.js và cineplex.js (auth-clean-7). Đã đọc HANDOFF cùng các cập nhật cuối; không dùng app.*, auth.* hay auth-cinema.css làm thiết kế chính.
-
 ## Các file triển khai
 - `app/src/main/java/com/nhom8/cineplex/MainActivity.kt`: khởi động, điều hướng, Back và system bars.
 - `model/Models.kt`: model tài khoản, phim, form và thông báo.
