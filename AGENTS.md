@@ -24,7 +24,7 @@ Mọi coding agent phải đọc phần liên quan trong plan trước khi thay 
 | --- | --- | --- | --- |
 | 2026-10-05 | Bổ sung quy tắc cập nhật đồng bộ tài liệu và tiến độ | Hoàn thành phần tài liệu | Đã cập nhật cả hai file; kiểm tra nội dung đồng bộ, giữ nguyên nội dung cũ và rollback trên bản sao đạt. Chưa commit/push; người dùng sẽ push lên GitHub. Không đổi source backend, không chạy lại kiểm tra/deploy VPS. |
 | 2026-10-05 | Đào Mạnh Nhân — tuần 4: Playwright crawler bootstrap + GitHub Actions | Đang làm | Hoàn thành code/local: 13/13 test, build/typecheck/format/actionlint đạt; Node.js đọc CGV thật HTTP 200; health/Swagger/OpenAPI local đạt; rollback 16 file khớp hash gốc. CI runner/VPS chưa thực hiện; không đổi DB hoặc Android. |
-| 2026-10-05 | Đào Mạnh Nhân — publish branch crawler/CI tuần 4 | Đang làm | Đã tạo branch feat/dao-manh-nhan-week4-crawler-ci; chuẩn bị commit với Author/Committer Dao Manh Nhan <24521227@gm.uit.edu.vn>. Đang xác thực đúng tài khoản GitHub; chưa ghi nhận commit/push thành công. CI runner/VPS vẫn chưa thực hiện. |
+| 2026-10-05 | Đào Mạnh Nhân — publish branch crawler/CI tuần 4 | Đang làm | Commit local 220aedea26bf4812a72e53378c22f893953ce861 trên feat/dao-manh-nhan-week4-crawler-ci đã xác minh Author/Committer Dao Manh Nhan <24521227@gm.uit.edu.vn>, không co-author/bot. Push chưa thực hiện: đang xác thực đúng tài khoản GitHub; credential hiện có thuộc thnguyen290106, không sử dụng để push. CI runner/VPS vẫn chưa thực hiện. |
 
 
 ---
