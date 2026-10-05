@@ -15,7 +15,11 @@
     "prisma:validate": "prisma validate --config prisma.config.ts",
     "prisma:generate": "prisma generate --config prisma.config.ts",
     "db:migrate": "prisma migrate deploy --config prisma.config.ts",
-    "db:status": "prisma migrate status --config prisma.config.ts"
+    "db:status": "prisma migrate status --config prisma.config.ts",
+    "crawler:install": "playwright install chromium",
+    "test:crawler": "node --test tests/crawler.test.mjs",
+    "crawler:smoke": "node dist/crawler/smoke.js",
+    "format:check": "npx --yes prettier@3.9.9 --end-of-line auto --check package.json src/app.module.ts src/config.ts src/crawler tests/crawler.test.mjs ../.github/workflows/backend-ci.yml"
   },
   "dependencies": {
     "@nestjs/common": "12.1.2",
@@ -29,7 +33,8 @@
     "class-transformer": "0.5.1",
     "class-validator": "0.14.2",
     "reflect-metadata": "0.2.2",
-    "rxjs": "7.8.2"
+    "rxjs": "7.8.2",
+    "playwright": "1.63.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

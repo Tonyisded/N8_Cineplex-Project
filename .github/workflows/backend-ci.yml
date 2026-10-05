@@ -1,0 +1,70 @@
+name: Backend and crawler
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+      - "N8_Cineplex_Plan.md"
+      - "AGENTS.md"
+  workflow_dispatch:
+    inputs:
+      run_live_cgv:
+        description: "Read the real CGV Landmark 81 page"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/n8_cineplex
+      CRAWLER_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run prisma:validate
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run format:check
+      - run: npm run test:crawler
+
+  live-cgv:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live_cgv
+    needs: backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/n8_cineplex
+      CRAWLER_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.20.0"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run crawler:smoke

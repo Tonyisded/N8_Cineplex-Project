@@ -23,6 +23,8 @@ Mọi coding agent phải đọc phần liên quan trong plan trước khi thay 
 | Ngày | Hạng mục | Trạng thái | Kết quả / phần còn lại |
 | --- | --- | --- | --- |
 | 2026-10-05 | Bổ sung quy tắc cập nhật đồng bộ tài liệu và tiến độ | Hoàn thành phần tài liệu | Đã cập nhật cả hai file; kiểm tra nội dung đồng bộ, giữ nguyên nội dung cũ và rollback trên bản sao đạt. Chưa commit/push; người dùng sẽ push lên GitHub. Không đổi source backend, không chạy lại kiểm tra/deploy VPS. |
+| 2026-10-05 | Đào Mạnh Nhân — tuần 4: Playwright crawler bootstrap + GitHub Actions | Đang làm | Hoàn thành code/local: 13/13 test, build/typecheck/format/actionlint đạt; Node.js đọc CGV thật HTTP 200; health/Swagger/OpenAPI local đạt; rollback 16 file khớp hash gốc. CI runner/VPS chưa thực hiện; không đổi DB hoặc Android. |
+| 2026-10-05 | Đào Mạnh Nhân — publish branch crawler/CI tuần 4 | Đang làm | Đã tạo branch feat/dao-manh-nhan-week4-crawler-ci; chuẩn bị commit với Author/Committer Dao Manh Nhan <24521227@gm.uit.edu.vn>. Đang xác thực đúng tài khoản GitHub; chưa ghi nhận commit/push thành công. CI runner/VPS vẫn chưa thực hiện. |
 
 
 ---
@@ -1043,7 +1045,7 @@ Existing code never overrides the plan.
 - HTTPS chứng chỉ IP thật qua Certbot webroot; tự gia hạn và reload Nginx. Không bỏ kiểm tra TLS. IP đổi thì cập nhật endpoint và chứng chỉ.
 - Backup tự động **mỗi 24 giờ**, giữ **72 giờ (3 ngày)**, chỉ lưu tại `/var/backups/n8-cineplex` trên VPS. Lịch 02:00 Việt Nam = 19:00 UTC; systemd timer có chạy bù. `pg_dump -Fc`, chống chạy trùng, file tạm rồi đổi tên, kiểm tra danh mục và SHA-256. Chỉ dọn bản hết hạn sau khi backup mới thành công; backup lỗi giữ bản tốt và log lỗi.
 - Backup thủ công tùy chọn. **Chỉ restore khi người dùng yêu cầu**; dừng API/job/phiên ghi trước khi thay dữ liệu của chính DB chung. Không tự restore khi test lỗi hoặc chạy restore trong setup chỉ để test. Backup cùng VPS không bảo vệ khi mất VPS/đĩa; có thể mất dữ liệu phát sinh sau snapshot.
-- Tuần 4 chỉ bootstrap NestJS + Prisma + PostgreSQL + `@nestjs/schedule`, 10 bảng nghiệp vụ đúng canonical fields, seed 7 phòng, health query DB thật và Swagger. **Không Redis/BullMQ**, không triển khai Auth/crawler/payment/booking, không sửa Android. Socket.IO vẫn thuộc kiến trúc tương lai.
+- Phần bootstrap backend tuần 4 đã chốt: NestJS + Prisma + PostgreSQL + `@nestjs/schedule`, 10 bảng nghiệp vụ đúng canonical fields, seed 7 phòng, health query DB thật và Swagger. Bổ sung ngày 2026-10-05 cho Đào Mạnh Nhân: khởi tạo Playwright scheduled service + CI backend, đọc thử CGV thật nhưng chưa triển khai crawler nghiệp vụ đầy đủ. **Không Redis/BullMQ**, không triển khai Auth/payment/booking, không sửa Android. Socket.IO vẫn thuộc kiến trúc tương lai.
 - `_prisma_migrations` là metadata kỹ thuật, không tính vào 10 bảng nghiệp vụ. UUID PK/FK, tiền VND Decimal(14,0), thời gian timestamptz UTC; enum/nullable/FK/UNIQUE theo spec. Không UNIQUE toàn cục `order_seats.showtime_seat_id`.
 - Migration được review rồi `migrate deploy`; không `migrate dev`, reset, TRUNCATE, DROP schema hoặc `db push --force-reset` trên DB chung. Fixture dùng UUID riêng trong transaction/savepoint, luôn rollback; không sửa/xóa data có sẵn. Role API DML, role migration riêng.
 - Seed idempotent, không ghi đè phòng đã được sửa: Cinema 1 IMAX 496; Cinema 2 SCREENX 180; Cinema 3 STANDARD 160; Cinema 4 STANDARD 145; Cinema 5 STANDARD 130; Cinema 6 STANDARD 112; Cinema 7 GOLD 32. UUID cố định, is_extra=false, ACTIVE. Chưa seed account/password/payment/showtime seats.
@@ -1196,3 +1198,31 @@ Health phải HTTP 200/`{"status":"ok","database":"up"}`, Swagger phải `200`; 
 - VPS API lỗi: kiểm tra `compose ps`, log API/proxy, Nginx/TLS và port 443. Xem proxy log: `sudo docker logs --tail 100 n8-cineplex-reverse-proxy-1`. Không public PostgreSQL/5000 hoặc bỏ TLS để che lỗi.
 - Đạt khi startup thành công, health HTTP 200/database up, Swagger HTTP 200 và OpenAPI hợp lệ; ghi rõ kết quả local/VPS. Log startup cũ không chứng minh instance hiện tại hoạt động: phải kiểm tra HTTP và trạng thái service. Không coi startup fail hay 404 tại `/` là đã chạy thành công; không yêu cầu mọi request phải xuất hiện trong log.
 
+
+### Bổ sung tuần 4 — Playwright crawler bootstrap và CI (2026-10-05)
+
+- Phụ trách Đào Mạnh Nhân; đặc tả chi tiết ở mục bổ sung tương ứng trong Plan. Quyết định mới cho phép bootstrap/read-only probe CGV tuần 4, thay thế giới hạn cũ không khởi tạo crawler; chưa hoàn thành crawler nghiệp vụ tuần 5–6.
+- Code `backend/src/crawler/` dùng Playwright 1.63.0 trong cùng NestJS scheduled service; không worker queue, Redis/BullMQ hoặc `crawler_runs`; giữ nguyên 10 bảng, schema/migration/seed và Android.
+- `CRAWLER_ENABLED=false` mặc định, chỉ nhận `true`/`false`. Cron `crawl-cgv` mỗi 6 giờ, timezone `Asia/Ho_Chi_Minh`, chống chồng qua `waitForCompletion=true`; tắt thì không mở browser/đọc CGV. Chỉ đổi mặc định sang bật ở giai đoạn crawler đầy đủ đã kiểm thử ổn định, đồng bộ Plan/AGENTS và env VPS; không bật tự động sau smoke tuần 4.
+- `npm run crawler:install`, `npm run build`, `npm run test:crawler`, `npm run crawler:smoke` chạy trong `backend`. CLI smoke độc lập API/database, dùng cùng CrawlerService; exit 0 với JSON tên rạp/địa chỉ thật, lỗi exit 1. HTTPS allowlist, không follow redirect hoặc bỏ TLS, luôn đóng browser; cron chỉ log lỗi rồi đợi lần sau.
+- CI `.github/workflows/backend-ci.yml` chỉ backend/crawler, Node 24.20.0/Ubuntu 24.04; test Chromium với transport fixture local, không CGV/DB chung/VPS/migration/seed. Job CGV thật tách riêng qua `workflow_dispatch` và `run_live_cgv=true`; workflow thủ công cần có trên nhánh mặc định. Không tự triển khai hoặc sửa source/server.
+- Test regression crawler là source kiểm thử lâu dài của CI, không phải selftest tạm. Bằng chứng, baseline, patch và rollback nằm ngoài repo tại `D:\NT118\ytuong\week4-dao-manh-nhan-evidence`; không lưu secrets/log thô trong repo.
+- VPS là gate riêng chưa thực hiện: image API cần Chromium/Linux dependencies qua cấu hình ngoài repo; kiểm tra smoke trong container, health và Swagger. Giữ volume/dữ liệu, không thêm API instance hoặc tự restore.
+- Trạng thái hiện tại: **Hoàn thành code/local**; **Chưa làm** CI runner và VPS; tổng hạng mục **Đang làm** đến khi có bằng chứng các gate còn lại.
+
+#### Bằng chứng local đã xác minh ngày 2026-10-05 — Đào Mạnh Nhân
+
+- `npm ci` tái lập lockfile đạt; các dependency cũ giữ nguyên phiên bản, chỉ thêm `playwright`/`playwright-core` 1.63.0.
+- Prisma validate, build/generate, TypeScript typecheck, Prettier check và actionlint 1.7.12 đều exit 0. Actionlint archive được xác minh SHA-256 từ release chính thức; không cài toolchain lint vào project.
+- `npm run test:crawler`: **13/13 đạt**, 0 fail/skip; Chromium render DOM fixture, kiểm tra cấu hình, Unicode, lỗi HTTP/selector/timeout, redirect/host allowlist, cleanup, cron tắt/bật/chống chồng, xử lý lỗi và CLI thiếu browser.
+- Node.js `npm run crawler:smoke`: HTTP **200**, đọc được `CGV Vincom Center Landmark 81` và địa chỉ `772 Điện Biên Phủ`; lần xác minh độc lập lúc `2026-10-05T11:31:59.492Z` không có DATABASE_URL/API/tunnel. Chỉ chứng minh truy cập/đọc nội dung thật, không khẳng định đã crawl nghiệp vụ phim/lịch chiếu.
+- Backend candidate chạy local `127.0.0.1:5000`, query DB thật qua SSH tunnel: health 200 `{"status":"ok","database":"up"}`, Swagger 200, OpenAPI 200 và vẫn chỉ có health route. Đã dừng đúng tiến trình API/tunnel do đợt kiểm tra tạo; không dừng dịch vụ VPS, không ghi dữ liệu nghiệp vụ.
+- BASELINE: `CRAWLER_ENABLED="ABSENT"`; MODIFIED: `CRAWLER_ENABLED=false`; ROLLBACK: `CRAWLER_ENABLED="ABSENT"`, cùng HOST 127.0.0.1/PORT 5000 và input DB URL giả. Rollback trên bản sao riêng khôi phục **16/16 hash baseline**, loại bỏ source crawler/workflow mới; validate/build/typecheck sau rollback đều exit 0. Candidate giữ cấu hình mặc định tắt.
+- Bằng chứng literal stdout/stderr/exit/hash và các artifact lưu ngoài repo; rollback chỉ nhận bản sao có marker `.n8-transaction-copy`, archive bàn giao chứa marker này, không dùng trên workspace gốc. CI runner chưa chạy và phiên bản backend mới chưa triển khai/kiểm tra VPS; không báo hai gate đó hoàn thành.
+
+#### Quy tắc xuất bản phần crawler/CI của Đào Mạnh Nhân (2026-10-05)
+
+- Branch riêng `feat/dao-manh-nhan-week4-crawler-ci`, không commit/push `main`. Chỉ đưa danh sách 12 file thay đổi đã kiểm tra, bao gồm source/test/workflow và cả hai tài liệu liên quan; không đưa secrets, baseline/log/evidence hoặc file vận hành ngoài repo.
+- Theo yêu cầu mới của người phụ trách, Author và Committer mọi commit mới của đợt này đều `Dao Manh Nhan <24521227@gm.uit.edu.vn>`; không thêm Co-authored-by, bot attribution hoặc tác giả khác. Quy tắc identity bootstrap Nguyên trước đây vẫn giữ nguyên cho lịch sử đã có, không rewrite lịch sử/contributor của nhóm.
+- Xác minh tài khoản Git đang dùng đúng tài khoản của người phụ trách trước khi push; phiên đăng nhập trình duyệt không thay thế xác thực Git. Không sử dụng tài khoản thành viên khác để push đợt này, không ghi token/mật khẩu vào source hoặc evidence.
+- Ghi SHA, branch và kết quả push chỉ sau khi các thao tác thực tế thành công; đồng bộ kết quả vào cả hai tài liệu. Phần code/local đã kiểm tra vẫn giữ nguyên; CI runner và triển khai phiên bản mới lên VPS là gate riêng chưa thực hiện.
