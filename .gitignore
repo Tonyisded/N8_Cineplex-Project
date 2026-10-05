@@ -1,3 +1,13 @@
+backend/node_modules/
+backend/dist/
+backend/src/generated/
+backend/*.tsbuildinfo
+.env
+.env.*
+*.ppk
+*.pem
+*.dump
+*.backup
 # Dependencies, generated clients and build/cache output
 node_modules/
 dist/

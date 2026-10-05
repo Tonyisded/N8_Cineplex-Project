@@ -1,0 +1,275 @@
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum AuditoriumType {
+  STANDARD
+  IMAX
+  SCREENX
+  GOLD
+}
+
+enum AuditoriumStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ShowtimeFormat {
+  STANDARD_2D
+  STANDARD_3D
+  IMAX_2D
+  IMAX_3D
+  SCREENX
+  GOLD_CLASS
+}
+
+enum ShowtimeStatus {
+  ACTIVE
+  CANCELED
+}
+
+enum SeatType {
+  NORMAL
+  VIP
+  COUPLE
+  GOLD
+}
+
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  SOLD
+  BLOCKED
+}
+
+enum ComboStatus {
+  AVAILABLE
+  UNAVAILABLE
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  EXPIRED
+  CANCELED
+  REFUNDED
+}
+
+enum OrderSeatStatus {
+  HELD
+  ACTIVE
+  CANCELED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  NEEDS_ADMIN
+  RESOLVED
+}
+
+enum PaymentIssueReason {
+  WRONG_AMOUNT
+  WRONG_REFERENCE
+  LATE_PAYMENT
+}
+
+enum TicketStatus {
+  VALID
+  USED
+  REFUNDED
+  CANCELLED
+  EXPIRED
+}
+
+model User {
+  id               String         @id @default(uuid()) @db.Uuid
+  email            String         @unique @db.Text
+  passwordHash     String?        @map("password_hash") @db.Text
+  googleId         String?        @unique @map("google_id") @db.Text
+  fullName         String         @map("full_name") @db.Text
+  avatarUrl        String?        @map("avatar_url") @db.Text
+  role             Role           @default(CUSTOMER)
+  isActive         Boolean        @default(true) @map("is_active")
+  emailVerifiedAt  DateTime?      @map("email_verified_at") @db.Timestamptz(3)
+  creditBalance    Decimal        @default(0) @map("credit_balance") @db.Decimal(14, 0)
+  refreshTokenHash String?        @map("refresh_token_hash") @db.Text
+  fcmToken         String?        @map("fcm_token") @db.Text
+  orders           Order[]
+  heldSeats        ShowtimeSeat[]
+
+  @@map("users")
+}
+
+model Movie {
+  id              String     @id @default(uuid()) @db.Uuid
+  title           String     @db.Text
+  posterUrl       String?    @map("poster_url") @db.Text
+  durationMinutes Int        @map("duration_minutes")
+  synopsis        String?    @db.Text
+  ageRating       String     @map("age_rating") @db.Text
+  genre           String?    @db.Text
+  language        String?    @db.Text
+  sourceUrl       String     @map("source_url") @db.Text
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  showtimes       Showtime[]
+
+  @@map("movies")
+}
+
+model Auditorium {
+  id        String           @id @default(uuid()) @db.Uuid
+  name      String           @db.Text
+  type      AuditoriumType
+  capacity  Int
+  isExtra   Boolean          @default(false) @map("is_extra")
+  status    AuditoriumStatus @default(ACTIVE)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  showtimes Showtime[]
+
+  @@map("auditoriums")
+}
+
+model Showtime {
+  id           String         @id @default(uuid()) @db.Uuid
+  movieId      String         @map("movie_id") @db.Uuid
+  auditoriumId String         @map("auditorium_id") @db.Uuid
+  startAt      DateTime       @map("start_at") @db.Timestamptz(3)
+  endAt        DateTime       @map("end_at") @db.Timestamptz(3)
+  format       ShowtimeFormat
+  basePrice    Decimal        @map("base_price") @db.Decimal(14, 0)
+  status       ShowtimeStatus @default(ACTIVE)
+  sourceKey    String         @unique @map("source_key") @db.Text
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  movie        Movie          @relation(fields: [movieId], references: [id], onDelete: Restrict)
+  auditorium   Auditorium     @relation(fields: [auditoriumId], references: [id], onDelete: Restrict)
+  seats        ShowtimeSeat[]
+  orders       Order[]
+
+  @@map("showtimes")
+}
+
+model ShowtimeSeat {
+  id            String      @id @default(uuid()) @db.Uuid
+  showtimeId    String      @map("showtime_id") @db.Uuid
+  seatCode      String      @map("seat_code") @db.Text
+  rowName       String      @map("row_name") @db.Text
+  seatNumber    Int         @map("seat_number")
+  seatType      SeatType    @map("seat_type")
+  price         Decimal     @db.Decimal(14, 0)
+  status        SeatStatus  @default(AVAILABLE)
+  heldByUserId  String?     @map("held_by_user_id") @db.Uuid
+  holdExpiresAt DateTime?   @map("hold_expires_at") @db.Timestamptz(3)
+  updatedAt     DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  showtime      Showtime    @relation(fields: [showtimeId], references: [id], onDelete: Restrict)
+  heldByUser    User?       @relation(fields: [heldByUserId], references: [id], onDelete: Restrict)
+  orderSeats    OrderSeat[]
+
+  @@unique([showtimeId, seatCode])
+  @@map("showtime_seats")
+}
+
+model Combo {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String      @db.Text
+  description String      @db.Text
+  price       Decimal     @db.Decimal(14, 0)
+  imageUrl    String?     @map("image_url") @db.Text
+  status      ComboStatus @default(AVAILABLE)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  orders      Order[]
+
+  @@map("combos")
+}
+
+model Order {
+  id            String      @id @default(uuid()) @db.Uuid
+  userId        String      @map("user_id") @db.Uuid
+  showtimeId    String      @map("showtime_id") @db.Uuid
+  comboId       String?     @map("combo_id") @db.Uuid
+  comboQuantity Int         @default(0) @map("combo_quantity")
+  subtotal      Decimal     @db.Decimal(14, 0)
+  discount      Decimal     @default(0) @db.Decimal(14, 0)
+  creditUsed    Decimal     @default(0) @map("credit_used") @db.Decimal(14, 0)
+  totalAmount   Decimal     @map("total_amount") @db.Decimal(14, 0)
+  status        OrderStatus @default(PENDING_PAYMENT)
+  expiresAt     DateTime    @map("expires_at") @db.Timestamptz(3)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  showtime      Showtime    @relation(fields: [showtimeId], references: [id], onDelete: Restrict)
+  combo         Combo?      @relation(fields: [comboId], references: [id], onDelete: Restrict)
+  seats         OrderSeat[]
+  payments      Payment[]
+  ticket        Ticket?
+
+  @@map("orders")
+}
+
+model OrderSeat {
+  id             String          @id @default(uuid()) @db.Uuid
+  orderId        String          @map("order_id") @db.Uuid
+  showtimeSeatId String          @map("showtime_seat_id") @db.Uuid
+  seatCode       String          @map("seat_code") @db.Text
+  price          Decimal         @db.Decimal(14, 0)
+  status         OrderSeatStatus @default(HELD)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  showtimeSeat   ShowtimeSeat    @relation(fields: [showtimeSeatId], references: [id], onDelete: Restrict)
+
+  @@map("order_seats")
+}
+
+model Payment {
+  id                    String              @id @default(uuid()) @db.Uuid
+  orderId               String              @map("order_id") @db.Uuid
+  paymentCode           String              @unique @map("payment_code") @db.Text
+  expectedAmount        Decimal             @map("expected_amount") @db.Decimal(14, 0)
+  receivedAmount        Decimal?            @map("received_amount") @db.Decimal(14, 0)
+  providerTransactionId String?             @unique @map("provider_transaction_id") @db.Text
+  transferContent       String?             @map("transfer_content") @db.Text
+  status                PaymentStatus       @default(PENDING)
+  issueReason           PaymentIssueReason? @map("issue_reason")
+  expiresAt             DateTime            @map("expires_at") @db.Timestamptz(3)
+  paidAt                DateTime?           @map("paid_at") @db.Timestamptz(3)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  order                 Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@map("payments")
+}
+
+model Ticket {
+  id              String       @id @default(uuid()) @db.Uuid
+  orderId         String       @unique @map("order_id") @db.Uuid
+  bookingCode     String       @unique @map("booking_code") @db.Text
+  qrTokenHash     String       @unique @map("qr_token_hash") @db.Text
+  status          TicketStatus @default(VALID)
+  issuedAt        DateTime     @default(now()) @map("issued_at") @db.Timestamptz(3)
+  checkedInAt     DateTime?    @map("checked_in_at") @db.Timestamptz(3)
+  comboRedeemedAt DateTime?    @map("combo_redeemed_at") @db.Timestamptz(3)
+  refundedAt      DateTime?    @map("refunded_at") @db.Timestamptz(3)
+  cancelledAt     DateTime?    @map("cancelled_at") @db.Timestamptz(3)
+  emailSentAt     DateTime?    @map("email_sent_at") @db.Timestamptz(3)
+  expiresAt       DateTime     @map("expires_at") @db.Timestamptz(3)
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@map("tickets")
+}
