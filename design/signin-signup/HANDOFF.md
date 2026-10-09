@@ -93,3 +93,19 @@ Dùng ảnh logo người dùng cung cấp tại assets/cineplex-logo.png, kích
 
 ## Xác thực tinh gọn
 Bỏ banner minh họa khỏi ba trang xác thực, giữ banner Home/admin. Mobile dùng logo trung tâm rộng 160px, khối form tối đa 440px, cách logo và form 32px; tab chọn có nền nhẹ và gạch burgundy. Desktop từ 1024px dùng cột logo/lời dẫn và cột form với gap 64px; logo rộng 240px. Tiêu đề xác thực dùng system-ui, line-height 1.3. Giữ câu Một bộ phim hay đang chờ bạn và toàn bộ luồng mock. Compose dùng Column trên mobile, Row chia cột ở màn hình rộng.
+
+## Nút Google
+Đăng nhập khách hàng có nút Đăng nhập bằng Google dưới nút chính và dòng hoặc. Nút nền trắng, viền line, cao tối thiểu 56px, bo 12px, có focus/pressed/disabled và khóa khi gửi form. Bấm mở thông báo Chức năng sẽ được bổ sung; chưa tích hợp OAuth, không tạo phiên. Trang nhân viên không có nút này. Compose dùng OutlinedButton và AlertDialog.
+
+Icon Google chính thức lấy từ https://developers.google.com/identity/images/g-logo.png, lưu tại assets/google-logo.png (200×204). Hiển thị rộng 20px, giữ tỷ lệ tự nhiên, cách nhãn 12px. Icon trang trí có alt rỗng; tên nút được đọc từ nhãn. Hướng dẫn media không trả nội dung; dùng ảnh gốc từ Google. Hành vi nút không đổi.
+
+## Trang Thông tin cá nhân
+Mở từ avatar trên Home/dashboard quản trị hoặc mục Tài khoản. Hiển thị avatar chữ cái, họ tên, email và loại tài khoản lấy từ phiên đăng nhập. Không tự thêm số điện thoại, ngày sinh hoặc dữ liệu cá nhân giả. Session chỉ chứa name, email, role; không chứa mật khẩu.
+
+Khách hàng có thanh điều hướng với Tài khoản được chọn. Trang chủ/nút quay lại khôi phục tìm kiếm, tab và vị trí cuộn Home. Nhân viên/admin quay về dashboard quản trị và không có thanh điều hướng khách hàng. Trang cá nhân được bảo vệ theo phiên; đăng xuất quay về đăng nhập, Back không mở lại màn hình được bảo vệ. Tài khoản mới vẫn ở trong bộ nhớ sau đăng xuất và mất khi tải lại.
+
+Chỉnh sửa thông tin, Đổi mật khẩu, Trợ giúp & hỗ trợ mở “Chức năng sẽ được bổ sung”. Chính sách bảo mật mở dialog mẫu hiện có. Chưa kết nối backend.
+
+Token: nền #F5F3F0, surface #FFFFFF, primary #7B263D, chữ #25232A, muted #625D65, viền #D9D3D6. System-ui: tiêu đề 32px, mục 24px, nội dung 16px. Avatar 80px; spacing 8/12/16/24/32/48px, khối thông tin bo 16px, nút bo 12px, vùng chạm >=48px. Mobile xếp dọc, tablet >=768px chia cột nhận diện/nội dung, rộng tối đa 960px. Có vùng an toàn, chừa khoảng trống bottom navigation, focus/pressed và reduced-motion theo token chung.
+
+Jetpack Compose: ProfileScreen dùng Scaffold, TopAppBar, NavigationBar cho USER, Column.verticalScroll trên mobile và Row trên tablet. Surface tròn chứa initials, thông tin dùng Column/Text, các thao tác dùng ListItem clickable, đăng xuất OutlinedButton, phản hồi AlertDialog. ViewModel giữ AccountUiState(name,email,role); navigation popUpTo xóa các màn hình được bảo vệ khi đăng xuất. Tái sử dụng token Cineplex.

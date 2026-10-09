@@ -33,7 +33,7 @@ fun CineplexApp(vm: CineplexViewModel) {
     val grid = rememberLazyGridState()
     val signedIn = vm.session != null
     LaunchedEffect(signedIn) { if(!signedIn) grid.scrollToItem(0) }
-    BackHandler(vm.notice != null || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL)) { vm.back() }
+    BackHandler(vm.notice != null || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.PROFILE)) { vm.back() }
     Surface(Modifier.fillMaxSize(),color = CineplexColors.Background) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),contentAlignment = Alignment.TopCenter) {
             Box(Modifier.widthIn(max = 1280.dp).fillMaxSize()) {
@@ -43,6 +43,7 @@ fun CineplexApp(vm: CineplexViewModel) {
                         Screen.HOME -> HomeScreen(vm,grid)
                         Screen.DETAIL -> vm.movie?.let { MovieDetailScreen(vm,it) }
                         Screen.ADMIN -> AdminScreen(vm)
+                        Screen.PROFILE -> ProfileScreen(vm)
                     }
                 }
                 vm.notice?.let { CineplexDialog(it,vm::dismissNotice,vm::logout) }

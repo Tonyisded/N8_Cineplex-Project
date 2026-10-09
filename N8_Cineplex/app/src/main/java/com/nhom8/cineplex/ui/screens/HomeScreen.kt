@@ -55,19 +55,7 @@ fun HomeScreen(vm: CineplexViewModel, grid: LazyGridState) {
                     }
                 }
             }
-            Column(Modifier.background(C.Surface)) {
-                HorizontalDivider(color = C.Line)
-                Row(Modifier.fillMaxWidth().padding(8.dp),horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Trang chủ" to "home","Phim" to "film","Vé của tôi" to "ticket","Tài khoản" to "user").forEachIndexed { index,(label,icon) ->
-                        Column(Modifier.weight(1f).heightIn(min = 64.dp).clip(RoundedCornerShape(12.dp)).background(if(index == 0) C.Raised else C.Surface)
-                            .clickable(role = Role.Button) { when(index) { 0 -> scope.launch { grid.animateScrollToItem(0) }; 3 -> vm.account(); else -> vm.coming(label) } }
-                            .padding(vertical = 4.dp).semantics { if(index == 0) selected = true },horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(4.dp,Alignment.CenterVertically)) {
-                            CineplexIcon(icon,color = if(index == 0) C.Primary else C.Muted)
-                            Text(label,color = if(index == 0) C.Primary else C.Muted)
-                        }
-                    }
-                }
-            }
+            CustomerNavigation(0, { scope.launch { grid.animateScrollToItem(0) } }, vm::account, vm::coming)
         }
     }
 }
