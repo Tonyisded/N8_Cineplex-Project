@@ -30,7 +30,7 @@ class MockAccountRepositoryTest {
         val repo = MockAccountRepository()
         val form = form(" NEW@TEST.COM ")
         assertTrue(repo.register(form).isEmpty())
-        assertEquals(Session("Nguyen An",Role.USER),(repo.login(form.copy(email = "new@test.com"),false) as LoginResult.Success).session)
+        assertEquals(Session("Nguyen An",Role.USER,"new@test.com"),(repo.login(form.copy(email = "new@test.com"),false) as LoginResult.Success).session)
         assertEquals(LoginResult.Forbidden,repo.login(form,true))
         assertEquals(setOf("email"),repo.register(form("new@test.com")).keys)
         listOf(" USER@cineplex.test ","ADMIN@CINEPLEX.TEST").forEach { assertEquals(setOf("email"),repo.register(form(it)).keys) }

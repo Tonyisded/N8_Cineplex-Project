@@ -10,6 +10,9 @@ import androidx.compose.ui.focus.*
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.nhom8.cineplex.R
 import androidx.compose.ui.text.font.*
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.*
@@ -87,6 +90,20 @@ private fun AuthPanel(vm: CineplexViewModel, modifier: Modifier) {
         if(vm.staffRequired) LinkButton("Chuyển sang đăng nhập nhân viên",{ vm.navigate(Screen.STAFF) },icon = "arrow")
         ActionButton(if(vm.loading) { if(signup) "Đang tạo tài khoản…" else "Đang đăng nhập…" } else if(signup) "Tạo tài khoản" else "Đăng nhập",::submit,Modifier.fillMaxWidth().testTag("auth-submit"),loading = vm.loading,icon = "arrow")
         if(vm.loading) Muted(if(signup) "Đang tạo tài khoản…" else "Đang xác thực thông tin…",Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        if(!signup && !staff) {
+            Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                HorizontalDivider(Modifier.weight(1f),color = C.Line)
+                Muted("hoặc")
+                HorizontalDivider(Modifier.weight(1f),color = C.Line)
+            }
+            OutlinedButton(vm::google,enabled = !vm.loading,modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("google-signin"),
+                shape = RoundedCornerShape(12.dp),border = BorderStroke(1.dp,C.Line),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = C.Surface,contentColor = C.Text),contentPadding = PaddingValues(16.dp)) {
+                Image(painterResource(R.drawable.google_logo),null,Modifier.width(20.dp).aspectRatio(200f/204f),contentScale = ContentScale.Fit)
+                Spacer(Modifier.width(12.dp))
+                Text("Đăng nhập bằng Google",fontWeight = FontWeight.SemiBold)
+            }
+        }
         if(staff) Muted("Tài khoản do quản trị viên cấp.",Modifier.align(Alignment.CenterHorizontally))
         else {
             HorizontalDivider(color = C.Line)

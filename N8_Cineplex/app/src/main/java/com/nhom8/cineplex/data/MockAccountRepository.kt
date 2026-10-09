@@ -32,7 +32,7 @@ class MockAccountRepository {
             ?: return LoginResult.InvalidCredentials
         if (staff && account.role != Role.ADMIN) return LoginResult.Forbidden
         if (!staff && account.role == Role.ADMIN) return LoginResult.StaffRequired
-        return LoginResult.Success(Session(account.name, account.role))
+        return LoginResult.Success(Session(account.name, account.role, account.email))
     }
     fun register(form: AuthForm): Map<String, String> {
         val errors = validate(form, true)

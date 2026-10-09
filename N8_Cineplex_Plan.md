@@ -25,8 +25,6 @@
 | Ngày | Hạng mục | Trạng thái | Kết quả / phần còn lại |
 | --- | --- | --- | --- |
 | 2026-10-05 | Bổ sung quy tắc cập nhật đồng bộ tài liệu và tiến độ | Hoàn thành phần tài liệu | Đã cập nhật cả hai file; kiểm tra nội dung đồng bộ, giữ nguyên nội dung cũ và rollback trên bản sao đạt. Chưa commit/push; người dùng sẽ push lên GitHub. Không đổi source backend, không chạy lại kiểm tra/deploy VPS. |
-| 2026-10-05 | Đào Mạnh Nhân — tuần 4: Playwright crawler bootstrap + GitHub Actions | Đang làm | Hoàn thành code/local: 13/13 test, build/typecheck/format/actionlint đạt; Node.js đọc CGV thật HTTP 200; health/Swagger/OpenAPI local đạt; rollback 16 file khớp hash gốc. CI runner/VPS chưa thực hiện; không đổi DB hoặc Android. |
-| 2026-10-05 | Đào Mạnh Nhân — publish branch crawler/CI tuần 4 | Hoàn thành phần publish | Đã push nhánh feat/dao-manh-nhan-week4-crawler-ci bằng tài khoản Manh-Nhan299; HEAD e13328d657daf83f4efabe0aca62e3ebbbbc9730 đã đối chiếu với remote. Commit tính năng 220aedea26bf4812a72e53378c22f893953ce861; các commit mới có Author/Committer Dao Manh Nhan <24521227@gm.uit.edu.vn>, không co-author/bot; không thay đổi main/lịch sử nhóm. Local 13/13 tests đạt; CI runner/VPS vẫn chưa thực hiện. Bước tiếp theo: nhóm trưởng review nhánh/PR, chạy CI và triển khai/kiểm tra VPS theo quy tắc hiện có. |
 
 
 ---
@@ -2129,7 +2127,7 @@ Những phần bị bỏ **không làm mất luồng chính của người dùng
 - HTTPS chứng chỉ IP thật qua Certbot webroot; tự gia hạn và reload Nginx. Không bỏ kiểm tra TLS. IP đổi thì cập nhật endpoint và chứng chỉ.
 - Backup tự động **mỗi 24 giờ**, giữ **72 giờ (3 ngày)**, chỉ lưu tại `/var/backups/n8-cineplex` trên VPS. Lịch 02:00 Việt Nam = 19:00 UTC; systemd timer có chạy bù. `pg_dump -Fc`, chống chạy trùng, file tạm rồi đổi tên, kiểm tra danh mục và SHA-256. Chỉ dọn bản hết hạn sau khi backup mới thành công; backup lỗi giữ bản tốt và log lỗi.
 - Backup thủ công tùy chọn. **Chỉ restore khi người dùng yêu cầu**; dừng API/job/phiên ghi trước khi thay dữ liệu của chính DB chung. Không tự restore khi test lỗi hoặc chạy restore trong setup chỉ để test. Backup cùng VPS không bảo vệ khi mất VPS/đĩa; có thể mất dữ liệu phát sinh sau snapshot.
-- Phần bootstrap backend tuần 4 đã chốt: NestJS + Prisma + PostgreSQL + `@nestjs/schedule`, 10 bảng nghiệp vụ đúng canonical fields, seed 7 phòng, health query DB thật và Swagger. Bổ sung ngày 2026-10-05 cho Đào Mạnh Nhân: khởi tạo Playwright scheduled service + CI backend, đọc thử CGV thật nhưng chưa triển khai crawler nghiệp vụ đầy đủ. **Không Redis/BullMQ**, không triển khai Auth/payment/booking, không sửa Android. Socket.IO vẫn thuộc kiến trúc tương lai.
+- Tuần 4 chỉ bootstrap NestJS + Prisma + PostgreSQL + `@nestjs/schedule`, 10 bảng nghiệp vụ đúng canonical fields, seed 7 phòng, health query DB thật và Swagger. **Không Redis/BullMQ**, không triển khai Auth/crawler/payment/booking, không sửa Android. Socket.IO vẫn thuộc kiến trúc tương lai.
 - `_prisma_migrations` là metadata kỹ thuật, không tính vào 10 bảng nghiệp vụ. UUID PK/FK, tiền VND Decimal(14,0), thời gian timestamptz UTC; enum/nullable/FK/UNIQUE theo spec. Không UNIQUE toàn cục `order_seats.showtime_seat_id`.
 - Migration được review rồi `migrate deploy`; không `migrate dev`, reset, TRUNCATE, DROP schema hoặc `db push --force-reset` trên DB chung. Fixture dùng UUID riêng trong transaction/savepoint, luôn rollback; không sửa/xóa data có sẵn. Role API DML, role migration riêng.
 - Seed idempotent, không ghi đè phòng đã được sửa: Cinema 1 IMAX 496; Cinema 2 SCREENX 180; Cinema 3 STANDARD 160; Cinema 4 STANDARD 145; Cinema 5 STANDARD 130; Cinema 6 STANDARD 112; Cinema 7 GOLD 32. UUID cố định, is_extra=false, ACTIVE. Chưa seed account/password/payment/showtime seats.
@@ -2283,33 +2281,26 @@ Health phải HTTP 200/`{"status":"ok","database":"up"}`, Swagger phải `200`; 
 - Đạt khi startup thành công, health HTTP 200/database up, Swagger HTTP 200 và OpenAPI hợp lệ; ghi rõ kết quả local/VPS. Log startup cũ không chứng minh instance hiện tại hoạt động: phải kiểm tra HTTP và trạng thái service. Không coi startup fail hay 404 tại `/` là đã chạy thành công; không yêu cầu mọi request phải xuất hiện trong log.
 
 
-### Bổ sung tuần 4 — Playwright crawler bootstrap và CI (2026-10-05)
+## Cập nhật Android 2026-10-09 — đăng nhập và profile từ ZIP mới
 
-- Phụ trách: Đào Mạnh Nhân. Đây là bổ sung thay thế giới hạn cũ không khởi tạo crawler ở tuần 4; chưa hoàn thành nghiệp vụ crawler tuần 5–6.
-- Crawler nằm trong `backend/src/crawler/`, là scheduled service trong cùng NestJS instance; không worker queue riêng, Redis/BullMQ hay bảng `crawler_runs`. Giữ nguyên 10 bảng, schema/migration/seed và Android.
-- Runtime dependency `playwright` 1.63.0; chỉ cài Chromium. Lệnh trong `backend`: `npm run crawler:install`, `npm run build`, `npm run test:crawler`, `npm run crawler:smoke`.
-- `CRAWLER_ENABLED` mặc định `false`, chỉ nhận `true`/`false`; cron `crawl-cgv` mỗi 6 giờ (`0 0 */6 * * *`), timezone `Asia/Ho_Chi_Minh`, `waitForCompletion=true`. Khi tắt không mở browser/đọc CGV. CLI smoke luôn chạy trực tiếp, không cần API hoặc database/tunnel.
-- Chỉ đọc trang `https://www.cgv.vn/default/cinox/site/cgv-vincom-landmark-81/`; kiểm tra HTTP 200, URL cuối, `.theater-title h3` và `.theater-address`. Không dùng title `Site` làm bằng chứng; không parse/normalize domain, upsert, gán phòng hoặc materialize seats.
-- Allowlist HTTPS `www.cgv.vn`, chặn redirect trước khi follow, không bỏ kiểm tra TLS/vượt CAPTCHA; timeout launch 15s, navigation 30s, nội dung 15s; luôn đóng browser. Cron log lỗi rồi đợi lần sau; CLI lỗi exit 1, thành công xuất JSON exit 0.
-- CI `.github/workflows/backend-ci.yml` chỉ backend/crawler: Ubuntu 24.04, Node 24.20.0, npm ci, Prisma validate/generate, build/typecheck, Chromium, format check và `node:test`. Test Chromium dùng transport fixture local, không gọi CGV/VPS/DB chung; URL DB giả chỉ phục vụ validate/generate, không migration/seed.
-- Test CGV thật tách riêng: bắt buộc kiểm tra local, job `live-cgv` chỉ khi `workflow_dispatch` với `run_live_cgv=true`. Workflow thủ công chỉ khả dụng sau khi định nghĩa có trên nhánh mặc định. Không tự triển khai hoặc thay đổi source/dữ liệu server.
-- Khi crawler đầy đủ đã hoàn thiện và kiểm thử ổn định, đợt sau mới đổi mặc định `CRAWLER_ENABLED` sang `true` và đồng bộ cấu hình VPS + hai tài liệu; smoke tuần 4 không tự kích hoạt thay đổi này. Giá trị môi trường `false` vẫn cho phép chủ động tắt.
-- VPS là gate riêng chưa thực hiện trong đợt này: image API cần Chromium/Linux dependencies qua cấu hình ngoài repo `/etc/n8-cineplex`; kiểm tra smoke trong container, health và Swagger. Không thêm API instance, không thay PG volume hoặc tự restore.
-- Trạng thái hiện tại: **Hoàn thành code/local**; **Chưa làm** CI runner và VPS; tổng hạng mục **Đang làm** đến khi có bằng chứng các gate còn lại. Bằng chứng/rollback đặt ngoài repo tại `D:\NT118\ytuong\week4-dao-manh-nhan-evidence`; không lưu secrets hoặc selftest tạm trong repo. Test regression crawler là source kiểm thử lâu dài cho CI, không phải selftest tạm.
+### Quyết định và phạm vi
 
-#### Bằng chứng local đã xác minh ngày 2026-10-05 — Đào Mạnh Nhân
+Trạng thái: **Hoàn thành phần UI mock**. Bản thiết kế hiện hành là `design/signin-signup.zip` mới của người dùng, được giải nén tại `design/signin-signup/`. Dùng index.html, assets/cineplex.css, assets/cineplex.js và phần bổ sung cuối HANDOFF.md làm tham chiếu giao diện. Quyết định này thay cách mở dialog tài khoản trước đây bằng trang Profile; không thay đặc tả xác thực/profile thật ở mục 5 và 29.
 
-- `npm ci` tái lập lockfile đạt; các dependency cũ giữ nguyên phiên bản, chỉ thêm `playwright`/`playwright-core` 1.63.0.
-- Prisma validate, build/generate, TypeScript typecheck, Prettier check và actionlint 1.7.12 đều exit 0. Actionlint archive được xác minh SHA-256 từ release chính thức; không cài toolchain lint vào project.
-- `npm run test:crawler`: **13/13 đạt**, 0 fail/skip; Chromium render DOM fixture, kiểm tra cấu hình, Unicode, lỗi HTTP/selector/timeout, redirect/host allowlist, cleanup, cron tắt/bật/chống chồng, xử lý lỗi và CLI thiếu browser.
-- Node.js `npm run crawler:smoke`: HTTP **200**, đọc được `CGV Vincom Center Landmark 81` và địa chỉ `772 Điện Biên Phủ`; lần xác minh độc lập lúc `2026-10-05T11:31:59.492Z` không có DATABASE_URL/API/tunnel. Chỉ chứng minh truy cập/đọc nội dung thật, không khẳng định đã crawl nghiệp vụ phim/lịch chiếu.
-- Backend candidate chạy local `127.0.0.1:5000`, query DB thật qua SSH tunnel: health 200 `{"status":"ok","database":"up"}`, Swagger 200, OpenAPI 200 và vẫn chỉ có health route. Đã dừng đúng tiến trình API/tunnel do đợt kiểm tra tạo; không dừng dịch vụ VPS, không ghi dữ liệu nghiệp vụ.
-- BASELINE: `CRAWLER_ENABLED="ABSENT"`; MODIFIED: `CRAWLER_ENABLED=false`; ROLLBACK: `CRAWLER_ENABLED="ABSENT"`, cùng HOST 127.0.0.1/PORT 5000 và input DB URL giả. Rollback trên bản sao riêng khôi phục **16/16 hash baseline**, loại bỏ source crawler/workflow mới; validate/build/typecheck sau rollback đều exit 0. Candidate giữ cấu hình mặc định tắt.
-- Bằng chứng literal stdout/stderr/exit/hash và các artifact lưu ngoài repo; rollback chỉ nhận bản sao có marker `.n8-transaction-copy`, archive bàn giao chứa marker này, không dùng trên workspace gốc. CI runner chưa chạy và phiên bản backend mới chưa triển khai/kiểm tra VPS; không báo hai gate đó hoàn thành.
+- Đăng nhập khách hàng: thêm dòng “hoặc” và nút “Đăng nhập bằng Google” nền trắng, viền #D9D3D6, bo 12dp, cao tối thiểu 56dp; dùng logo gốc trong ZIP, rộng 20dp, giữ tỷ lệ 200:204. Khóa nút trong lúc submit; không xuất hiện ở đăng ký/đăng nhập nhân viên. Bấm chỉ mở “Chức năng sẽ được bổ sung”, không tạo phiên/OAuth giả.
+- Profile: route PROFILE và ProfileScreen Compose riêng, mở qua avatar khách hàng/admin hoặc navigation Tài khoản. Session mock gồm name, email chuẩn hóa và role; không chứa password. Dùng dữ liệu của tài khoản đăng nhập/đăng ký, không thêm số điện thoại/ngày sinh/dữ liệu giả.
+- Nội dung gồm tiêu đề “Thông tin cá nhân”, avatar initials từ hai từ cuối tên, tên/role, thẻ “Thông tin tài khoản” với họ tên/email/loại tài khoản, chỉnh sửa, “Bảo mật & hỗ trợ”, đổi mật khẩu/chính sách bảo mật/trợ giúp, đăng xuất.
+- Giữ palette Cineplex, heading sans-serif hỗ trợ dấu tiếng Việt 32/24sp, avatar 80dp, padding 24dp trên mobile và 48dp trên tablet; nội dung cuộn được. Từ 768dp chia hai cột nhận diện/nội dung, giới hạn rộng 960dp. Dùng chung CustomerNavigation với Home; chọn Tài khoản ở Profile, admin không có navigation khách hàng.
+- Back/Trang chủ khôi phục Home cùng query/tab/scroll của khách hàng; admin trở về dashboard. Back khi dialog đang mở chỉ đóng dialog. Logout xóa session, reset Home, về login; mở tài khoản và Back sau logout không khôi phục màn hình được bảo vệ.
+- Chỉnh sửa/đổi mật khẩu/trợ giúp mở thông báo đúng export; chính sách bảo mật dùng nội dung mẫu hiện có. Các mục Phim/Vé của tôi giữ thông báo hiện có.
+- Sửa lỗi lint có sẵn: tách Theme.Cineplex.Base và đặt windowLightNavigationBar trong values-v27 để giữ minSdk 24; logo Google ở drawable-nodpi. Không thêm dependency, backend/API/database hoặc business rule.
 
-#### Quy tắc xuất bản phần crawler/CI của Đào Mạnh Nhân (2026-10-05)
+### Bằng chứng kiểm tra 2026-10-09
 
-- Branch riêng `feat/dao-manh-nhan-week4-crawler-ci`, không commit/push `main`. Chỉ đưa danh sách 12 file thay đổi đã kiểm tra, bao gồm source/test/workflow và cả hai tài liệu liên quan; không đưa secrets, baseline/log/evidence hoặc file vận hành ngoài repo.
-- Theo yêu cầu mới của người phụ trách, Author và Committer mọi commit mới của đợt này đều `Dao Manh Nhan <24521227@gm.uit.edu.vn>`; không thêm Co-authored-by, bot attribution hoặc tác giả khác. Quy tắc identity bootstrap Nguyên trước đây vẫn giữ nguyên cho lịch sử đã có, không rewrite lịch sử/contributor của nhóm.
-- Xác minh tài khoản Git đang dùng đúng tài khoản của người phụ trách trước khi push; phiên đăng nhập trình duyệt không thay thế xác thực Git. Không sử dụng tài khoản thành viên khác để push đợt này, không ghi token/mật khẩu vào source hoặc evidence.
-- Ghi SHA, branch và kết quả push chỉ sau khi các thao tác thực tế thành công; đồng bộ kết quả vào cả hai tài liệu. Phần code/local đã kiểm tra vẫn giữ nguyên; CI runner và triển khai phiên bản mới lên VPS là gate riêng chưa thực hiện.
+- Local Android: `assembleDebug testDebugUnitTest lintDebug --console=plain` thành công. 18 unit tests đạt, gồm email chuẩn hóa trong session, route/role/back/logout profile và Google không tạo phiên/khóa lúc gửi. Lint 0 lỗi, 23 cảnh báo còn lại; không tắt/bỏ qua lint hoặc test.
+- Emulator Pixel_10_Pro_XL Android 17, 360×800dp: `connectedDebugAndroidTest` thành công, 10 tests (9 CineplexUiTest và 1 test có sẵn), 0 lỗi/thất bại/bỏ qua.
+- APK cuối cùng sau sửa resource: 3 test Google/customer profile/admin profile chạy lại bằng AndroidJUnitRunner đạt cả ở 360×800dp và tablet 820×1180dp. Kiểm tra avatar và navigation, thông tin/email, dialog, chọn Tài khoản, Back/Trang chủ giữ query và vị trí scroll, admin về đúng dashboard, logout chặn mở lại profile.
+- Đã xem ảnh chụp login Google, profile khách hàng/admin và phần thao tác; mobile cuộn và tablet hai cột hiển thị đúng. Ảnh chỉ ở `N8_Cineplex/app/build/visual-profile-360/visual_checks/` và `visual-profile-tablet/visual_checks/`, không đưa vào source. Emulator đã khôi phục kích thước gốc 1344×2992; APK mới được cài và MainActivity mở thành công.
+- APK: `N8_Cineplex/app/build/outputs/apk/debug/app-debug.apk`. Không commit/push; không sửa backend nên không rebuild/deploy/kiểm tra VPS trong đợt này. Giữ lịch sử kiểm tra cũ và các thay đổi có sẵn của người dùng.
+
+Phần còn lại ngoài scope đợt UI: Google OAuth và cập nhật profile/email/password/avatar qua backend thật theo các mục đã đặc tả, vẫn **Chưa làm** trong bản UI mock này. Bước tiếp theo: người dùng review giao diện, rồi tích hợp khi backend tương ứng sẵn sàng.

@@ -36,7 +36,7 @@ class CineplexViewModelTest {
         val vm = vm(); vm.navigate(Screen.SIGNUP); vm.update(AuthForm("An"," NEW@test.com ","abcdefgh","abcdefgh",true)); vm.submit(); advanceUntilIdle()
         assertEquals(Screen.LOGIN,vm.screen); assertEquals(AuthForm(email = "new@test.com"),vm.form); assertTrue(vm.success)
         vm.update(vm.form.copy(password = "abcdefgh")); vm.submit(); advanceUntilIdle(); assertEquals(Role.USER,vm.session?.role)
-        vm.query = "Dune"; vm.soon = true; vm.account(); assertTrue(vm.notice?.account == true); vm.logout(); vm.back()
+        vm.query = "Dune"; vm.soon = true; vm.account(); assertEquals(Screen.PROFILE,vm.screen); assertNull(vm.notice); assertEquals("new@test.com",vm.session?.email); vm.logout(); vm.back()
         assertNull(vm.session); assertNull(vm.notice); assertEquals("",vm.query); assertFalse(vm.soon); assertEquals(Screen.LOGIN,vm.screen)
         vm.update(AuthForm(email = "new@test.com",password = "abcdefgh")); vm.submit(); advanceUntilIdle(); assertEquals(Screen.HOME,vm.screen)
     }
@@ -58,6 +58,33 @@ class CineplexViewModelTest {
     @Test fun dialogBackKeepsScreenAndForm() {
         val vm = vm(); vm.navigate(Screen.SIGNUP); vm.update(user()); vm.terms(false); vm.back()
         assertNull(vm.notice); assertEquals(Screen.SIGNUP,vm.screen); assertEquals(user(),vm.form)
+    }
+    @Test fun profileUsesNormalizedSessionAndReturnsToRoleHome() = runTest(dispatcher) {
+        val vm = vm()
+        vm.account(); assertEquals(Screen.LOGIN, vm.screen)
+        vm.update(user().copy(email = " USER@CINEPLEX.TEST ")); vm.submit(); advanceUntilIdle()
+        vm.query = "Dune"; vm.soon = true; vm.account()
+        assertEquals(Screen.PROFILE, vm.screen)
+        assertEquals(Session("Khách hàng", Role.USER, "user@cineplex.test"), vm.session)
+        vm.profileAction("edit"); vm.back()
+        assertEquals(Screen.PROFILE, vm.screen); assertNull(vm.notice)
+        vm.back(); assertEquals(Screen.HOME, vm.screen); assertEquals("Dune", vm.query); assertTrue(vm.soon)
+        vm.logout(); vm.account(); vm.profileAction("help")
+        assertEquals(Screen.LOGIN, vm.screen); assertNull(vm.session); assertNull(vm.notice)
+        vm.navigate(Screen.STAFF); vm.update(user().copy(email = "admin@cineplex.test")); vm.submit(); advanceUntilIdle()
+        vm.account(); assertEquals(Screen.PROFILE, vm.screen); assertEquals("admin@cineplex.test", vm.session?.email)
+        vm.back(); assertEquals(Screen.ADMIN, vm.screen)
+    }
+    @Test fun googlePlaceholderNeverCreatesSessionAndIsBlockedWhileLoading() = runTest(dispatcher) {
+        val vm = vm(); vm.google()
+        assertEquals("Chức năng sẽ được bổ sung", vm.notice?.title); assertNull(vm.session)
+        vm.back(); assertEquals(Screen.LOGIN, vm.screen)
+        listOf(Screen.SIGNUP, Screen.STAFF).forEach {
+            vm.navigate(it); vm.google(); assertNull(vm.notice)
+        }
+        vm.navigate(Screen.LOGIN); vm.update(user()); vm.submit(); vm.google()
+        assertNull(vm.notice); advanceUntilIdle()
+        assertEquals(Screen.HOME, vm.screen); vm.google(); assertNull(vm.notice)
     }
     @Test fun sixMoviesSearchWithoutAccentsAndTabFiltering() {
         assertEquals(6,MockMovies.all.size); assertEquals(4,MockMovies.search("",false).size); assertEquals(2,MockMovies.search("",true).size)

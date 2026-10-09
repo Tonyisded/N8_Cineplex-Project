@@ -1,4 +1,4 @@
-﻿package com.nhom8.cineplex
+package com.nhom8.cineplex
 
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
@@ -58,8 +58,8 @@ class CineplexUiTest {
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Sắp chiếu"))
         compose.onNodeWithText("Sắp chiếu").assertIsSelected()
         compose.onNodeWithText("Tài khoản").performClick()
-        compose.onNodeWithText("Tài khoản Cineplex").assertIsDisplayed()
-        compose.onNodeWithText("Đăng xuất").performClick()
+        compose.onNodeWithText("Thông tin cá nhân").assertExists()
+        compose.onNodeWithTag("profile-logout").performScrollTo().performClick()
         compose.onNodeWithText("Hẹn bạn ở rạp").assertExists()
         compose.waitForIdle()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed(); Assert.assertNull(vm.session); Assert.assertEquals(Screen.LOGIN,vm.screen) }
@@ -98,7 +98,7 @@ class CineplexUiTest {
         field("Mật khẩu").assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText,AnnotatedString("")))
         compose.onNodeWithText("Đăng ký thành công! Vui lòng đăng nhập").assertExists()
         login("new@test.com","abcdefgh")
-        compose.onNodeWithText("Tài khoản").performClick(); compose.onNodeWithText("Đăng xuất").performClick()
+        compose.onNodeWithText("Tài khoản").performClick(); compose.onNodeWithTag("profile-logout").performScrollTo().performClick()
         login("new@test.com","abcdefgh")
         compose.onNodeWithText("Xin chào, Nguyen An").assertIsDisplayed()
     }
@@ -121,6 +121,68 @@ class CineplexUiTest {
         compose.onNodeWithText("Đăng ký").performClick()
         compose.onNodeWithText("Bắt đầu trải nghiệm Cineplex").assertExists(); back()
         compose.onNodeWithText("Hẹn bạn ở rạp").assertExists()
+    }
+    @Test fun googlePlaceholderOnlyOnCustomerLogin() {
+        compose.onNodeWithTag("google-signin").performScrollTo()
+        screenshot("login-google")
+        compose.onNodeWithTag("google-signin").performClick()
+        compose.onNodeWithText("Chức năng sẽ được bổ sung").assertIsDisplayed()
+        Assert.assertNull(vm.session); Assert.assertEquals(Screen.LOGIN, vm.screen)
+        compose.onNodeWithText("Đã hiểu").performClick()
+        compose.onNodeWithText("Đăng ký").performScrollTo().performClick()
+        compose.onNodeWithTag("google-signin").assertDoesNotExist()
+        back()
+        compose.onNodeWithText("Nhân viên đăng nhập?").performScrollTo().performClick()
+        compose.onNodeWithTag("google-signin").assertDoesNotExist()
+    }
+    @Test fun customerProfileActionsReturnAndLogout() {
+        login("user@cineplex.test", "123456")
+        compose.onNodeWithContentDescription("Mở tài khoản").performScrollTo().performClick()
+        compose.onNodeWithText("Thông tin cá nhân").assertIsDisplayed()
+        compose.onNodeWithText("Tài khoản").assertIsSelected()
+        screenshot("profile-customer")
+        compose.onNodeWithText("user@cineplex.test").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Chỉnh sửa thông tin").performScrollTo().performClick()
+        compose.onNodeWithText("Chức năng sẽ được bổ sung").assertIsDisplayed(); back()
+        Assert.assertEquals(Screen.PROFILE, vm.screen)
+        listOf("Đổi mật khẩu", "Trợ giúp & hỗ trợ").forEach {
+            compose.onNodeWithText(it).performScrollTo().performClick()
+            compose.onNodeWithText("Chức năng sẽ được bổ sung").assertIsDisplayed()
+            compose.onNodeWithText("Đã hiểu").performClick()
+        }
+        compose.onNodeWithText("Chính sách bảo mật").performScrollTo().performClick()
+        compose.onNodeWithText("Chính sách bảo mật — mẫu").assertIsDisplayed(); back()
+        compose.onNodeWithText("Trang chủ").performClick()
+        compose.onNodeWithText("Hôm nay, bạn muốn xem gì?").assertIsDisplayed()
+        compose.runOnUiThread { vm.query = "Dune" }
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Đặt vé Dune: Phần Hai"))
+        val grid = compose.onNode(hasScrollToIndexAction())
+        val position = grid.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        compose.onNodeWithText("Tài khoản").performClick(); back()
+        Assert.assertEquals("Dune", vm.query)
+        Assert.assertEquals(position, grid.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value(), 0.01f)
+        compose.onNodeWithText("Tài khoản").performClick()
+        compose.onNodeWithTag("profile-logout").performScrollTo()
+        screenshot("profile-actions")
+        compose.onNodeWithTag("profile-logout").performClick()
+        compose.runOnUiThread { vm.back(); vm.account() }
+        compose.onNodeWithText("Hẹn bạn ở rạp").assertExists()
+        Assert.assertNull(vm.session); Assert.assertEquals(Screen.LOGIN, vm.screen)
+    }
+    @Test fun adminProfileHasNoCustomerNavigationAndReturnsToDashboard() {
+        compose.onNodeWithText("Nhân viên đăng nhập?").performScrollTo().performClick()
+        login("admin@cineplex.test", "123456")
+        compose.onNodeWithContentDescription("Mở tài khoản quản trị").performScrollTo().performClick()
+        compose.onNodeWithText("Thông tin cá nhân").assertIsDisplayed()
+        compose.onNodeWithText("Tài khoản").assertDoesNotExist()
+        screenshot("profile-admin")
+        compose.onNodeWithText("admin@cineplex.test").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Quay lại dashboard quản trị").performScrollTo().performClick()
+        compose.onNodeWithText("ADMIN · Cineplex Staff").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Mở tài khoản quản trị").performScrollTo().performClick()
+        compose.onNodeWithTag("profile-logout").performScrollTo().performClick()
+        compose.runOnUiThread { vm.back(); vm.account() }
+        Assert.assertNull(vm.session); Assert.assertEquals(Screen.LOGIN, vm.screen)
     }
     @Test fun signupInlineValidationAndIndependentToggles() {
         compose.onNodeWithText("Đăng ký").performClick()
