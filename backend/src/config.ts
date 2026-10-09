@@ -30,5 +30,14 @@ export function validateEnvironment(env: Record<string, unknown>) {
   } catch {
     throw new Error("DATABASE_URL must be a valid PostgreSQL connection URL");
   }
-  return { ...env, HOST: host, PORT: port };
+  const rawCrawlerEnabled = env.CRAWLER_ENABLED ?? "false";
+  if (!["true", "false"].includes(String(rawCrawlerEnabled))) {
+    throw new Error("CRAWLER_ENABLED must be true or false");
+  }
+  return {
+    ...env,
+    HOST: host,
+    PORT: port,
+    CRAWLER_ENABLED: String(rawCrawlerEnabled) === "true",
+  };
 }
