@@ -14,7 +14,7 @@ This archive is the source of truth for turning the design into production code.
 - HTML screens detected: 1
 - Stylesheets detected: 4
 - Script/component files detected: 4
-- Supporting assets detected: 21
+- Supporting assets detected: 22
 
 ## Responsive contract
 Validate the implementation across this 2025–2026 viewport matrix:
@@ -82,6 +82,7 @@ For responsive web exports, treat these as a modern breakpoint system for one ad
 - `assets/cinema-isometric.png`
 - `assets/cineplex-logo.png`
 - `assets/dune.jpg`
+- `assets/google-logo.png`
 - `assets/inception.jpg`
 - `assets/interstellar.jpg`
 - `assets/oppenheimer.jpg`

@@ -1196,3 +1196,13 @@ Health phải HTTP 200/`{"status":"ok","database":"up"}`, Swagger phải `200`; 
 - VPS API lỗi: kiểm tra `compose ps`, log API/proxy, Nginx/TLS và port 443. Xem proxy log: `sudo docker logs --tail 100 n8-cineplex-reverse-proxy-1`. Không public PostgreSQL/5000 hoặc bỏ TLS để che lỗi.
 - Đạt khi startup thành công, health HTTP 200/database up, Swagger HTTP 200 và OpenAPI hợp lệ; ghi rõ kết quả local/VPS. Log startup cũ không chứng minh instance hiện tại hoạt động: phải kiểm tra HTTP và trạng thái service. Không coi startup fail hay 404 tại `/` là đã chạy thành công; không yêu cầu mọi request phải xuất hiện trong log.
 
+
+## Cập nhật Android 2026-10-09 — đăng nhập và profile từ ZIP mới
+
+- Trạng thái: **Hoàn thành phần UI mock**. Thiết kế hiện hành là `design/signin-signup.zip`, giải nén tại `design/signin-signup/`; đối chiếu entry, cineplex.css/js và HANDOFF.md. Quy tắc nghiệp vụ trong Plan vẫn áp dụng.
+- Đăng nhập khách hàng có nút Google với logo gốc, chỉ mở thông báo; không tạo phiên. Không có nút Google ở signup/staff, khóa khi form đang gửi.
+- Profile mở từ avatar Home/admin hoặc Tài khoản; hiển thị initials/tên/email/role lấy từ session, không chứa mật khẩu. Mobile một cột, tablet từ 768dp hai cột; navigation khách hàng chọn Tài khoản, admin không có navigation khách hàng.
+- Back/Trang chủ về Home/admin, giữ query/tab/scroll Home. Logout xóa phiên; Back hoặc mở tài khoản sau logout không vào lại profile. Chỉnh sửa/đổi mật khẩu/hỗ trợ mở thông báo; chính sách bảo mật mở mẫu hiện có.
+- Sửa lỗi lint có sẵn bằng cách đặt windowLightNavigationBar trong values-v27, giữ minSdk 24. Không đổi backend/database/API; không cần deploy VPS cho đợt Android này.
+- Bằng chứng 2026-10-09: assembleDebug và 18 unit tests đạt; lintDebug đạt (0 lỗi, 23 cảnh báo). Toàn bộ 10 instrumentation tests đạt ở 360×800dp; chạy lại 3 test Google/profile trên APK cuối cùng ở 360×800dp và 820×1180dp đều đạt. Đã đọc ảnh mobile/tablet tại app/build/visual-profile-360/visual_checks và visual-profile-tablet/visual_checks; emulator khôi phục kích thước gốc 1344×2992.
+- APK: N8_Cineplex/app/build/outputs/apk/debug/app-debug.apk. Chưa commit/push; giữ các thay đổi sẵn có của người dùng. Còn lại ngoài scope UI: tích hợp Google/profile API thật theo Plan khi triển khai backend tương ứng; bước tiếp theo là người dùng review UI.

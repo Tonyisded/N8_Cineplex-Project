@@ -2280,3 +2280,27 @@ Health phải HTTP 200/`{"status":"ok","database":"up"}`, Swagger phải `200`; 
 - VPS API lỗi: kiểm tra `compose ps`, log API/proxy, Nginx/TLS và port 443. Xem proxy log: `sudo docker logs --tail 100 n8-cineplex-reverse-proxy-1`. Không public PostgreSQL/5000 hoặc bỏ TLS để che lỗi.
 - Đạt khi startup thành công, health HTTP 200/database up, Swagger HTTP 200 và OpenAPI hợp lệ; ghi rõ kết quả local/VPS. Log startup cũ không chứng minh instance hiện tại hoạt động: phải kiểm tra HTTP và trạng thái service. Không coi startup fail hay 404 tại `/` là đã chạy thành công; không yêu cầu mọi request phải xuất hiện trong log.
 
+
+## Cập nhật Android 2026-10-09 — đăng nhập và profile từ ZIP mới
+
+### Quyết định và phạm vi
+
+Trạng thái: **Hoàn thành phần UI mock**. Bản thiết kế hiện hành là `design/signin-signup.zip` mới của người dùng, được giải nén tại `design/signin-signup/`. Dùng index.html, assets/cineplex.css, assets/cineplex.js và phần bổ sung cuối HANDOFF.md làm tham chiếu giao diện. Quyết định này thay cách mở dialog tài khoản trước đây bằng trang Profile; không thay đặc tả xác thực/profile thật ở mục 5 và 29.
+
+- Đăng nhập khách hàng: thêm dòng “hoặc” và nút “Đăng nhập bằng Google” nền trắng, viền #D9D3D6, bo 12dp, cao tối thiểu 56dp; dùng logo gốc trong ZIP, rộng 20dp, giữ tỷ lệ 200:204. Khóa nút trong lúc submit; không xuất hiện ở đăng ký/đăng nhập nhân viên. Bấm chỉ mở “Chức năng sẽ được bổ sung”, không tạo phiên/OAuth giả.
+- Profile: route PROFILE và ProfileScreen Compose riêng, mở qua avatar khách hàng/admin hoặc navigation Tài khoản. Session mock gồm name, email chuẩn hóa và role; không chứa password. Dùng dữ liệu của tài khoản đăng nhập/đăng ký, không thêm số điện thoại/ngày sinh/dữ liệu giả.
+- Nội dung gồm tiêu đề “Thông tin cá nhân”, avatar initials từ hai từ cuối tên, tên/role, thẻ “Thông tin tài khoản” với họ tên/email/loại tài khoản, chỉnh sửa, “Bảo mật & hỗ trợ”, đổi mật khẩu/chính sách bảo mật/trợ giúp, đăng xuất.
+- Giữ palette Cineplex, heading sans-serif hỗ trợ dấu tiếng Việt 32/24sp, avatar 80dp, padding 24dp trên mobile và 48dp trên tablet; nội dung cuộn được. Từ 768dp chia hai cột nhận diện/nội dung, giới hạn rộng 960dp. Dùng chung CustomerNavigation với Home; chọn Tài khoản ở Profile, admin không có navigation khách hàng.
+- Back/Trang chủ khôi phục Home cùng query/tab/scroll của khách hàng; admin trở về dashboard. Back khi dialog đang mở chỉ đóng dialog. Logout xóa session, reset Home, về login; mở tài khoản và Back sau logout không khôi phục màn hình được bảo vệ.
+- Chỉnh sửa/đổi mật khẩu/trợ giúp mở thông báo đúng export; chính sách bảo mật dùng nội dung mẫu hiện có. Các mục Phim/Vé của tôi giữ thông báo hiện có.
+- Sửa lỗi lint có sẵn: tách Theme.Cineplex.Base và đặt windowLightNavigationBar trong values-v27 để giữ minSdk 24; logo Google ở drawable-nodpi. Không thêm dependency, backend/API/database hoặc business rule.
+
+### Bằng chứng kiểm tra 2026-10-09
+
+- Local Android: `assembleDebug testDebugUnitTest lintDebug --console=plain` thành công. 18 unit tests đạt, gồm email chuẩn hóa trong session, route/role/back/logout profile và Google không tạo phiên/khóa lúc gửi. Lint 0 lỗi, 23 cảnh báo còn lại; không tắt/bỏ qua lint hoặc test.
+- Emulator Pixel_10_Pro_XL Android 17, 360×800dp: `connectedDebugAndroidTest` thành công, 10 tests (9 CineplexUiTest và 1 test có sẵn), 0 lỗi/thất bại/bỏ qua.
+- APK cuối cùng sau sửa resource: 3 test Google/customer profile/admin profile chạy lại bằng AndroidJUnitRunner đạt cả ở 360×800dp và tablet 820×1180dp. Kiểm tra avatar và navigation, thông tin/email, dialog, chọn Tài khoản, Back/Trang chủ giữ query và vị trí scroll, admin về đúng dashboard, logout chặn mở lại profile.
+- Đã xem ảnh chụp login Google, profile khách hàng/admin và phần thao tác; mobile cuộn và tablet hai cột hiển thị đúng. Ảnh chỉ ở `N8_Cineplex/app/build/visual-profile-360/visual_checks/` và `visual-profile-tablet/visual_checks/`, không đưa vào source. Emulator đã khôi phục kích thước gốc 1344×2992; APK mới được cài và MainActivity mở thành công.
+- APK: `N8_Cineplex/app/build/outputs/apk/debug/app-debug.apk`. Không commit/push; không sửa backend nên không rebuild/deploy/kiểm tra VPS trong đợt này. Giữ lịch sử kiểm tra cũ và các thay đổi có sẵn của người dùng.
+
+Phần còn lại ngoài scope đợt UI: Google OAuth và cập nhật profile/email/password/avatar qua backend thật theo các mục đã đặc tả, vẫn **Chưa làm** trong bản UI mock này. Bước tiếp theo: người dùng review giao diện, rồi tích hợp khi backend tương ứng sẵn sàng.

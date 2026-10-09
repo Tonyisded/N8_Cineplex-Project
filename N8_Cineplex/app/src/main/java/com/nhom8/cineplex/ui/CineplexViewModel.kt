@@ -78,6 +78,7 @@ class CineplexViewModel(private val repository: MockAccountRepository = MockAcco
         when(screen) {
             Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN)
             Screen.DETAIL -> { movie = null; screen = Screen.HOME }
+            Screen.PROFILE -> screen = if (session?.role == Role.ADMIN) Screen.ADMIN else Screen.HOME
             else -> Unit
         }
     }
@@ -87,7 +88,18 @@ class CineplexViewModel(private val repository: MockAccountRepository = MockAcco
     }
     fun dismissNotice() { notice = null }
     fun account() {
-        session?.let { notice = Notice("Tài khoản Cineplex", "${it.name} · ${if(it.role == Role.ADMIN) "Quản trị viên" else "Khách hàng"}", true) }
+        if (session != null) { notice = null; screen = Screen.PROFILE }
+    }
+    fun google() {
+        if (!loading && screen == Screen.LOGIN) notice = Notice("Chức năng sẽ được bổ sung", "Đăng nhập bằng Google chưa được kết nối trong prototype này.")
+    }
+    fun profileAction(feature: String) {
+        if (session == null || screen != Screen.PROFILE) return
+        notice = Notice("Chức năng sẽ được bổ sung", when (feature) {
+            "edit" -> "Bạn sẽ có thể cập nhật thông tin cá nhân tại đây."
+            "password" -> "Tính năng đổi mật khẩu chưa được triển khai trong prototype."
+            else -> "Mục hỗ trợ người dùng đang được chuẩn bị."
+        })
     }
     fun coming(feature: String) {
         notice = Notice("Sắp ra mắt", if(feature == "Đặt vé") "Tính năng đặt vé đang được chuẩn bị. Bạn có thể tiếp tục khám phá các bộ phim." else "Mục $feature đang được chuẩn bị. Hãy quay lại sau nhé.")
