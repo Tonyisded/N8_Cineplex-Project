@@ -126,7 +126,11 @@ model Movie {
   ageRating       String     @map("age_rating") @db.Text
   genre           String?    @db.Text
   language        String?    @db.Text
-  sourceUrl       String     @map("source_url") @db.Text
+  sourceUrl       String     @unique @map("source_url") @db.Text
+  originalTitle   String?    @map("original_title") @db.Text
+  releaseDate     DateTime?  @map("release_date") @db.Date
+  director        String?    @db.Text
+  cast            String?    @db.Text
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
   showtimes       Showtime[]
 

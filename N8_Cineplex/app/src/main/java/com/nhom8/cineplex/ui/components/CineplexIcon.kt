@@ -30,6 +30,7 @@ fun CineplexIcon(name: String, modifier: Modifier = Modifier, color: Color = Mat
             "close" -> { m(6f,6f);l(18f,18f);m(6f,18f);l(18f,6f) }
             "exit" -> { m(10f,4f);l(4f,4f);l(4f,20f);l(10f,20f);m(9f,12f);l(21f,12f);m(16f,7f);l(21f,12f);l(16f,17f) }
             "search" -> { circle(10f,10f,7f);m(15f,15f);l(21f,21f) }
+            "calendar" -> { m(3f,5f);l(21f,5f);l(21f,21f);l(3f,21f);p.close();m(3f,10f);l(21f,10f);m(8f,3f);l(8f,7f);m(16f,3f);l(16f,7f) }
             "clock" -> { circle(12f,12f,10f);m(12f,8f);l(12f,12f);l(15f,14f) }
             "eye", "eye_off" -> { m(2f,12f);p.cubicTo(8*s,3*s,16*s,3*s,22*s,12*s);p.cubicTo(16*s,21*s,8*s,21*s,2*s,12*s);circle(12f,12f,3f);if(name=="eye_off"){m(3f,3f);l(21f,21f)} }
             else -> { m(3f,7f);l(21f,7f);l(21f,19f);l(3f,19f);p.close();m(15f,7f);l(15f,19f) }

@@ -20,8 +20,9 @@
     "test:crawler": "node --test tests/crawler.test.mjs",
     "test:auth": "node --test tests/auth.test.mjs",
     "test": "node --test tests/*.test.mjs",
-    "crawler:smoke": "node dist/crawler/smoke.js",
-    "format:check": "npx --yes prettier@3.9.9 --end-of-line auto --check package.json tsconfig.json src/app.module.ts src/config.ts src/main.ts src/prisma.module.ts src/auth src/crawler tests ../.github/workflows/backend-ci.yml"
+    "crawler:run": "node --env-file-if-exists=.env dist/crawler/run.js",
+    "crawler:smoke": "node --env-file-if-exists=.env dist/crawler/smoke.js",
+    "format:check": "npx --yes prettier@3.9.9 --end-of-line auto --check package.json tsconfig.json src/app.module.ts src/config.ts src/main.ts src/prisma.module.ts src/auth src/crawler src/catalog tests ../.github/workflows/backend-ci.yml"
   },
   "dependencies": {
     "@nestjs/common": "12.1.2",

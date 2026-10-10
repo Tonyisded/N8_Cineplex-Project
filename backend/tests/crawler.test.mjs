@@ -12,6 +12,7 @@ import { NestFactory } from "@nestjs/core";
 import { ScheduleModule, SchedulerRegistry } from "@nestjs/schedule";
 import { chromium } from "playwright";
 import { validateEnvironment } from "../dist/config.js";
+import { CrawlerImportService } from "../dist/crawler/crawler-import.service.js";
 import { CrawlerJob } from "../dist/crawler/crawler.job.js";
 import {
   CGV_LANDMARK_URL,
@@ -38,11 +39,12 @@ async function fixture(t, html = validHtml, status = 200, headers = {}) {
   let requests = 0;
   const server = createServer((_req, res) => {
     requests++;
-    res.writeHead(status, {
+    const content = typeof html === "function" ? html(_req) : html;
+    res.writeHead(content?.status ?? status, {
       "Content-Type": "text/html; charset=utf-8",
       ...headers,
     });
-    res.end(html);
+    res.end(content?.html ?? content);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -63,12 +65,25 @@ async function fixture(t, html = validHtml, status = 200, headers = {}) {
       t.mock.method(requestRoute, "fetch", (options) => {
         assert.equal(options.maxRedirects, 0);
         assert.equal(options.maxRetries, 0);
-        return context.request.get(localUrl, options);
+        return context.request.get(localUrl, {
+          ...options,
+          params: {
+            url: requestRoute.request().url(),
+            data: requestRoute.request().postData() ?? "",
+          },
+        });
       });
       await handler(requestRoute);
     }),
   );
-  t.mock.method(browser, "newContext", async () => context);
+  t.mock.method(browser, "newContext", async (options) => {
+    assert.deepEqual(options, {
+      locale: "vi-VN",
+      serviceWorkers: "block",
+      acceptDownloads: false,
+    });
+    return context;
+  });
   t.mock.method(chromium, "launch", async (options) => {
     assert.equal(options.timeout, 15_000);
     return browser;
@@ -199,7 +214,7 @@ test("registered six-hour cron is disabled by config and prevents overlap", asyn
   let calls = 0;
   let release;
   const crawler = {
-    probe: async () => {
+    runUpcoming: async () => {
       calls++;
       await new Promise((resolve) => {
         release = resolve;
@@ -213,7 +228,7 @@ test("registered six-hour cron is disabled by config and prevents overlap", asyn
     providers: [
       CrawlerJob,
       { provide: ConfigService, useValue: config },
-      { provide: CrawlerService, useValue: crawler },
+      { provide: CrawlerImportService, useValue: crawler },
     ],
   })(TestModule);
   const app = await NestFactory.createApplicationContext(TestModule, {
@@ -240,7 +255,7 @@ test("cron errors are logged, not propagated to the backend", async (t) => {
   const errors = [];
   t.mock.method(Logger.prototype, "error", (message) => errors.push(message));
   const job = new CrawlerJob(new ConfigService({ CRAWLER_ENABLED: true }), {
-    probe: async () => {
+    runUpcoming: async () => {
       throw new Error("CGV unavailable");
     },
   });
@@ -267,3 +282,199 @@ test("CLI needs no database and reports missing Chromium with exit 1", () => {
   assert.match(result.stderr, /Executable doesn't exist/);
   assert.doesNotMatch(result.stderr, /DATABASE_URL|PostgreSQL/);
 });
+
+const collectHtml = validHtml.replace(
+  "</body>",
+  `<div class="datewrapper"><li id="cgv20261010" class="day current">10</li></div>
+<div class="film-list"><div class="film-label"><h3><a href="https://www.cgv.vn/default/fixture.html">Phim</a></h3><span class="icon-T18"></span></div>
+<strong class="film-screen std">2D Phụ Đề Việt</strong><div class="film-showtimes"><a href="https://www.cgv.vn/default/cinemas/booking/tickets/site/071/seq/123/dy/20261010">23:30</a></div></div>
+<div class="product-view"><h1>Phim</h1></div><div class="movie-info">Thời lượng: 95 phút</div><div class="movie-rating">Rated: T18</div></body>`,
+);
+test("collect renders fixture movie metadata and site071/date/time identity using Chromium", async (t) => {
+  const f = await fixture(t, collectHtml);
+  const s = await new CrawlerService().collect("2026-10-10");
+  assert.equal(s.sourceMovies, 1);
+  assert.equal(s.sourceShowtimes, 1);
+  assert.equal(s.movies.length, 1);
+  assert.equal(s.showtimes.length, 1);
+  assert.equal(s.skipped.length, 0);
+  assert.equal(s.showtimes[0].format, "STANDARD_2D");
+  assert.equal(
+    s.showtimes[0].startAt.toISOString(),
+    "2026-10-10T16:30:00.000Z",
+  );
+  assert.equal(f.browser.isConnected(), false);
+});
+test("collect skips invalid duration instead of inventing movie/showtime metadata", async (t) => {
+  await fixture(t, collectHtml.replace("95 phút", "không rõ"));
+  const s = await new CrawlerService().collect("2026-10-10");
+  assert.equal(s.movies.length, 0);
+  assert.equal(s.showtimes.length, 0);
+  assert.equal(s.skipped.length, 1);
+});
+test("collect skips unknown capability and does not classify from technology footer icons", async (t) => {
+  await fixture(t, collectHtml.replace("film-screen std", "film-screen 4dx"));
+  const s = await new CrawlerService().collect("2026-10-10");
+  assert.equal(s.movies.length, 1);
+  assert.equal(s.showtimes.length, 0);
+  assert.equal(s.skipped.length, 1);
+});
+test("collect recognizes explicit published empty day and rejects unpublished date", async (t) => {
+  await fixture(
+    t,
+    validHtml.replace(
+      "</body>",
+      '<li id="cgv20261010" class="current">10</li><p>No schedules available !</p></body>',
+    ),
+  );
+  const s = await new CrawlerService().collect("2026-10-10");
+  assert.equal(s.sourceMovies, 0);
+  assert.equal(s.sourceShowtimes, 0);
+});
+
+async function scheduleFixture(t, daily, ids = Object.keys(daily)) {
+  const requested = [],
+    detailRequests = [];
+  const f = await fixture(t, (req) => {
+    const params = new URL(req.url, "http://127.0.0.1").searchParams;
+    if (params.get("url").endsWith("fixture.html")) {
+      detailRequests.push(params.get("url"));
+      return collectHtml;
+    }
+    const date =
+      new URL(params.get("url")).searchParams.get("selecteddate") ||
+      new URLSearchParams(params.get("data")).get("selecteddate") ||
+      "20261010";
+    requested.push(date);
+    if (daily[date] === "CHALLENGE")
+      return "<p>Please enable JavaScript to view the page content.</p>";
+    if (daily[date] === "HTTP_ERROR")
+      return { status: 503, html: "unavailable" };
+    const tabs = ids
+      .map(
+        (id) =>
+          `<li id="cgv${id}" class="day ${id === "20261010" ? "current" : ""}" onclick="selectDay('${id}')">${id}</li>`,
+      )
+      .join("");
+    const content =
+      daily[date] === "EMPTY"
+        ? "<p>No schedules available !</p>"
+        : daily[date] === "BROKEN"
+          ? "<p>Unexpected markup</p>"
+          : `<div class="film-list"><div class="film-label"><h3><a href="https://www.cgv.vn/default/fixture.html">Phim</a></h3><span class="icon-T18"></span></div><strong class="film-screen ${daily[date] === "INVALID" ? "4dx" : "std"}">2D</strong><div class="film-showtimes"><a href="https://www.cgv.vn/default/cinemas/booking/tickets/site/071/seq/123/dy/${date}">23:30</a></div></div>`;
+    return validHtml.replace(
+      "</body>",
+      `<ul>${tabs}</ul><div class="tabs-cgv-showtimes">${content}</div></body>`,
+    );
+  });
+  return { ...f, requested, detailRequests };
+}
+const consumeSnapshots = (snapshots) => async (_date, collect) => {
+  const snapshot = await collect();
+  snapshots.push(snapshot);
+  return snapshot;
+};
+
+test("range visits today and future days, stops at first future empty, skips past and caches movie pages", async (t) => {
+  const f = await scheduleFixture(t, {
+    20261009: "FILM",
+    20261010: "FILM",
+    20261011: "FILM",
+    20261012: "EMPTY",
+    20261013: "FILM",
+  });
+  const snapshots = [];
+  const result = await new CrawlerService().collectUpcoming(
+    "2026-10-10",
+    consumeSnapshots(snapshots),
+  );
+  assert.deepEqual(
+    snapshots.map((s) => s.businessDate),
+    ["2026-10-10", "2026-10-11", "2026-10-12"],
+  );
+  assert.deepEqual(result, { stopReason: "EMPTY_DAY", stopDate: "2026-10-12" });
+  assert.deepEqual(f.requested, ["20261010", "20261011", "20261012"]);
+  assert.equal(f.detailRequests.length, 1);
+  assert.equal(snapshots[1].showtimes[0].sourceKey, "cgv:071:20261011:123");
+  assert.equal(snapshots[2].empty, true);
+  assert.equal(f.browser.isConnected(), false);
+});
+
+test("public GET date selection works despite today's current tab; empty today does not stop tomorrow", async (t) => {
+  const f = await scheduleFixture(t, {
+    20261010: "EMPTY",
+    20261011: "FILM",
+    20261012: "EMPTY",
+  });
+  const snapshots = [];
+  const result = await new CrawlerService().collectUpcoming(
+    "2026-10-10",
+    consumeSnapshots(snapshots),
+  );
+  assert.deepEqual(
+    snapshots.map((s) => s.empty),
+    [true, false, true],
+  );
+  assert.equal(result.stopDate, "2026-10-12");
+  assert.deepEqual(f.requested, ["20261010", "20261011", "20261012"]);
+});
+
+test("range stops when the next calendar day is unpublished, not an invented empty day", async (t) => {
+  const f = await scheduleFixture(t, {
+    20261010: "FILM",
+    20261011: "FILM",
+    20261013: "FILM",
+  });
+  const snapshots = [];
+  const result = await new CrawlerService().collectUpcoming(
+    "2026-10-10",
+    consumeSnapshots(snapshots),
+  );
+  assert.deepEqual(result, {
+    stopReason: "UNPUBLISHED_DATE",
+    stopDate: "2026-10-12",
+  });
+  assert.deepEqual(f.requested, ["20261010", "20261011"]);
+});
+
+test("invalid showtimes are skipped but never mistaken for an empty source day", async (t) => {
+  await scheduleFixture(t, {
+    20261010: "FILM",
+    20261011: "INVALID",
+    20261012: "FILM",
+    20261013: "EMPTY",
+  });
+  const snapshots = [];
+  await new CrawlerService().collectUpcoming(
+    "2026-10-10",
+    consumeSnapshots(snapshots),
+  );
+  assert.equal(snapshots.length, 4);
+  assert.equal(snapshots[1].sourceShowtimes, 1);
+  assert.equal(snapshots[1].showtimes.length, 0);
+  assert.equal(snapshots[1].skipped.length, 1);
+  assert.equal(snapshots[1].empty, false);
+  assert.equal(snapshots[2].showtimes.length, 1);
+});
+
+for (const failure of ["HTTP_ERROR", "BROKEN", "CHALLENGE"])
+  test(`range ${failure} preserves already delivered days and closes Chromium`, async (t) => {
+    const f = await scheduleFixture(t, {
+      20261010: "FILM",
+      20261011: failure,
+      20261012: "EMPTY",
+    });
+    const snapshots = [];
+    await assert.rejects(
+      new CrawlerService().collectUpcoming(
+        "2026-10-10",
+        consumeSnapshots(snapshots),
+      ),
+      failure === "HTTP_ERROR" ? /HTTP 503/ : /Timeout|missing or incorrect/,
+    );
+    assert.deepEqual(
+      snapshots.map((s) => s.businessDate),
+      ["2026-10-10"],
+    );
+    assert.equal(f.browser.isConnected(), false);
+  });
