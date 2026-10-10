@@ -24,6 +24,9 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.nhom8.cineplex.data.ApiCatalogRepository
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import com.nhom8.cineplex.data.ApiAccountRepository
 import kotlinx.coroutines.CancellationException
 import com.nhom8.cineplex.model.Screen
@@ -39,7 +42,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT))
         val vm = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = CineplexViewModel(ApiAccountRepository(applicationContext)) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = CineplexViewModel(ApiAccountRepository(applicationContext), ApiCatalogRepository()) as T
         })[CineplexViewModel::class.java]
         setContent { CineplexMockTheme { CineplexApp(vm) } }
     }
@@ -54,9 +57,12 @@ fun CineplexApp(vm: CineplexViewModel) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, vm) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) vm.refreshProfile() }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { vm.refreshProfile(); vm.refreshCatalog() } }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(lifecycle, vm) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { delay(60_000); vm.refreshCatalog(force = false) } }
     }
     LaunchedEffect(vm.googleRequested) {
         if (vm.googleRequested) {

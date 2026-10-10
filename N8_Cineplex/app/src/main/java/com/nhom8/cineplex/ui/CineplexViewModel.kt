@@ -9,8 +9,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-class CineplexViewModel(private val repository: AccountRepository? = null) : ViewModel() {
-    constructor(mock: MockAccountRepository) : this(MockAccountAdapter(mock))
+class CineplexViewModel(private val repository: AccountRepository? = null, private val catalog: CatalogRepository? = null, private val today: () -> String = { vietnamDate() }) : ViewModel() {
+    constructor(mock: MockAccountRepository) : this(MockAccountAdapter(mock), MockCatalogRepository)
     var screen by mutableStateOf(Screen.LOGIN); private set
     var form by mutableStateOf(AuthForm()); private set
     var errors by mutableStateOf<Map<String, String>>(emptyMap()); private set
@@ -25,13 +25,76 @@ class CineplexViewModel(private val repository: AccountRepository? = null) : Vie
     var notice by mutableStateOf<Notice?>(null); private set
     var dialog by mutableStateOf<String?>(null); private set
     var googleRequested by mutableStateOf(false); private set
+    var movies by mutableStateOf<List<Movie>>(emptyList()); private set
+    var showtimes by mutableStateOf<List<ShowtimeDto>>(emptyList()); private set
+    var catalogDate by mutableStateOf(""); private set
+    var availableDates by mutableStateOf<List<String>>(emptyList()); private set
+    val todayDate get() = today()
+    val catalogDateChoices: List<String> get() {
+        val first = today()
+        val end = nextCalendarDate(maxOf(availableDates.maxOrNull() ?: first, first))
+        return (generateSequence(first, ::nextCalendarDate).takeWhile { it <= end }.toList() + catalogDate.ifBlank { first }).filter { it >= first }.distinct().sorted()
+    }
+    private var lastCatalogToday = ""
+    var catalogLoading by mutableStateOf(false); private set
+    var catalogError by mutableStateOf(""); private set
+    var detailLoading by mutableStateOf(false); private set
+    var detailError by mutableStateOf(""); private set
+    val fixtureCatalog get() = catalog === MockCatalogRepository
+    val filteredMovies get() = searchMovies(movies.filter { it.soon == soon }, query)
+    private var catalogRequest: Job? = null
+    private var detailRequest: Job? = null
+    private var catalogEpoch = 0
+    private var detailEpoch = 0
+    private fun clearCatalog() {
+        catalogEpoch++; detailEpoch++; catalogRequest?.cancel(); detailRequest?.cancel()
+        catalogRequest = null; detailRequest = null; movies = emptyList(); showtimes = emptyList(); movie = null
+        catalogLoading = false; detailLoading = false; catalogError = ""; detailError = ""; catalogDate = ""; availableDates = emptyList(); lastCatalogToday = ""
+    }
+    fun selectCatalogDate(date: String) {
+        calendarDateMillis(date)
+        if (date < today() || session?.role != Role.CUSTOMER || catalog == null) return
+        soon = false
+        if (date == catalogDate) return
+        catalogRequest?.cancel(); catalogRequest = null; catalogDate = date
+        refreshCatalog()
+    }
+    fun refreshCatalog(force: Boolean = true) {
+        if (session?.role != Role.CUSTOMER || catalog == null) return
+        val currentToday = today()
+        val date = maxOf(catalogDate.ifBlank { currentToday }, currentToday)
+        if (!force && catalogDate == date && lastCatalogToday == currentToday) return
+        if (catalogRequest?.isActive == true && catalogDate == date) return
+        val epoch = ++catalogEpoch; catalogRequest?.cancel(); catalogDate = date; lastCatalogToday = currentToday; catalogLoading = true; catalogError = ""; movies = emptyList()
+        catalogRequest = viewModelScope.launch {
+            try { val dates = catalog.dates(); val result = catalog.movies(date); if (epoch == catalogEpoch) { availableDates = dates; movies = result } }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { if (epoch == catalogEpoch) catalogError = "Không tải được danh sách phim. Kiểm tra mạng rồi thử lại." }
+            finally { if (epoch == catalogEpoch) catalogLoading = false }
+        }
+        if (screen == Screen.DETAIL) refreshMovie()
+    }
+    fun refreshMovie() {
+        val selected = movie ?: return
+        if (session?.role != Role.CUSTOMER || catalog == null) return
+        val epoch = ++detailEpoch; detailRequest?.cancel(); detailLoading = true; detailError = ""; showtimes = emptyList()
+        val date = catalogDate.ifBlank { today() }
+        detailRequest = viewModelScope.launch {
+            try {
+                val updated = catalog.movie(selected.id); val slots = catalog.showtimes(selected.id, date)
+                if (epoch == detailEpoch) { movie = updated; showtimes = slots }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { if (epoch == detailEpoch) detailError = "Không tải được chi tiết/lịch chiếu. Hãy thử lại." }
+            finally { if (epoch == detailEpoch) detailLoading = false }
+        }
+    }
     private var pendingGoogleEmail: String? = null
     private var request: Job? = null
     private var version = 0
     private val repo get() = repository ?: error("Account repository not initialized")
     init { if (repository != null && repository !is MockAccountAdapter) run { repository.restore()?.let(::signedIn) } }
     private fun home() = when (session?.role) { Role.ADMIN -> Screen.ADMIN; Role.STAFF -> Screen.STAFF_HOME; else -> Screen.HOME }
-    private fun signedIn(value: Session) { session = value; form = AuthForm(); errors = emptyMap(); screen = home() }
+    private fun signedIn(value: Session) { session = value; form = AuthForm(); errors = emptyMap(); screen = home(); refreshCatalog() }
     private fun run(force: Boolean = false, block: suspend () -> Unit) {
         if (loading && !force) return
         val epoch = ++version; loading = true; feedback = ""; errors = emptyMap()
@@ -43,7 +106,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null) : Vie
                     feedback = e.message; success = false
                     errors = e.fields.mapKeys { if (it.key == "fullName") "name" else it.key }
                     staffRequired = e.code == "WRONG_PORTAL" && screen == Screen.LOGIN
-                    if (session != null && e.code in listOf("SESSION_REVOKED", "ACCOUNT_UNAVAILABLE", "INVALID_TOKEN", "SESSION_CANCELED")) { session = null; screen = Screen.LOGIN; dialog = null }
+                    if (session != null && e.code in listOf("SESSION_REVOKED", "ACCOUNT_UNAVAILABLE", "INVALID_TOKEN", "SESSION_CANCELED")) { session = null; clearCatalog(); screen = Screen.LOGIN; dialog = null }
                     if (screen !in listOf(Screen.LOGIN, Screen.SIGNUP, Screen.STAFF)) notice = Notice("Không thực hiện được", e.message)
                 }
             } catch (_: Exception) { if (epoch == version) { feedback = "Không thực hiện được. Hãy thử lại."; if (session != null) notice = Notice("Lỗi", feedback) } }
@@ -58,7 +121,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null) : Vie
     }
     fun navigate(target: Screen) {
         if (target !in listOf(Screen.LOGIN, Screen.SIGNUP, Screen.STAFF)) return
-        version++; request?.cancel(); request = null; loading = false; googleRequested = false; pendingGoogleEmail = null
+        clearCatalog(); version++; request?.cancel(); request = null; loading = false; googleRequested = false; pendingGoogleEmail = null
         session = null; screen = target; form = AuthForm(); errors = emptyMap(); feedback = ""; success = false; staffRequired = false; notice = null; dialog = null
     }
     fun submit() {
@@ -77,11 +140,11 @@ class CineplexViewModel(private val repository: AccountRepository? = null) : Vie
             }
         }
     }
-    fun openMovie(value: Movie) { if (session?.role == Role.CUSTOMER) { movie = value; screen = Screen.DETAIL } }
+    fun openMovie(value: Movie) { if (session?.role == Role.CUSTOMER) { movie = value; screen = Screen.DETAIL; refreshMovie() } }
     fun back() {
         if (notice != null) { dismissNotice(); return }
         if (dialog != null) { if (!loading) dialog = null; return }
-        when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.DETAIL -> { movie = null; screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }
+        when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.DETAIL -> { detailEpoch++; detailRequest?.cancel(); detailLoading = false; movie = null; showtimes = emptyList(); screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }
     }
     fun logout() {
         query = ""; soon = false; movie = null; navigate(Screen.LOGIN)
@@ -92,7 +155,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null) : Vie
     fun account() { if (session != null) { notice = null; screen = Screen.PROFILE; refreshProfile() } }
     fun refreshProfile() {
         if (session == null || repository is MockAccountAdapter || loading) return
-        run { val oldEmail = session?.email; val current = repo.me(); if (oldEmail != null && current.email != oldEmail) { session = null; screen = Screen.LOGIN; repo.logout(); feedback = "Email đã thay đổi. Hãy đăng nhập lại." } else session = current }
+        run { val oldEmail = session?.email; val current = repo.me(); if (oldEmail != null && current.email != oldEmail) { session = null; clearCatalog(); screen = Screen.LOGIN; repo.logout(); feedback = "Email đã thay đổi. Hãy đăng nhập lại." } else session = current }
     }
     fun google() {
         if (loading || screen != Screen.LOGIN) return
@@ -119,7 +182,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null) : Vie
     fun resend() { val email = session?.email ?: form.email; if (email.isNotBlank()) run { notice = Notice("Kiểm tra email", repo.resend(email)) } }
     fun password(current: String, replacement: String, confirm: String) {
         if (current.isEmpty() || replacement.length !in 8..128 || replacement != confirm) { feedback = "Kiểm tra mật khẩu hiện tại, mật khẩu mới 8–128 ký tự và xác nhận."; return }
-        run { val message = repo.changePassword(current, replacement); session = null; screen = Screen.LOGIN; dialog = null; repo.logout(); feedback = message; success = true }
+        run { val message = repo.changePassword(current, replacement); session = null; clearCatalog(); screen = Screen.LOGIN; dialog = null; repo.logout(); feedback = message; success = true }
     }
     fun email(value: String, password: String) {
         if (!Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$").matches(value.trim())) { feedback = "Email chưa đúng định dạng."; return }

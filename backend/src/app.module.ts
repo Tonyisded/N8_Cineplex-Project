@@ -8,12 +8,14 @@ import { AuthModule } from "./auth/auth.module.js";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { APP_GUARD } from "@nestjs/core";
 import { CrawlerModule } from "./crawler/crawler.module.js";
+import { CatalogModule } from "./catalog/catalog.module.js";
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
     ScheduleModule.forRoot(),
     CrawlerModule,
+    CatalogModule,
     PrismaModule,
     AuthModule,
     ThrottlerModule.forRoot([{ name: "default", ttl: 60000, limit: 120 }]),
