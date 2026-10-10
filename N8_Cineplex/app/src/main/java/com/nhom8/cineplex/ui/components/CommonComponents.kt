@@ -44,9 +44,9 @@ fun LinkButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
     }
 }
 @Composable
-fun Avatar(onClick: () -> Unit, admin: Boolean = false) {
+fun Avatar(onClick: () -> Unit, admin: Boolean = false, session: com.nhom8.cineplex.model.Session? = null) {
     Surface(onClick, shape = CircleShape, color = C.Raised, border = BorderStroke(1.dp,C.Line), modifier = Modifier.size(48.dp).semantics { contentDescription = if(admin) "Mở tài khoản quản trị" else "Mở tài khoản" }) {
-        Box(contentAlignment = Alignment.Center) { CineplexIcon("user",color = C.Primary) }
+        UserAvatar(session, Modifier.fillMaxSize())
     }
 }
 @Composable

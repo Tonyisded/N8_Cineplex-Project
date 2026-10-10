@@ -14,10 +14,10 @@ import com.nhom8.cineplex.ui.theme.CineplexColors as C
 @Composable
 fun AdminScreen(vm: CineplexViewModel) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceBetween,verticalAlignment = Alignment.CenterVertically) { CineplexLogo(); Avatar(vm::account,admin = true) }
+        Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.SpaceBetween,verticalAlignment = Alignment.CenterVertically) { CineplexLogo(); Avatar(vm::account,admin = true, session = vm.session) }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp),verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = androidx.compose.foundation.shape.CircleShape,color = C.Raised,border = BorderStroke(1.dp,C.Line),modifier = Modifier.size(48.dp)) {
-                Box(contentAlignment = Alignment.Center) { CineplexIcon("user",color = C.Primary) }
+                vm.session?.let { UserAvatar(it, Modifier.fillMaxSize()) }
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Text("ADMIN · Cineplex Staff",color = C.Primary,fontWeight = FontWeight.Bold); Text(vm.session?.name.orEmpty(),fontWeight = FontWeight.Bold) }
         }

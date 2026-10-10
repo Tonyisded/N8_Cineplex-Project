@@ -42,7 +42,7 @@ jobs:
       - run: npm run typecheck
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm run format:check
-      - run: npm run test:crawler
+      - run: npm test
 
   live-cgv:
     if: github.event_name == 'workflow_dispatch' && inputs.run_live_cgv

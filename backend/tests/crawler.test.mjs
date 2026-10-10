@@ -23,6 +23,15 @@ const validHtml = `<!doctype html><html><head><title>Site</title></head><body>
   <div class="theater-address">Tầng B1, Landmark 81, 772 Điện Biên Phủ</div>
 </body></html>`;
 const databaseUrl = "postgresql://ci:ci@127.0.0.1:5432/n8_cineplex";
+const authConfig = {
+  JWT_ACCESS_SECRET: "a".repeat(40),
+  JWT_REFRESH_SECRET: "b".repeat(40),
+  JWT_EMAIL_SECRET: "c".repeat(40),
+  GMAIL_USER: "sender@example.test",
+  GMAIL_APP_PASSWORD: "t".repeat(16),
+  PUBLIC_BASE_URL: "https://18.143.100.43/api/v1",
+  AVATAR_UPLOAD_DIR: tmpdir(),
+};
 
 // Real Chromium renders fixture HTML; only route.fetch is redirected to a local server.
 async function fixture(t, html = validHtml, status = 200, headers = {}) {
@@ -68,14 +77,20 @@ async function fixture(t, html = validHtml, status = 200, headers = {}) {
 }
 
 test("environment defaults preserve localhost and disable the crawler", () => {
-  const config = validateEnvironment({ DATABASE_URL: databaseUrl });
+  const config = validateEnvironment({
+    ...authConfig,
+    DATABASE_URL: databaseUrl,
+  });
   assert.equal(config.HOST, "127.0.0.1");
   assert.equal(config.PORT, 5000);
   assert.equal(config.CRAWLER_ENABLED, false);
   for (const value of ["true", "false"]) {
     assert.equal(
-      validateEnvironment({ DATABASE_URL: databaseUrl, CRAWLER_ENABLED: value })
-        .CRAWLER_ENABLED,
+      validateEnvironment({
+        ...authConfig,
+        DATABASE_URL: databaseUrl,
+        CRAWLER_ENABLED: value,
+      }).CRAWLER_ENABLED,
       value === "true",
     );
   }
@@ -83,6 +98,7 @@ test("environment defaults preserve localhost and disable the crawler", () => {
     assert.throws(
       () =>
         validateEnvironment({
+          ...authConfig,
           DATABASE_URL: databaseUrl,
           CRAWLER_ENABLED: value,
         }),

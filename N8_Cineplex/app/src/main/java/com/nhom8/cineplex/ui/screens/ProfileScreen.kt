@@ -5,7 +5,16 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -21,13 +30,12 @@ import com.nhom8.cineplex.model.Session
 import com.nhom8.cineplex.ui.CineplexViewModel
 import com.nhom8.cineplex.ui.components.*
 import com.nhom8.cineplex.ui.theme.CineplexColors as C
-import java.util.Locale
 
 @Composable
 fun ProfileScreen(vm: CineplexViewModel) {
     val session = vm.session ?: return
-    val staff = session.role == Role.ADMIN
-    val role = if (staff) "Quản trị viên" else "Khách hàng"
+    val staff = session.role != Role.CUSTOMER
+    val role = when(session.role) { Role.ADMIN -> "Quản trị viên"; Role.STAFF -> "Nhân viên"; Role.CUSTOMER -> "Khách hàng" }
     Column(Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             val tablet = maxWidth >= 768.dp
@@ -38,7 +46,7 @@ fun ProfileScreen(vm: CineplexViewModel) {
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(vm::back, modifier = Modifier.size(48.dp).semantics {
-                        contentDescription = if (staff) "Quay lại dashboard quản trị" else "Quay lại Trang chủ"
+                        contentDescription = when(session.role) { Role.ADMIN -> "Quay lại dashboard quản trị"; Role.STAFF -> "Quay lại trang nhân viên"; Role.CUSTOMER -> "Quay lại Trang chủ" }
                     }) { CineplexIcon("back") }
                     Spacer(Modifier.weight(1f))
                     CineplexLogo()
@@ -69,14 +77,10 @@ fun ProfileScreen(vm: CineplexViewModel) {
 
 @Composable
 private fun ProfileIdentity(session: Session, role: String, staff: Boolean, modifier: Modifier) {
-    val initials = session.name.trim().split(Regex("\\s+")).takeLast(2)
-        .filter { it.isNotEmpty() }.joinToString("") {
-            String(Character.toChars(it.codePointAt(0)))
-        }.uppercase(Locale.forLanguageTag("vi"))
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(Modifier.size(80.dp), shape = CircleShape, color = C.Raised, border = BorderStroke(1.dp, C.Line)) {
             Box(contentAlignment = Alignment.Center) {
-                Text(initials, color = C.Primary, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                UserAvatar(session, Modifier.fillMaxSize())
             }
         }
         ProfileHeading(session.name)
@@ -87,6 +91,32 @@ private fun ProfileIdentity(session: Session, role: String, staff: Boolean, modi
 
 @Composable
 private fun ProfileContent(vm: CineplexViewModel, session: Session, role: String, modifier: Modifier) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var selected by remember { mutableStateOf<android.net.Uri?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { selected = it }
+    selected?.let { uri ->
+        AlertDialog(onDismissRequest = { selected = null }, title = { Text("Xem trước ảnh đại diện") },
+            text = { AsyncImage(uri, "Ảnh đã chọn", Modifier.fillMaxWidth().height(200.dp), contentScale = ContentScale.Fit) },
+            confirmButton = { TextButton(onClick = {
+                selected = null
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                            val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+                                val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192); val limit = 5 * 1024 * 1024
+                                while (output.size() <= limit) { val n = input.read(buffer, 0, minOf(buffer.size, limit + 1 - output.size())); if (n < 0) break; output.write(buffer, 0, n) }
+                                output.toByteArray()
+                            } ?: error("Image unavailable")
+                            if (bytes.size > 5 * 1024 * 1024 || mime !in listOf("image/jpeg", "image/png", "image/webp")) error("Invalid image")
+                            bytes to mime
+                        }
+                    }
+                    result.fold({ (bytes, mime) -> vm.avatar(bytes, mime) }, { vm.avatarError() })
+                }
+            }) { Text("Upload") } }, dismissButton = { TextButton(onClick = { selected = null }) { Text("Hủy") } })
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(32.dp)) {
         Surface(shape = RoundedCornerShape(16.dp), color = C.Surface, border = BorderStroke(1.dp, C.Line)) {
             Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -95,8 +125,12 @@ private fun ProfileContent(vm: CineplexViewModel, session: Session, role: String
                     ProfileData("Họ và tên", session.name)
                     ProfileData("Email", session.email)
                     ProfileData("Loại tài khoản", role)
+                    ProfileData("Xác minh email", if(session.emailVerifiedAt != null) "Đã xác minh" else "Chưa xác minh")
                 }
-                ActionButton("Chỉnh sửa thông tin", { vm.profileAction("edit") }, Modifier.fillMaxWidth(), secondary = true, icon = "user")
+                if(session.emailVerifiedAt == null) ActionButton("Gửi lại email xác minh", vm::resend, Modifier.fillMaxWidth(), secondary = true, loading = vm.loading)
+                ActionButton("Chỉnh sửa thông tin", { vm.profileAction("edit") }, Modifier.fillMaxWidth(), secondary = true, icon = "user", loading = vm.loading)
+                ActionButton("Chọn ảnh đại diện", { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, Modifier.fillMaxWidth(), secondary = true, loading = vm.loading)
+                if(session.avatarUrl != null) ActionButton("Xóa ảnh đại diện", vm::deleteAvatar, Modifier.fillMaxWidth(), secondary = true, loading = vm.loading)
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {

@@ -7,7 +7,7 @@ import java.util.Locale
 class MockAccountRepository {
     private class Account(val name: String, val email: String, val password: String, val role: Role)
     private val accounts = mutableListOf(
-        Account("Khách hàng", "user@cineplex.test", "123456", Role.USER),
+        Account("Khách hàng", "user@cineplex.test", "123456", Role.CUSTOMER),
         Account("Quản trị viên", "admin@cineplex.test", "123456", Role.ADMIN)
     )
     fun normalizeEmail(value: String) = value.trim().lowercase(Locale.ROOT)
@@ -36,7 +36,7 @@ class MockAccountRepository {
     }
     fun register(form: AuthForm): Map<String, String> {
         val errors = validate(form, true)
-        if (errors.isEmpty()) accounts.add(Account(form.name.trim(), normalizeEmail(form.email), form.password, Role.USER))
+        if (errors.isEmpty()) accounts.add(Account(form.name.trim(), normalizeEmail(form.email), form.password, Role.CUSTOMER))
         return errors
     }
     companion object { val process = MockAccountRepository() }
