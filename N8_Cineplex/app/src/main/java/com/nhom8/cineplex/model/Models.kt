@@ -1,8 +1,8 @@
 package com.nhom8.cineplex.model
 
-enum class Role { USER, ADMIN }
-enum class Screen { LOGIN, SIGNUP, STAFF, HOME, DETAIL, ADMIN, PROFILE }
-data class Session(val name: String, val role: Role, val email: String)
+enum class Role { CUSTOMER, STAFF, ADMIN }
+enum class Screen { LOGIN, SIGNUP, STAFF, HOME, DETAIL, ADMIN, PROFILE, STAFF_HOME }
+data class Session(val name: String, val role: Role, val email: String, val id: String = "", val avatarUrl: String? = null, val emailVerifiedAt: String? = null, val hasPassword: Boolean = true)
 data class AuthForm(val name: String = "", val email: String = "", val password: String = "", val confirm: String = "", val consent: Boolean = false) {
     override fun toString() = "AuthForm(name=$name, email=$email, password=<redacted>, confirm=<redacted>, consent=$consent)"
 }

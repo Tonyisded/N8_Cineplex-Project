@@ -112,7 +112,9 @@ class CineplexUiTest {
         login("user@cineplex.test","wrong")
         compose.onNodeWithText("Sai tài khoản hoặc mật khẩu. Vui lòng kiểm tra và thử lại.").assertExists()
         compose.onNodeWithText("Quên mật khẩu?").performScrollTo().performClick()
-        compose.onNodeWithText("Chức năng sẽ được bổ sung").assertIsDisplayed()
+        compose.onNodeWithText("Quên mật khẩu").assertIsDisplayed()
+        compose.onNodeWithText("Gửi email đặt lại mật khẩu").assertIsDisplayed()
+        compose.onNodeWithText("Đóng").performClick()
     }
     @Test fun adminGuidanceAndAuthBack() {
         login("admin@cineplex.test","123456")
@@ -145,13 +147,16 @@ class CineplexUiTest {
         compose.onNodeWithText("Chỉnh sửa thông tin").performScrollTo().performClick()
         compose.onNodeWithText("Chức năng sẽ được bổ sung").assertIsDisplayed(); back()
         Assert.assertEquals(Screen.PROFILE, vm.screen)
-        listOf("Đổi mật khẩu", "Trợ giúp & hỗ trợ").forEach {
+        listOf("Đổi mật khẩu").forEach {
             compose.onNodeWithText(it).performScrollTo().performClick()
             compose.onNodeWithText("Chức năng sẽ được bổ sung").assertIsDisplayed()
             compose.onNodeWithText("Đã hiểu").performClick()
         }
+        compose.onNodeWithText("Trợ giúp & hỗ trợ").performScrollTo().performClick()
+        compose.onNodeWithText("Trợ giúp").assertIsDisplayed()
+        compose.onNodeWithText("Đã hiểu").performClick()
         compose.onNodeWithText("Chính sách bảo mật").performScrollTo().performClick()
-        compose.onNodeWithText("Chính sách bảo mật — mẫu").assertIsDisplayed(); back()
+        compose.onNodeWithText("Android Keystore", substring = true).assertIsDisplayed(); back()
         compose.onNodeWithText("Trang chủ").performClick()
         compose.onNodeWithText("Hôm nay, bạn muốn xem gì?").assertIsDisplayed()
         compose.runOnUiThread { vm.query = "Dune" }

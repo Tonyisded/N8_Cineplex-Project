@@ -29,7 +29,7 @@ fun HomeScreen(vm: CineplexViewModel, grid: LazyGridState) {
             LazyVerticalGrid(GridCells.Fixed(columns),state = grid,modifier = Modifier.weight(1f),contentPadding = PaddingValues(24.dp),horizontalArrangement = Arrangement.spacedBy(24.dp),verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 item(key = "header",span = { GridItemSpan(columns) }) {
                     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                        Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.SpaceBetween) { CineplexLogo(); Avatar(vm::account) }
+                        Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.SpaceBetween) { CineplexLogo(); Avatar(vm::account, session = vm.session) }
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Muted("Xin chào, ${vm.session?.name.orEmpty()}")
                             Text("Hôm nay, bạn muốn xem gì?",style = MaterialTheme.typography.headlineMedium)

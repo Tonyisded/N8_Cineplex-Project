@@ -3,7 +3,10 @@ import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { validateEnvironment } from "./config.js";
 import { HealthController } from "./health.controller.js";
-import { PrismaService } from "./prisma.service.js";
+import { PrismaModule } from "./prisma.module.js";
+import { AuthModule } from "./auth/auth.module.js";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { APP_GUARD } from "@nestjs/core";
 import { CrawlerModule } from "./crawler/crawler.module.js";
 
 @Module({
@@ -11,8 +14,11 @@ import { CrawlerModule } from "./crawler/crawler.module.js";
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
     ScheduleModule.forRoot(),
     CrawlerModule,
+    PrismaModule,
+    AuthModule,
+    ThrottlerModule.forRoot([{ name: "default", ttl: 60000, limit: 120 }]),
   ],
   controllers: [HealthController],
-  providers: [PrismaService],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
