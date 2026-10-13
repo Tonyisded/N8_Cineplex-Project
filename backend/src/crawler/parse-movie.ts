@@ -1,4 +1,9 @@
-import { clean, sourceMovieUrl, type CrawledMovie } from "./normalize.js";
+import {
+  clean,
+  sourceMovieUrl,
+  trailerYoutubeId,
+  type CrawledMovie,
+} from "./normalize.js";
 
 export type MovieDom = {
   title: string;
@@ -6,6 +11,7 @@ export type MovieDom = {
   synopsis: string;
   poster: string;
   age: string;
+  trailer?: string;
 };
 export function parseMovie(
   source: string,
@@ -75,5 +81,6 @@ export function parseMovie(
     genre: field("Thể loại"),
     language: field("Ngôn ngữ"),
     synopsis: clean(raw.synopsis) || null,
+    trailerYoutubeId: trailerYoutubeId(raw.trailer ?? ""),
   };
 }

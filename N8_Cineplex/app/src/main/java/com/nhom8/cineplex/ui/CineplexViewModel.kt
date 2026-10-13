@@ -9,7 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-class CineplexViewModel(private val repository: AccountRepository? = null, private val catalog: CatalogRepository? = null, private val today: () -> String = { vietnamDate() }) : ViewModel() {
+class CineplexViewModel(private val repository: AccountRepository? = null, private val catalog: CatalogRepository? = null, private val today: () -> String = { vietnamDate() }, private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 }) : ViewModel() {
     constructor(mock: MockAccountRepository) : this(MockAccountAdapter(mock), MockCatalogRepository)
     var screen by mutableStateOf(Screen.LOGIN); private set
     var form by mutableStateOf(AuthForm()); private set
@@ -27,6 +27,25 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     var googleRequested by mutableStateOf(false); private set
     var movies by mutableStateOf<List<Movie>>(emptyList()); private set
     var showtimes by mutableStateOf<List<ShowtimeDto>>(emptyList()); private set
+    var catalogShowtimes by mutableStateOf<List<ShowtimeDto>>(emptyList()); private set
+    var nowMillis by mutableStateOf(0L); private set
+    var timeWindow by mutableStateOf(0); private set
+    var trailer by mutableStateOf<Movie?>(null); private set
+    private var serverMillis = 0L
+    private var clockRecordedAt = 0L
+    fun tickCatalogClock() { nowMillis = if (serverMillis == 0L) System.currentTimeMillis() else serverMillis + (monotonicMillis() - clockRecordedAt).coerceAtLeast(0) }
+    private fun recordClock(value: String) { serverMillis = isoMillis(value); clockRecordedAt = monotonicMillis(); tickCatalogClock() }
+    fun selectTimeWindow(value: Int) { require(value in timeWindows.indices); timeWindow = value }
+    fun slotsFor(id: String, filtered: Boolean = true) = upcomingSlots(catalogShowtimes.filter { it.movieId == id }, nowMillis, if (filtered) timeWindow else 0)
+    val visibleShowtimes get() = upcomingSlots(showtimes, nowMillis, timeWindow)
+    fun openTrailer(value: Movie) { if (session?.role == Role.CUSTOMER && value.trailerYoutubeId?.matches(Regex("[A-Za-z0-9_-]{11}")) == true) trailer = value }
+    fun closeTrailer() { trailer = null }
+    fun showSlot(slot: ShowtimeDto) {
+        tickCatalogClock()
+        if (session?.role != Role.CUSTOMER) return
+        val name = movies.firstOrNull { it.id == slot.movieId }?.name ?: movie?.name.orEmpty()
+        notice = if (isoMillis(slot.startAt) <= nowMillis) Notice("Suất chiếu đã bắt đầu", "Hãy chọn một suất chiếu khác.") else Notice("Thông tin suất chiếu", "$name\n${displayCalendarDate(vietnamDate(java.util.Date(isoMillis(slot.startAt))))} · ${showtimeRange(slot)}\n${slot.auditorium.name} · ${seatSummary(slot)}\nPhòng và ghế mô phỏng N8. Chưa hỗ trợ đặt vé trong phiên bản này.")
+    }
     var catalogDate by mutableStateOf(""); private set
     var availableDates by mutableStateOf<List<String>>(emptyList()); private set
     val todayDate get() = today()
@@ -41,14 +60,14 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     var detailLoading by mutableStateOf(false); private set
     var detailError by mutableStateOf(""); private set
     val fixtureCatalog get() = catalog === MockCatalogRepository
-    val filteredMovies get() = searchMovies(movies.filter { it.soon == soon }, query)
+    val filteredMovies get() = searchMovies(movies.filter { it.soon == soon && slotsFor(it.id).isNotEmpty() }, query)
     private var catalogRequest: Job? = null
     private var detailRequest: Job? = null
     private var catalogEpoch = 0
     private var detailEpoch = 0
     private fun clearCatalog() {
         catalogEpoch++; detailEpoch++; catalogRequest?.cancel(); detailRequest?.cancel()
-        catalogRequest = null; detailRequest = null; movies = emptyList(); showtimes = emptyList(); movie = null
+        catalogRequest = null; detailRequest = null; movies = emptyList(); showtimes = emptyList(); catalogShowtimes = emptyList(); movie = null; trailer = null; timeWindow = 0; serverMillis = 0L; nowMillis = 0L
         catalogLoading = false; detailLoading = false; catalogError = ""; detailError = ""; catalogDate = ""; availableDates = emptyList(); lastCatalogToday = ""
     }
     fun selectCatalogDate(date: String) {
@@ -65,9 +84,9 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
         val date = maxOf(catalogDate.ifBlank { currentToday }, currentToday)
         if (!force && catalogDate == date && lastCatalogToday == currentToday) return
         if (catalogRequest?.isActive == true && catalogDate == date) return
-        val epoch = ++catalogEpoch; catalogRequest?.cancel(); catalogDate = date; lastCatalogToday = currentToday; catalogLoading = true; catalogError = ""; movies = emptyList()
+        val epoch = ++catalogEpoch; catalogRequest?.cancel(); catalogDate = date; lastCatalogToday = currentToday; catalogLoading = true; catalogError = ""; movies = emptyList(); catalogShowtimes = emptyList()
         catalogRequest = viewModelScope.launch {
-            try { val dates = catalog.dates(); val result = catalog.movies(date); if (epoch == catalogEpoch) { availableDates = dates; movies = result } }
+            try { val dates = catalog.dates(); val result = catalog.movies(date); if (epoch == catalogEpoch) { availableDates = dates; movies = result.movies; catalogShowtimes = result.showtimes; recordClock(result.serverTime) } }
             catch (e: CancellationException) { throw e }
             catch (_: Exception) { if (epoch == catalogEpoch) catalogError = "Không tải được danh sách phim. Kiểm tra mạng rồi thử lại." }
             finally { if (epoch == catalogEpoch) catalogLoading = false }
@@ -82,7 +101,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
         detailRequest = viewModelScope.launch {
             try {
                 val updated = catalog.movie(selected.id); val slots = catalog.showtimes(selected.id, date)
-                if (epoch == detailEpoch) { movie = updated; showtimes = slots }
+                if (epoch == detailEpoch) { movie = updated; showtimes = slots.items; recordClock(slots.serverTime) }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { if (epoch == detailEpoch) detailError = "Không tải được chi tiết/lịch chiếu. Hãy thử lại." }
             finally { if (epoch == detailEpoch) detailLoading = false }
@@ -142,6 +161,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     }
     fun openMovie(value: Movie) { if (session?.role == Role.CUSTOMER) { movie = value; screen = Screen.DETAIL; refreshMovie() } }
     fun back() {
+        if (trailer != null) { closeTrailer(); return }
         if (notice != null) { dismissNotice(); return }
         if (dialog != null) { if (!loading) dialog = null; return }
         when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.DETAIL -> { detailEpoch++; detailRequest?.cancel(); detailLoading = false; movie = null; showtimes = emptyList(); screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }

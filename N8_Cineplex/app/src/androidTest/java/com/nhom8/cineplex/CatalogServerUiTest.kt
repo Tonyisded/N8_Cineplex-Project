@@ -23,7 +23,7 @@ class CatalogServerUiTest {
     @Test fun liveVpsCatalogMetadataShowtimesSearchAndUpcomingState() = runBlocking {
         // Fixture session only; catalog uses real HTTPS VPS and never writes shared Auth users.
         val api = ApiCatalogRepository()
-        val films = api.movies(vietnamDate())
+        val films = api.movies(vietnamDate()).movies
         Assert.assertTrue("VPS catalog must have today's imported movies", films.isNotEmpty())
         val vm = CineplexViewModel(MockAccountAdapter(MockAccountRepository()), api)
         compose.setContent { CineplexMockTheme { CineplexApp(vm) } }
@@ -35,10 +35,16 @@ class CatalogServerUiTest {
         compose.onNodeWithText("Làm mới").assertDoesNotExist()
         compose.onAllNodes(hasText(" phim · ", substring = true)).assertCountEquals(0)
         val selected = films.first()
+        val homeSlot = vm.slotsFor(selected.id).first()
+        compose.onNodeWithTag("movie-schedules").performScrollToNode(hasTestTag("showtime-${homeSlot.id}"))
+        compose.onNodeWithTag("showtime-${homeSlot.id}").performScrollTo().assertIsDisplayed()
+        Assert.assertTrue(compose.onAllNodesWithText(seatSummary(homeSlot)).fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithText("Đặt vé").assertDoesNotExist()
+        screenshot("catalog-live-schedules")
         compose.runOnUiThread { vm.query = selected.name; vm.openMovie(selected) }
         compose.waitUntil(30_000) { !vm.detailLoading }
         Assert.assertEquals("",vm.detailError)
-        val slots = api.showtimes(selected.id,vietnamDate())
+        val slots = api.showtimes(selected.id,vietnamDate()).items
         Assert.assertEquals(slots.map { it.id }.toSet(),vm.showtimes.map { it.id }.toSet())
         compose.onNodeWithText("Chi tiết phim").assertIsDisplayed()
         compose.onNodeWithText(selected.name).assertExists()
@@ -55,11 +61,11 @@ class CatalogServerUiTest {
         compose.onNodeWithTag("catalog-dates").performScrollToNode(hasTestTag("catalog-date-$future"))
         compose.onNodeWithTag("catalog-date-$future").performClick()
         compose.waitUntil(30_000) { vm.catalogDate == future && !vm.catalogLoading }
-        Assert.assertEquals(api.movies(future).map { it.id }.toSet(),vm.movies.map { it.id }.toSet())
+        Assert.assertEquals(api.movies(future).movies.map { it.id }.toSet(),vm.movies.map { it.id }.toSet())
         Assert.assertTrue(vm.movies.isNotEmpty())
         compose.runOnUiThread { vm.openMovie(vm.movies.first()) }
         compose.waitUntil(30_000) { !vm.detailLoading }
-        Assert.assertEquals(api.showtimes(vm.movie!!.id,future).map { it.id }.toSet(),vm.showtimes.map { it.id }.toSet())
+        Assert.assertEquals(api.showtimes(vm.movie!!.id,future).items.map { it.id }.toSet(),vm.showtimes.map { it.id }.toSet())
         screenshot("catalog-live-future-detail")
         compose.runOnUiThread { vm.back() }
         Assert.assertEquals(future,vm.catalogDate)

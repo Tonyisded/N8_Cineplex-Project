@@ -11,8 +11,10 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.nhom8.cineplex.model.Movie
+import com.nhom8.cineplex.data.ShowtimeDto
 import com.nhom8.cineplex.ui.theme.CineplexColors as C
 
 @Composable
@@ -27,18 +29,32 @@ fun MoviePoster(movie: Movie, modifier: Modifier = Modifier) {
 @Composable
 fun AgeBadge(age: String) {
     Surface(shape = RoundedCornerShape(8.dp),color = androidx.compose.ui.graphics.Color.Transparent,border = BorderStroke(1.dp,C.Line)) {
-        Text(age,Modifier.heightIn(min = 32.dp).padding(horizontal = 8.dp,vertical = 4.dp),color = C.Primary,style = MaterialTheme.typography.labelLarge)
+        Text(if(age in listOf("T13","T16","T18")) age.drop(1) + "+" else age,Modifier.heightIn(min = 32.dp).padding(horizontal = 8.dp,vertical = 4.dp),color = C.Primary,style = MaterialTheme.typography.labelLarge)
     }
 }
 @Composable
-fun MovieCard(movie: Movie, open: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        MoviePoster(movie,Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button,onClickLabel = "Xem chi tiết ${movie.name}",onClick = open))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(movie.name,Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button,onClick = open).wrapContentHeight(Alignment.CenterVertically),style = MaterialTheme.typography.titleMedium)
-            if (movie.genre.isNotBlank()) Muted(movie.genre)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) { AgeBadge(movie.age); Muted("${movie.minutes} phút",Modifier.heightIn(min = 32.dp).wrapContentHeight(Alignment.CenterVertically)) }
-            ActionButton("Đặt vé",open,Modifier.fillMaxWidth().padding(top = 8.dp).semantics { contentDescription = "Đặt vé ${movie.name}" },icon = "ticket",compact = true)
+fun MovieScheduleCard(movie: Movie, slots: List<ShowtimeDto>, open: () -> Unit, trailer: () -> Unit, showSlot: (ShowtimeDto) -> Unit) {
+    Column(Modifier.fillMaxWidth().testTag("movie-${movie.id}"),verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.Top) {
+            Text(movie.name,Modifier.weight(1f).clickable(role = Role.Button,onClick = open).padding(vertical = 12.dp),style = MaterialTheme.typography.titleMedium)
+            TextButton(open,Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Xem chi tiết ${movie.name}" }) { Text("Chi tiết") }
         }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AgeBadge(movie.age); if(movie.genre.isNotBlank()) Muted(movie.genre); Muted("${movie.minutes} phút")
+        }
+        Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.width(96.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MoviePoster(movie,Modifier.fillMaxWidth().clickable(role = Role.Button,onClickLabel = "Xem chi tiết ${movie.name}",onClick = open))
+                TrailerButton(movie,trailer)
+            }
+            ShowtimeGroups(slots,showSlot,Modifier.weight(1f))
+        }
+        HorizontalDivider(color = C.Line)
     }
+}
+@Composable
+fun TrailerButton(movie: Movie, open: () -> Unit) {
+    if(movie.trailerYoutubeId?.matches(Regex("[A-Za-z0-9_-]{11}")) == true)
+        TextButton(open,Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Xem trailer ${movie.name}" }) { Text("▷ Trailer") }
+    else Text("Chưa có trailer",style = MaterialTheme.typography.labelSmall,color = C.Muted)
 }

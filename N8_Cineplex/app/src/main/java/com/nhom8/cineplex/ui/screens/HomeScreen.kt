@@ -2,10 +2,7 @@ package com.nhom8.cineplex.ui.screens
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.*
 import androidx.compose.material3.*
@@ -24,14 +21,14 @@ import com.nhom8.cineplex.ui.theme.CineplexColors as C
 import kotlinx.coroutines.launch
 
 @Composable
-fun HomeScreen(vm: CineplexViewModel, grid: LazyGridState) {
+@OptIn(ExperimentalFoundationApi::class)
+fun HomeScreen(vm: CineplexViewModel, grid: LazyListState) {
     val scope = rememberCoroutineScope()
     val filtered = vm.filteredMovies
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val columns = if(maxWidth >= 1024.dp) 4 else if(maxWidth >= 768.dp) 3 else 2
+    Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().imePadding()) {
-            LazyVerticalGrid(GridCells.Fixed(columns),state = grid,modifier = Modifier.weight(1f),contentPadding = PaddingValues(24.dp),horizontalArrangement = Arrangement.spacedBy(24.dp),verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                item(key = "header",span = { GridItemSpan(columns) }) {
+            LazyColumn(state = grid,modifier = Modifier.weight(1f).testTag("movie-schedules"),contentPadding = PaddingValues(24.dp),verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                item(key = "header") {
                     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                         Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.SpaceBetween) { CineplexLogo(); Avatar(vm::account, session = vm.session) }
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -41,26 +38,46 @@ fun HomeScreen(vm: CineplexViewModel, grid: LazyGridState) {
                         SearchField(vm.query,{ vm.query = it })
                         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             PrototypeTabs(listOf("Đang chiếu","Sắp chiếu"),if(vm.soon) 1 else 0,{ vm.soon = it == 1 })
-                            DateSelector(vm)
                         }
                     }
                 }
-                item(key = "banner",span = { GridItemSpan(columns) }) {
-                    CinemaBanner(browse = { scope.launch { grid.animateScrollToItem(2) } })
+                stickyHeader(key = "schedule-filters") {
+                    Column(Modifier.fillMaxWidth().background(C.Background).padding(vertical = 8.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) { DateSelector(vm); TimeSelector(vm) }
                 }
-                items(filtered,key = { it.id }) { movie -> MovieCard(movie) { vm.openMovie(movie) } }
-                if(vm.soon && !vm.fixtureCatalog) item(span = { GridItemSpan(columns) }) { Muted("Dữ liệu sắp chiếu chưa được tích hợp") }
-                else if(vm.catalogLoading) item(span = { GridItemSpan(columns) }) { Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { CircularProgressIndicator(); Muted("Đang tải phim…") } }
-                else if(vm.catalogError.isNotBlank()) item(span = { GridItemSpan(columns) }) { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Muted(vm.catalogError); ActionButton("Thử lại", { vm.refreshCatalog() }) } }
-                else if(filtered.isEmpty()) item(span = { GridItemSpan(columns) }) {
+                item(key = "banner") {
+                    CinemaBanner(browse = { scope.launch { grid.animateScrollToItem(3) } })
+                }
+                items(filtered,key = { it.id }) { movie -> MovieScheduleCard(movie,vm.slotsFor(movie.id),{ vm.openMovie(movie) },{ vm.openTrailer(movie) },vm::showSlot) }
+                if(vm.soon && !vm.fixtureCatalog) item { Muted("Dữ liệu sắp chiếu chưa được tích hợp") }
+                else if(vm.catalogLoading) item { Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { CircularProgressIndicator(); Muted("Đang tải phim…") } }
+                else if(vm.catalogError.isNotBlank()) item { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Muted(vm.catalogError); ActionButton("Thử lại", { vm.refreshCatalog() }) } }
+                else if(filtered.isEmpty()) item {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text(if(vm.movies.isEmpty()) "Chưa có lịch chiếu cho ngày ${displayCalendarDate(vm.catalogDate.ifBlank { vm.todayDate })}" else "Chưa tìm thấy phim",style = MaterialTheme.typography.headlineMedium)
-                        Muted(if(vm.movies.isEmpty()) "Hãy chọn ngày khác hoặc quay lại sau." else "Thử tên phim khác hoặc đổi mục phim.")
+                        val hasUpcoming = vm.movies.any { vm.slotsFor(it.id,false).isNotEmpty() }
+                        val hasMatchingTime = vm.movies.any { vm.slotsFor(it.id).isNotEmpty() }
+                        val message = when {
+                            !hasUpcoming && vm.catalogDate == vm.todayDate -> "Hôm nay không còn suất chiếu sắp tới."
+                            !hasUpcoming -> "Chưa có lịch chiếu cho ngày ${displayCalendarDate(vm.catalogDate.ifBlank { vm.todayDate })}"
+                            !hasMatchingTime -> "Không có suất trong khung giờ đã chọn."
+                            else -> "Chưa tìm thấy phim"
+                        }
+                        Text(message,style = MaterialTheme.typography.headlineMedium)
+                        Muted("Thử tên phim khác, khung giờ khác hoặc chọn ngày khác.")
                         if(vm.query.isNotBlank()) ActionButton("Xóa tìm kiếm",{ vm.query = "" },secondary = true)
                     }
                 }
+                item { Muted("Lịch chiếu từ CGV · Phòng và ghế mô phỏng N8. Số ghế tại lần cập nhật API.") }
             }
             CustomerNavigation(0, { scope.launch { grid.animateScrollToItem(0) } }, vm::account, vm::coming)
+        }
+    }
+}
+
+@Composable
+private fun TimeSelector(vm: CineplexViewModel) {
+    LazyRow(Modifier.fillMaxWidth().testTag("time-windows"),horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(timeWindows.size) { index ->
+            FilterChip(vm.timeWindow == index,{ vm.selectTimeWindow(index) },label = { Text(timeWindows[index]) },colors = FilterChipDefaults.filterChipColors(selectedContainerColor = C.Primary,selectedLabelColor = androidx.compose.ui.graphics.Color.White),modifier = Modifier.heightIn(min = 48.dp).testTag("time-window-$index"))
         }
     }
 }
@@ -90,7 +107,7 @@ private fun DateSelector(vm: CineplexViewModel) {
                         Text(if(date == vm.todayDate) "Hôm nay" else calendarWeekday(date))
                         Text(displayCalendarDate(date).take(5))
                     }
-                },modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 80.dp).testTag("catalog-date-$date").semantics { contentDescription = "Chọn ngày ${displayCalendarDate(date)}" })
+                },colors = FilterChipDefaults.filterChipColors(selectedContainerColor = C.Primary,selectedLabelColor = androidx.compose.ui.graphics.Color.White),modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 80.dp).testTag("catalog-date-$date").semantics { contentDescription = "Chọn ngày ${displayCalendarDate(date)}" })
             }
         }
     }

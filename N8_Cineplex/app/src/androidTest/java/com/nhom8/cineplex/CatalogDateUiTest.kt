@@ -24,9 +24,12 @@ class CatalogDateUiTest {
         val catalog = object : CatalogRepository {
             val films = listOf(MockMovies.all[0].copy(name = "Phim hôm nay",soon = false),MockMovies.all[1].copy(name = "Phim ngày mai",soon = false))
             override suspend fun dates() = listOf(today,"2026-10-11")
-            override suspend fun movies(date: String) = when(date) { today -> listOf(films[0]); "2026-10-11" -> listOf(films[1]); else -> emptyList() }
+            override suspend fun movies(date: String): CatalogDay {
+                val selected = when(date) { today -> listOf(films[0]); "2026-10-11" -> listOf(films[1]); else -> emptyList() }
+                return CatalogDay(selected, selected.flatMap { showtimes(it.id,date).items }, "${today}T00:00:00.000Z")
+            }
             override suspend fun movie(id: String) = films.first { it.id == id }
-            override suspend fun showtimes(id: String,date: String) = listOf(ShowtimeDto("slot-$date",id,"fixture:$date","${date}T03:00:00.000Z","${date}T05:00:00.000Z","STANDARD_2D","100000","ACTIVE",AuditoriumDto("room","Cinema 3","STANDARD",160,false)))
+            override suspend fun showtimes(id: String,date: String) = ShowtimesResponse(date,listOf(ShowtimeDto("slot-$date",id,"fixture:$date","${date}T03:00:00.000Z","${date}T05:00:00.000Z","STANDARD_2D","100000","ACTIVE",AuditoriumDto("room","Cinema 3","STANDARD",160,false),"Phụ đề Việt",160,160)),"${today}T00:00:00.000Z")
         }
         vm = CineplexViewModel(MockAccountAdapter(MockAccountRepository()),catalog,{ today })
         compose.setContent { CineplexMockTheme { CineplexApp(vm) } }
@@ -39,8 +42,8 @@ class CatalogDateUiTest {
         screenshot("dates-home")
         compose.onNodeWithTag("catalog-date-2026-10-11").performClick()
         compose.waitUntil(5_000) { vm.catalogDate == "2026-10-11" && !vm.catalogLoading }
-        grid().performScrollToNode(hasContentDescription("Đặt vé Phim ngày mai"))
-        compose.onNodeWithContentDescription("Đặt vé Phim ngày mai").performClick()
+        grid().performScrollToNode(hasContentDescription("Xem chi tiết Phim ngày mai"))
+        compose.onNodeWithContentDescription("Xem chi tiết Phim ngày mai").performClick()
         compose.waitUntil(5_000) { !vm.detailLoading }
         Assert.assertEquals("2026-10-11T03:00:00.000Z",vm.showtimes.single().startAt)
         compose.onNodeWithText("Lịch chiếu 11/10/2026 · CGV Landmark 81").performScrollTo().assertIsDisplayed()

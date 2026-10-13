@@ -131,6 +131,7 @@ model Movie {
   releaseDate     DateTime?  @map("release_date") @db.Date
   director        String?    @db.Text
   cast            String?    @db.Text
+  trailerYoutubeId String?   @map("trailer_youtube_id") @db.VarChar(11)
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
   showtimes       Showtime[]
 
@@ -158,6 +159,7 @@ model Showtime {
   startAt      DateTime       @map("start_at") @db.Timestamptz(3)
   endAt        DateTime       @map("end_at") @db.Timestamptz(3)
   format       ShowtimeFormat
+  presentationLabel String? @map("presentation_label") @db.Text
   basePrice    Decimal        @map("base_price") @db.Decimal(14, 0)
   status       ShowtimeStatus @default(ACTIVE)
   sourceKey    String         @unique @map("source_key") @db.Text

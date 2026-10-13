@@ -115,6 +115,43 @@ export const PRICES: Record<ShowtimeFormat, number> = {
   SCREENX: 160000,
   GOLD_CLASS: 250000,
 };
+export function presentationLabel(label: string): string | null {
+  const text = clean(label.split("|")[0]);
+  const match = text.match(
+    /(Phụ\s*Đề.*|Lồng\s*Tiếng.*|(?:Eng(?:&Viet)?|Viet)\s+Sub.*)$/iu,
+  );
+  return match ? clean(match[1]).slice(0, 160) : null;
+}
+export function trailerYoutubeId(value: string): string | null {
+  try {
+    const u = new URL(value, "https://www.cgv.vn");
+    if (
+      u.protocol !== "https:" ||
+      u.username ||
+      u.password ||
+      (u.port && u.port !== "443")
+    )
+      return null;
+    if (
+      ![
+        "www.youtube.com",
+        "youtube.com",
+        "www.youtube-nocookie.com",
+        "youtube-nocookie.com",
+        "youtu.be",
+      ].includes(u.hostname)
+    )
+      return null;
+    const id =
+      u.hostname === "youtu.be"
+        ? u.pathname.slice(1)
+        : (/^\/embed\/([^/]+)$/.exec(u.pathname)?.[1] ??
+          (u.pathname === "/watch" ? u.searchParams.get("v") : null));
+    return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
 export const roomType = (format: ShowtimeFormat): AuditoriumType =>
   format.startsWith("IMAX")
     ? "IMAX"
@@ -158,12 +195,14 @@ export type CrawledMovie = {
   releaseDate: Date | null;
   director: string | null;
   cast: string | null;
+  trailerYoutubeId: string | null;
 };
 export type CrawledSlot = {
   movieUrl: string;
   sourceKey: string;
   startAt: Date;
   format: ShowtimeFormat;
+  presentationLabel?: string | null;
 };
 export type CrawlSnapshot = {
   businessDate: string;
