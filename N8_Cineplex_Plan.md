@@ -2683,3 +2683,8 @@ Trạng thái tính năng: **Hoàn thành local/VPS/Android**, thay các mốc �
 - BASELINE/MODIFIED/ROLLBACK cùng preview-check.mjs và input đã ghi ở mục trước, đềuexit0; rollback nguồn trên bản sao159 bytes/hash pristine, không restore DB. Cùng4 role ngoài repo được refresh/reopen/kiểm tra patch với source cuối, giữ mọi mode/baseline cũ.
 
 Giới hạn đã chốt: số ghế là N8 không phải CGV; một số metadata nullable hoặc suất source-conflict giữ bản N8 cũ, không bịa nhãn/trailer. Video có thể cấm nhúng/lỗi mạng; hiển thị lỗi và cho mở YouTube khi người dùng chọn. Chưa đặt vé thật, chưa máy vật lý, không suy diễn các tuần booking/payment đã hoàn thành.
+
+
+#### Công bố bản cuối catalog preview — 2026-10-13
+
+Đã commit/push bản fix tablet và tiến độ đồng bộ trong cả hai MD:99e97acb46d27a661862e9b51c55830e94dbf103, remote branch feat/catalog-showtimes-preview khớp SHA, Author/Committer vẫn Đào Mạnh Nhân <24521227@gm.uit.edu.vn>. Đây là kết quả thay mốc đang đưa vào commit phía trên. Backend bytes không đổi so SHA242f72d nên không rebuild/recreate/migrate VPS lần nữa chỉ vì đổi Android/tài liệu. Native15/15 cuối qua VPS, tablet3/3, font1.5 3/3 và APK hash đã ghi phía trên. Cả hai MD đọc lại; bốn role/patch/rollback được chốt với source cuối và giữ nguyên baseline/lịch sử. PR chưa tạo/merge; không thay main.
