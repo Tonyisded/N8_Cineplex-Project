@@ -66,7 +66,6 @@ fun HomeScreen(vm: CineplexViewModel, grid: LazyListState) {
                         if(vm.query.isNotBlank()) ActionButton("Xóa tìm kiếm",{ vm.query = "" },secondary = true)
                     }
                 }
-                item { Muted("Lịch chiếu từ CGV · Phòng và ghế mô phỏng N8. Số ghế tại lần cập nhật API.") }
             }
             CustomerNavigation(0, { scope.launch { grid.animateScrollToItem(0) } }, vm::account, vm::coming)
         }

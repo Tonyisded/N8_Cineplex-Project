@@ -47,8 +47,9 @@ class CatalogPreviewTest {
         assertEquals("Còn 0/10",seatSummary(noon.copy(availableSeats = 0)))
     }
     @Test fun overnightRangeAndUtcParsingAreStrict() {
-        val late = slot("late","16:30").copy(endAt = "2026-10-13T18:00:00.000Z")
-        assertEquals("23:30–01:00 (+1 ngày)",showtimeRange(late))
+        val late = slot("late","16:00").copy(endAt = "2026-10-13T18:00:00.000Z")
+        assertEquals("23:00–01:00",showtimeRange(late))
+        assertEquals("12:00–23:30",showtimeRange(slot("same-day","05:00")))
         assertTrue(runCatching { isoMillis("2026-02-30T00:00:00.000Z") }.isFailure)
     }
     @Test fun trailerUsesFixedTrustedTemplateRefererUserGestureAndNoNativeBridge() {
