@@ -22,9 +22,9 @@ import com.nhom8.cineplex.ui.components.CineplexIcon
 fun trailerHtml(videoId: String, appId: String): String {
     require(Regex("[A-Za-z0-9_-]{11}").matches(videoId))
     require(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+").matches(appId))
-    return """<!doctype html><html lang="vi"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin-when-cross-origin"><style>html,body{margin:0;height:100%;background:#000;color:#fff;font:14px sans-serif}#player{width:100%;height:100%;min-height:200px}#status{padding:12px}#status:empty{display:none}</style></head><body><div id="status">Đang tải trailer…</div><div id="player"></div><script>
+    return """<!doctype html><html lang="vi"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin-when-cross-origin"><style>html,body{margin:0;height:100%;background:#000;color:#fff;font:14px sans-serif}#player{display:block;width:100%;height:100vh;min-height:200px}#status{padding:12px}#status:empty{display:none}</style></head><body><div id="status">Đang tải trailer…</div><div id="player"></div><script>
     var player;
-    function onYouTubeIframeAPIReady(){player=new YT.Player('player',{videoId:'$videoId',playerVars:{origin:'https://$appId',autoplay:0,controls:1,playsinline:1,fs:0,rel:0},events:{onReady:function(){window.trailerReady=true;document.getElementById('status').textContent='';},onError:function(e){window.trailerError=e.data;document.getElementById('status').textContent='Không phát được trailer trong app (mã '+e.data+'). Bạn có thể mở trên YouTube bên dưới.';}}});}
+    function onYouTubeIframeAPIReady(){player=new YT.Player('player',{width:innerWidth,height:innerHeight,videoId:'$videoId',playerVars:{origin:'https://$appId',autoplay:0,controls:1,playsinline:1,fs:0,rel:0},events:{onReady:function(e){e.target.setSize(innerWidth,innerHeight);e.target.getIframe().style.height=innerHeight+'px';window.trailerReady=true;document.getElementById('status').textContent='';},onError:function(e){window.trailerError=e.data;document.getElementById('status').textContent='Không phát được trailer trong app (mã '+e.data+'). Bạn có thể mở trên YouTube bên dưới.';}}});}
     </script><script src="https://www.youtube.com/iframe_api" onerror="document.getElementById('status').textContent='Không tải được trailer. Kiểm tra mạng rồi thử lại.'"></script></body></html>"""
 }
 
@@ -57,13 +57,16 @@ fun TrailerDialog(movie: Movie, close: () -> Unit) {
         onDispose { lifecycle.removeObserver(observer); player.stopLoading(); player.loadUrl("about:blank"); player.destroy() }
     }
     Dialog(close,properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Card(Modifier.fillMaxWidth().padding(16.dp)) {
+        Card(Modifier.fillMaxWidth().padding(16.dp),colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp),verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("Trailer · ${movie.name}",Modifier.weight(1f),style = MaterialTheme.typography.titleMedium)
                     IconButton(close,Modifier.size(48.dp).semantics { contentDescription = "Đóng trailer" }) { CineplexIcon("close") }
                 }
-                AndroidView(factory = { player },modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp,max = 360.dp).aspectRatio(16f/9f).semantics { contentDescription = "Trình phát trailer YouTube" })
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val height = (maxWidth * 9f / 16f).coerceIn(200.dp,360.dp)
+                    AndroidView(factory = { player },modifier = Modifier.fillMaxWidth().height(height).semantics { contentDescription = "Trình phát trailer YouTube" })
+                }
                 Row(Modifier.fillMaxWidth().padding(8.dp),horizontalArrangement = Arrangement.End) {
                     TextButton({ player.loadDataWithBaseURL("https://${context.packageName}",trailerHtml(id,context.packageName),"text/html","UTF-8",null) }) { Text("Thử lại") }
                     TextButton({

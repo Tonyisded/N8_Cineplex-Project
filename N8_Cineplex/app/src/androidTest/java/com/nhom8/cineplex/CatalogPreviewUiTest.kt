@@ -18,6 +18,7 @@ import org.junit.*
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
 class CatalogPreviewUiTest {
@@ -86,11 +87,23 @@ class CatalogPreviewUiTest {
             compose.runOnUiThread { web!!.evaluateJavascript("Boolean(window.trailerReady || window.trailerError)") { result.set(it) } }
             result.get() == "true"
         }
+        val painted = AtomicBoolean(false)
+        compose.runOnIdle { web!!.postVisualStateCallback(1,object : WebView.VisualStateCallback() { override fun onComplete(requestId: Long) { painted.set(true) } }) }
+        compose.waitUntil(10_000) { painted.get() }
+        Thread.sleep(1000)
         screenshot("preview-trailer-ready")
-        compose.runOnIdle { web!!.evaluateJavascript("JSON.stringify({error:window.trailerError||null,state:player.getPlayerState(),referrer:document.referrer,url:location.href})") { result.set(it) } }
+        compose.runOnIdle { web!!.evaluateJavascript("JSON.stringify({ready:window.trailerReady,error:window.trailerError||null,state:player.getPlayerState(),body:document.body.innerText,rect:player.getIframe().getBoundingClientRect().toJSON(),style:player.getIframe().getAttribute('style'),width:innerWidth,height:innerHeight})") { result.set(it) } }
         compose.waitUntil(5_000) { result.get().startsWith("\"") }
         Assert.assertFalse("YT diagnostics: ${result.get()}",result.get().contains("\\\"error\\\":15"))
-        compose.onNodeWithContentDescription("Trình phát trailer YouTube").performTouchInput { click(center) }
+        android.util.Log.i("N8TrailerTest",result.get())
+        val position = IntArray(2)
+        var x = 0f; var y = 0f
+        compose.runOnIdle { web!!.getLocationOnScreen(position); x = position[0] + web!!.width / 2f; y = position[1] + web!!.height / 2f }
+        val down = android.os.SystemClock.uptimeMillis()
+        for(action in listOf(MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP)) {
+            val event = MotionEvent.obtain(down,android.os.SystemClock.uptimeMillis(),action,x,y,0).apply { source = InputDevice.SOURCE_TOUCHSCREEN }
+            InstrumentationRegistry.getInstrumentation().uiAutomation.injectInputEvent(event,true); event.recycle()
+        }
         result.set("")
         compose.waitUntil(30_000) {
             compose.runOnUiThread { web!!.evaluateJavascript("window.player ? player.getPlayerState() : -99") { result.set(it) } }

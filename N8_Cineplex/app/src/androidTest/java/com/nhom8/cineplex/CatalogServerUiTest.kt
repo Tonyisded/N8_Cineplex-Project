@@ -35,6 +35,12 @@ class CatalogServerUiTest {
         compose.onNodeWithText("Làm mới").assertDoesNotExist()
         compose.onAllNodes(hasText(" phim · ", substring = true)).assertCountEquals(0)
         val selected = films.first()
+        val homeSlot = vm.slotsFor(selected.id).first()
+        compose.onNodeWithTag("movie-schedules").performScrollToNode(hasTestTag("showtime-${homeSlot.id}"))
+        compose.onNodeWithTag("showtime-${homeSlot.id}").performScrollTo().assertIsDisplayed()
+        Assert.assertTrue(compose.onAllNodesWithText(seatSummary(homeSlot)).fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithText("Đặt vé").assertDoesNotExist()
+        screenshot("catalog-live-schedules")
         compose.runOnUiThread { vm.query = selected.name; vm.openMovie(selected) }
         compose.waitUntil(30_000) { !vm.detailLoading }
         Assert.assertEquals("",vm.detailError)

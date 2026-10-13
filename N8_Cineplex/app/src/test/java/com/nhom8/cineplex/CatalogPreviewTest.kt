@@ -55,6 +55,7 @@ class CatalogPreviewTest {
         val html = trailerHtml("xGiimAKN0TM","com.nhom8.cineplex")
         assertTrue(html.contains("autoplay:0")); assertTrue(html.contains("strict-origin-when-cross-origin")); assertTrue(html.contains("origin:'https://com.nhom8.cineplex'"))
         assertTrue(html.contains("onError")); assertFalse(html.contains("innerHTML")); assertFalse(html.contains("Android."))
+        assertTrue(html.contains("height:100vh")); assertTrue(html.contains("width:innerWidth,height:innerHeight"))
         assertTrue(runCatching { trailerHtml("<script>","com.nhom8.cineplex") }.isFailure)
         assertTrue(runCatching { trailerHtml("xGiimAKN0TM","bad'id") }.isFailure)
     }
