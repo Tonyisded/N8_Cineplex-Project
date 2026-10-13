@@ -6,7 +6,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.*
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -50,10 +50,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CineplexApp(vm: CineplexViewModel) {
     // Keep movie filters/scroll across profile navigation; tokens are handled by the repository.
-    val grid = rememberLazyGridState()
+    val grid = rememberLazyListState()
     val signedIn = vm.session != null
     LaunchedEffect(signedIn) { if(!signedIn) grid.scrollToItem(0) }
-    BackHandler(vm.notice != null || vm.dialog != null || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.PROFILE)) { vm.back() }
+    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.PROFILE)) { vm.back() }
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, vm) {
@@ -62,7 +62,7 @@ fun CineplexApp(vm: CineplexViewModel) {
         onDispose { lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(lifecycle, vm) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { delay(60_000); vm.refreshCatalog(force = false) } }
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { vm.tickCatalogClock(); vm.refreshCatalog(force = false); delay(60_000 - vm.nowMillis % 60_000) } }
     }
     LaunchedEffect(vm.googleRequested) {
         if (vm.googleRequested) {
@@ -94,6 +94,7 @@ fun CineplexApp(vm: CineplexViewModel) {
                 }
                 vm.notice?.let { CineplexDialog(it,vm::dismissNotice,vm::logout) }
                 vm.dialog?.let { AccountFormDialog(vm, it) }
+                vm.trailer?.let { TrailerDialog(it, vm::closeTrailer) }
             }
         }
     }

@@ -24,13 +24,14 @@ class CatalogViewModelTest {
         var calls = 0
         var failed = false
         var pending: CompletableDeferred<Unit>? = null
-        override suspend fun movies(date: String): List<Movie> {
+        override suspend fun movies(date: String): CatalogDay {
             calls++; requestedDates += date; waits[date]?.let { withContext(NonCancellable) { it.await() } }; pending?.let { withContext(NonCancellable) { it.await() } }
             if(failed) error("Offline")
-            return datedFilms[date] ?: films
+            val selected = datedFilms[date] ?: films
+            return CatalogDay(selected, selected.flatMap { MockCatalogRepository.showtimes(it.id,date).items }, "${vietnamDate()}T00:00:00.000Z")
         }
         override suspend fun movie(id: String) = films.first { it.id == id }
-        override suspend fun showtimes(id: String, date: String): List<ShowtimeDto> { detailDates += date; return emptyList() }
+        override suspend fun showtimes(id: String, date: String): ShowtimesResponse { detailDates += date; return ShowtimesResponse(date, emptyList(), "${vietnamDate()}T00:00:00.000Z") }
     }
     private fun login(catalog: Catalog): CineplexViewModel {
         val vm = CineplexViewModel(MockAccountAdapter(MockAccountRepository()), catalog)

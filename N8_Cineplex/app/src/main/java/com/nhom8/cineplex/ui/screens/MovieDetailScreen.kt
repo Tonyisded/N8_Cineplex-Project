@@ -25,16 +25,13 @@ fun MovieDetailScreen(vm: CineplexViewModel, movie: Movie) {
             val wide = maxWidth >= 768.dp
             val scroll = rememberScrollState()
             if(wide) Row(Modifier.fillMaxSize().verticalScroll(scroll).padding(24.dp),horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-                MoviePoster(movie,Modifier.width(300.dp))
+                Column(Modifier.width(300.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) { MoviePoster(movie,Modifier.fillMaxWidth()); TrailerButton(movie,{ vm.openTrailer(movie) }) }
                 DetailBody(vm,movie,Modifier.weight(1f))
             } else Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 24.dp).padding(bottom = 24.dp),verticalArrangement = Arrangement.spacedBy(32.dp)) {
                 MoviePoster(movie,Modifier.fillMaxWidth(.68f).widthIn(max = 300.dp).align(Alignment.CenterHorizontally))
+                TrailerButton(movie,{ vm.openTrailer(movie) })
                 DetailBody(vm,movie,Modifier.fillMaxWidth())
             }
-        }
-        Column(Modifier.background(C.Surface)) {
-            HorizontalDivider(color = C.Line)
-            Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp,vertical = 16.dp),contentAlignment = Alignment.Center) { ActionButton("Đặt vé",{ vm.coming("Đặt vé") },Modifier.widthIn(max = 640.dp).fillMaxWidth(),icon = "ticket") }
         }
     }
 }
@@ -62,13 +59,8 @@ private fun DetailBody(vm: CineplexViewModel, movie: Movie, modifier: Modifier) 
         Text("Lịch chiếu ${displayCalendarDate(vm.catalogDate.ifBlank { vm.todayDate })} · CGV Landmark 81", style = MaterialTheme.typography.headlineMedium)
         if(vm.detailLoading) { CircularProgressIndicator(); Muted("Đang tải lịch chiếu…") }
         else if(vm.detailError.isNotBlank()) { Muted(vm.detailError); ActionButton("Thử lại", vm::refreshMovie) }
-        else if(vm.showtimes.isEmpty()) Muted("Chưa có lịch chiếu cho phim này ngày ${displayCalendarDate(vm.catalogDate.ifBlank { vm.todayDate })}.")
-        else vm.showtimes.forEach { slot ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("${vietnamTime(slot.startAt)} · ${slot.format.replace('_', ' ')}", style = MaterialTheme.typography.titleMedium)
-                Muted("${slot.auditorium.name} · ${slot.basePrice} VND")
-            }
-        }
+        else if(vm.visibleShowtimes.isEmpty()) Muted("Không còn suất phù hợp cho phim này ngày ${displayCalendarDate(vm.catalogDate.ifBlank { vm.todayDate })}.")
+        else ShowtimeGroups(vm.visibleShowtimes,vm::showSlot)
         Muted("Giờ Việt Nam. Giá và phòng/ghế là mô phỏng N8, không phải giá hay sơ đồ ghế CGV.")
     }
 }

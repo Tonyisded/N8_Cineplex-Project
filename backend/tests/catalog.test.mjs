@@ -216,6 +216,11 @@ function fakeDb() {
     },
     showtime: {
       findUnique: async ({ where }) => slots.get(where.sourceKey) ?? null,
+      update: async ({ where, data }) => {
+        const slot = [...slots.values()].find((s) => s.id === where.id);
+        Object.assign(slot, data);
+        return slot;
+      },
       create: async ({ data }) => {
         const s = { ...data, id: randomUUID(), status: "ACTIVE" };
         slots.set(data.sourceKey, s);
@@ -286,12 +291,19 @@ test("import is idempotent, allocates extras only on overlap and preserves occup
   db.seats[2].status = "BLOCKED";
   assigned[1].status = "CANCELED";
   const before = JSON.stringify(db.seats);
-  const b = await importer.import(snap);
+  const b = await importer.import({
+    ...snap,
+    showtimes: snap.showtimes.map((s) => ({
+      ...s,
+      presentationLabel: "Phụ đề Việt",
+    })),
+  });
   assert.equal(b.created, 0);
   assert.equal(b.unchanged, 3);
   assert.equal(b.seatsCreated, 0);
   assert.equal(JSON.stringify(db.seats), before);
   assert.equal(assigned[1].status, "CANCELED");
+  assert.ok(assigned.every((s) => s.presentationLabel === "Phụ đề Việt"));
   const c = await importer.import({
     ...snap,
     showtimes: [
@@ -306,8 +318,23 @@ test("import is idempotent, allocates extras only on overlap and preserves occup
   assert.equal(db.locks(), 3);
 });
 test("real catalog HTTP returns envelopes, validates UUID/date, 404 and decimal strings", async (t) => {
+  t.mock.timers.enable({
+    apis: ["Date"],
+    now: new Date("2026-10-10T00:00:00Z"),
+  });
+  const slot = {
+    id: randomUUID(),
+    basePrice: { toString: () => "100000" },
+    startAt: new Date("2026-10-10T03:00Z"),
+  };
   const id = randomUUID(),
-    m = { ...parseMovie(url, raw), id, updatedAt: new Date() };
+    m = {
+      ...parseMovie(url, raw),
+      id,
+      updatedAt: new Date(),
+      showtimes: [slot],
+    };
+  slot.movieId = id;
   let filter;
   const prisma = {
     movie: {
@@ -318,12 +345,11 @@ test("real catalog HTTP returns envelopes, validates UUID/date, 404 and decimal 
       findUnique: async (q) => (q.where.id === id ? m : null),
     },
     showtime: {
-      findMany: async () => [
-        {
-          id: randomUUID(),
-          basePrice: { toString: () => "100000" },
-          startAt: new Date(),
-        },
+      findMany: async () => [slot],
+    },
+    showtimeSeat: {
+      groupBy: async () => [
+        { showtimeId: slot.id, status: "AVAILABLE", _count: { _all: 145 } },
       ],
     },
   };
@@ -470,7 +496,7 @@ test("date listing is a static HTTP route, sorted and unique using Vietnam bound
   });
   assert.equal(query.where.status, "ACTIVE");
   assert.equal(
-    query.where.startAt.gte.toISOString(),
+    query.where.startAt.gt.toISOString(),
     "2026-10-09T17:00:00.000Z",
   );
   prisma.showtime.findMany = async () => [];

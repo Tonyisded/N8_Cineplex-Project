@@ -8,6 +8,7 @@ import {
   sourceMovieUrl,
   sourceSlot,
   normalizeFormat,
+  presentationLabel,
   clean,
   type CrawlSnapshot,
 } from "./normalize.js";
@@ -273,6 +274,12 @@ export class CrawlerService {
             .first()
             .waitFor({ state: "visible" });
           raw = await details.evaluate(() => ({
+            trailer:
+              document
+                .querySelector<HTMLIFrameElement>(
+                  '.product-view iframe[src*="youtube"]',
+                )
+                ?.getAttribute("src") ?? "",
             title:
               document.querySelector(".product-view h1")?.textContent ?? "",
             rows: [...document.querySelectorAll(".movie-info")].map(
@@ -304,6 +311,7 @@ export class CrawlerService {
               ...identity,
               movieUrl: url,
               format: normalizeFormat(slot.format, slot.screenClass),
+              presentationLabel: presentationLabel(slot.format),
             };
             if (keys.has(identity.sourceKey))
               throw new Error("Duplicate source slot");

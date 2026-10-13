@@ -268,6 +268,7 @@ original_title nullable
 release_date nullable (DATE)
 director nullable
 cast nullable
+trailer_youtube_id nullable (VARCHAR(11))
 updated_at
 ```
 
@@ -296,6 +297,7 @@ format
 base_price
 status
 source_key
+presentation_label nullable
 created_at
 updated_at
 ```
@@ -1515,3 +1517,26 @@ Trạng thái: **Hoàn thành tạo branch, commit và push source**, thay mốc
 
 Source commit: https://github.com/Tonyisded/N8_Cineplex-Project/commit/25f16de6f67266c6e3bf5cd658f07ff137c3a5c5
 Branch: https://github.com/Tonyisded/N8_Cineplex-Project/tree/feat/dao-manh-nhan-week5-crawler-dates
+
+
+## Catalog preview — phim, suất, ghế và trailer (2026-10-13)
+
+Trạng thái: **Đang làm** theo plan được người dùng yêu cầu triển khai. Thay phạm vi catalog cũ chỉ poster/chi tiết bằng danh sách phim kèm suất ngay trên Home, bố cục 001–005.jpg nhưng giữ màu/logo N8. Không chọn/giữ ghế, tạo order/combo/payment/ticket/QR; chạm suất chỉ thông tin. Không thêm bảng/dependency/hạ tầng enterprise.
+
+- API chỉ trả suất ACTIVE thuộc ngày đang chọn và startAt > serverTime; đúng giờ bắt đầu ẩn suất, phim hết suất ẩn khỏi list. Không xóa lịch sử DB. Lọc khung giờ nửa mở và tìm kiếm áp dụng sau lọc thời gian; phim hết suất trong bộ lọc cũng ẩn. Suất tương lai hết ghế vẫn hiện 0/Y. UI tự loại suất ở mỗi ranh giới phút, dùng thời gian server + monotonic; resume/đổi ngày lấy dữ liệu mới, qua ngày chặn ngày quá khứ.
+- /movies giữ businessDate/items, thêm serverTime và showtimes trong mỗi movie; /movies/:id/showtimes thêm serverTime/presentationLabel/availableSeats/totalSeats; /movies/dates chỉ ngày còn suất tương lai. Ghế AVAILABLE/tổng inventory N8 tính theo batch, không lưu counters; HELD/SOLD/BLOCKED không tính còn ghế. Inventory thiếu ghi chưa có dữ liệu, không giả số CGV. Đúng giờ/kết thúc DB UTC đổi Việt Nam; qua nửa đêm +1 ngày.
+- Additive migration 20261013000000_catalog_preview: movies.trailer_youtube_id VARCHAR(11) nullable, showtimes.presentation_label TEXT nullable; đúng10 bảng/109 cột thay107 ở spec hiện hành (giữ kết quả107 lịch sử). Phim15/suất12 cột. Nhãn ngôn ngữ lấy đúng film-screen; thiếu không suy phụ đề. Trailer chỉ ID YouTube hợp lệ từ iframe nội dung phim, thiếu không skip phim. Import cũ chỉ cập nhật nhãn, không reset inventory/hồi sinh CANCELED/thay cấu trúc conflict.
+- Home danh sách dọc poster trái/nhóm suất phải, Trailer/Chi tiết; badge IMAX xanh/SCREENX đen/GOLD CLASS cục bộ, theo format từng suất, không bịa Dolby/IMDb. Giữ search/tabs/banner/date/navigation; bỏ nút Đặt vé giả. Nhóm format+presentation, xếp theo giờ sớm nhất; lọc00–09/09–12/12–15/15–18/18–21/21–24; giữ state khi trở về. Sắp chiếu vẫn chưa tích hợp.
+- Trailer trong dialog WebView hệ điều hành, HTML cố định + ID đã validate, YouTube iframe, baseURL HTTPS theo appID để Referer; không native JS bridge/JWT/file access/SSL bypass/autoplay. Pause khi nền, destroy khi đóng/logout. Thiếu ID ghi chưa có trailer, cấm nhúng/lỗi báo và chỉ mở YouTube khi người dùng chọn.
+- Local giữ localhost, không mã/config proxy; VPS giữ overlay proxy ngoài repo và private env hiện có. Key được người dùng xác nhận D:\NT118\vpskey\shibakey.ppk, host key tiếp tục validate. Backup thành công trước migrate deploy; không reset/restore DB. Backend deploy trước APK, nghiệm thu health/Swagger/API/UI/crawler qua proxy rồi mới cleanup image/cache theo khóa.
+
+Baseline đã lưu ngoài repo tại D:\NT118\verification\week5-crawler-20261010\PRE_PREVIEW_BASELINE.zip, 159 file, SHA25631bc6a46766f55ae8134841155ba5bb64927a08b1b72f987045471722b04cf10. Backend build và55/55 tests baseline exit0; source UI/API mới chưa kiểm chứng, VPS chưa thay đổi. Còn backend/Android tests, rollback bản sao, commit/push/deploy và nghiệm thu VPS. Giữ cùng bốn role MODIFIED_FILE.zip/DIFF_FILE.patch/VERIFICATION.txt/ROLLBACK.sh, mở rộng bằng evidence preview và --preview; không ghi hoàn thành trước bằng chứng.
+
+
+### Catalog preview — kiểm chứng local trước triển khai VPS (2026-10-13)
+
+Trạng thái tổng thể: **Đang làm**. Backend public build/59 tests/format đạt; bản staging giữ overlay proxy build và62 tests local đạt, không gọi đó là tests trong container Linux. Android34 unit, build APK/AndroidTest/lint đạt (0 error/43 warning); native14/14 trên360×800dp đạt, gồm Auth/UI cũ, chọn ngày, groups/counters, đúng giờ ẩn suất/phim và trailer YouTube thật (state1 khi nhấn Play, state2 sau nền/resume). Thanh ngày/giờ đặt trước banner, giữ màu N8.
+
+Cùng preview-check.mjs input13/10 14:10 Việt Nam: BASELINE movies[past-only,future-film], showtimes[at-start,future], không counter/trailer/serverTime; MODIFIED chỉfuture-film/future, counter7/10, trailerxGiimAKN0TM/serverTime07:10Z; ROLLBACK trở lại đúng BASELINE. Cả3 exit0. ROLLBACK.sh --preview thực thi trên bản sao,159 file khớp pristine/hash aggregatee32161107203d68f094f3def534eff1bd151c9d63e567e976cbfe6f3dcbc226e; workspace vẫn giữ GOAL. Thêm --preview vào cùng bộ4 role cũ, không thay baseline/hủy các mode cũ.
+
+Các lỗi build/fixture đã giữ ngoài repo: thiếu importclip/lintcontainer thừa; launchGradle relativepath và tham sốclass comma qua bat; DateSelector đổi vị trí làm selector cũ không thấy; testWebView chưa chờ onReady; staging thiếu env fixture/theme. Đã sửa command/fixture và rerun đạt, không bỏ test hay nới bảo vệ. VPS preflight dùng key được cấp, TLS/hostkey kiểm tra: API cũ healthy/health DBup/Swagger200, privateenv/proxy và PostgreSQL/Nginx còn nguyên; DB107 cột. Bản mới catalog-preview-1a04af45f85fa0a8 (39 file backend, manifest) đang build; chưa migrate/deploy, không báo hoàn thành. Còn tablet/font/liveAndroidVPS, commit/push, backup+migrate/deploy và cleanup theo khóa.

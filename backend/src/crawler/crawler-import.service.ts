@@ -182,7 +182,17 @@ export class CrawlerImportService {
                 source: slot.sourceKey,
                 reason: "Existing slot structure changed; inventory preserved",
               });
-            else unchanged++;
+            else {
+              if (
+                slot.presentationLabel != null &&
+                slot.presentationLabel !== existing.presentationLabel
+              )
+                await tx.showtime.update({
+                  where: { id: existing.id },
+                  data: { presentationLabel: slot.presentationLabel },
+                });
+              unchanged++;
+            }
             continue;
           }
           const type = roomType(slot.format);
@@ -216,6 +226,7 @@ export class CrawlerImportService {
               startAt: slot.startAt,
               endAt,
               format: slot.format,
+              presentationLabel: slot.presentationLabel ?? null,
               basePrice: PRICES[slot.format],
               sourceKey: slot.sourceKey,
             },
