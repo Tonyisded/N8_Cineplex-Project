@@ -29,7 +29,7 @@ class CatalogPreviewUiTest {
         val film = MockMovies.all[0].copy(id = "preview-film",name = "Phim có IMAX, SCREENX và GOLD CLASS",soon = false,trailerYoutubeId = "xGiimAKN0TM")
         val slots = listOf(
             Triple("first","07:10","IMAX_2D"),Triple("last","13:50","IMAX_2D"),Triple("screenx","11:40","SCREENX"),Triple("gold","09:00","GOLD_CLASS")
-        ).map { (id,time,format) -> ShowtimeDto(id,film.id,"fixture:$id","2026-10-13T${time}:00.000Z","2026-10-13T16:30:00.000Z",format,"150000","ACTIVE",AuditoriumDto("room-$format",format,if(format == "GOLD_CLASS") "GOLD" else "IMAX",496,false),"Phụ đề Việt",if(id == "gold") 32 else 480,if(id == "gold") 32 else 496) }
+        ).map { (id,time,format) -> ShowtimeDto(id,film.id,"fixture:$id","2026-10-13T${time}:00.000Z",if(id == "last") "2026-10-13T18:00:00.000Z" else "2026-10-13T16:30:00.000Z",format,"150000","ACTIVE",AuditoriumDto("room-$format",format,if(format == "GOLD_CLASS") "GOLD" else "IMAX",496,false),"Phụ đề Việt",if(id == "gold") 32 else 480,if(id == "gold") 32 else 496) }
         val catalog = object : CatalogRepository {
             override suspend fun dates() = listOf("2026-10-13")
             override suspend fun movies(date: String) = CatalogDay(listOf(film),slots,"2026-10-13T07:09:59.000Z")
@@ -42,6 +42,15 @@ class CatalogPreviewUiTest {
         compose.waitUntil(5_000) { !vm.catalogLoading && vm.filteredMovies.isNotEmpty() }
     }
     private fun scrollTo(tag: String) { compose.onNodeWithTag("movie-schedules").performScrollToNode(hasTestTag(tag)); compose.onNodeWithTag(tag).performScrollTo() }
+    @Test fun overnightTimesHaveNoDaySuffixAndHomeHasNoSourceCaption() {
+        scrollTo("showtime-last")
+        compose.onNodeWithText("20:50–01:00").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Suất 20:50–01:00, Còn 480/496").assertExists()
+        compose.onNodeWithText("(+1 ngày)",substring = true).assertDoesNotExist()
+        compose.onNodeWithTag("movie-schedules").performTouchInput { swipeUp() }
+        compose.onNodeWithText("Lịch chiếu từ CGV",substring = true).assertDoesNotExist()
+        screenshot("preview-clean-overnight-times")
+    }
     @Test fun groupsCountsReadOnlyInteractionAndExactTimeRemoval() {
         scrollTo("showtime-first")
         compose.onNodeWithTag("format-IMAX").assertExists()

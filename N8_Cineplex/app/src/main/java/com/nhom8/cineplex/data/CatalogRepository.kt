@@ -49,7 +49,7 @@ fun matchesTimeWindow(slot: ShowtimeDto, window: Int): Boolean {
 }
 fun upcomingSlots(items: List<ShowtimeDto>, now: Long, window: Int = 0) = items.filter { it.status == "ACTIVE" && isoMillis(it.startAt) > now && matchesTimeWindow(it, window) }.sortedWith(compareBy({ it.startAt }, { it.id }))
 fun seatSummary(slot: ShowtimeDto) = if (slot.totalSeats > 0) "Còn ${slot.availableSeats}/${slot.totalSeats}" else "Chưa có dữ liệu ghế"
-fun showtimeRange(slot: ShowtimeDto) = "${vietnamTime(slot.startAt)}–${vietnamTime(slot.endAt)}" + if (vietnamDate(Date(isoMillis(slot.endAt))) != vietnamDate(Date(isoMillis(slot.startAt)))) " (+1 ngày)" else ""
+fun showtimeRange(slot: ShowtimeDto) = "${vietnamTime(slot.startAt)}–${vietnamTime(slot.endAt)}"
 fun searchMovies(items: List<Movie>, query: String): List<Movie> {
     fun normalize(s: String) = Normalizer.normalize(s.lowercase(Locale.ROOT), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").replace("đ", "d")
     val q = normalize(query.trim())

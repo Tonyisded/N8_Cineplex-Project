@@ -37,7 +37,7 @@ fun ShowtimeGroups(slots: List<ShowtimeDto>, open: (ShowtimeDto) -> Unit, modifi
                             Column(Modifier.width(cell).heightIn(min = 92.dp).clip(RoundedCornerShape(10.dp)).background(C.Surface).border(1.dp,C.Line,RoundedCornerShape(10.dp)).clickable(role = Role.Button,onClick = { open(slot) }).testTag("showtime-${slot.id}").semantics { contentDescription = "Suất ${showtimeRange(slot)}, ${seatSummary(slot)}" }) {
                                 val range = buildAnnotatedString {
                                     withStyle(SpanStyle(fontWeight = FontWeight.Bold,fontSize = 17.sp)) { append(vietnamTime(slot.startAt)) }
-                                    withStyle(SpanStyle(fontSize = 12.sp,color = C.Muted)) { append("–" + vietnamTime(slot.endAt)); if(showtimeRange(slot).contains("+1")) append(" (+1 ngày)") }
+                                    withStyle(SpanStyle(fontSize = 12.sp,color = C.Muted)) { append("–" + vietnamTime(slot.endAt)) }
                                 }
                                 Text(range,Modifier.fillMaxWidth().padding(8.dp),lineHeight = 24.sp)
                                 Column(Modifier.fillMaxWidth().background(C.Raised.copy(alpha = .5f)).padding(8.dp)) {
