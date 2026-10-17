@@ -16,23 +16,9 @@ import {
 } from "@nestjs/swagger";
 import { PrismaService } from "../prisma.service.js";
 import { businessDate, dateWindow } from "../crawler/normalize.js";
-import type { Movie, Prisma } from "../generated/prisma/client.js";
+import type { Movie } from "../generated/prisma/client.js";
+import { slotSelect, slotJson } from "./showtime-json.js";
 
-const slotSelect = {
-  id: true,
-  movieId: true,
-  sourceKey: true,
-  startAt: true,
-  endAt: true,
-  format: true,
-  presentationLabel: true,
-  basePrice: true,
-  status: true,
-  auditorium: {
-    select: { id: true, name: true, type: true, capacity: true, isExtra: true },
-  },
-} as const;
-type CatalogSlot = Prisma.ShowtimeGetPayload<{ select: typeof slotSelect }>;
 export function upcomingWhere(
   window: ReturnType<typeof catalogDate>,
   now: Date,
@@ -65,33 +51,6 @@ export function movieJson(movie: Movie) {
 export class CatalogController {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async slotJson(items: CatalogSlot[]) {
-    if (!items.length) return [];
-    const grouped = await this.prisma.showtimeSeat.groupBy({
-      by: ["showtimeId", "status"],
-      where: { showtimeId: { in: items.map((s) => s.id) } },
-      _count: { _all: true },
-    });
-    const counts = new Map<
-      string,
-      { availableSeats: number; totalSeats: number }
-    >();
-    for (const row of grouped) {
-      const count = counts.get(row.showtimeId) ?? {
-        availableSeats: 0,
-        totalSeats: 0,
-      };
-      count.totalSeats += row._count._all;
-      if (row.status === "AVAILABLE") count.availableSeats += row._count._all;
-      counts.set(row.showtimeId, count);
-    }
-    return items.map((s) => ({
-      ...s,
-      basePrice: s.basePrice.toString(),
-      ...(counts.get(s.id) ?? { availableSeats: 0, totalSeats: 0 }),
-    }));
-  }
-
   @Get()
   @ApiOkResponse({
     description:
@@ -121,7 +80,10 @@ export class CatalogController {
         },
       },
     });
-    const slots = await this.slotJson(items.flatMap((m) => m.showtimes));
+    const slots = await slotJson(
+      this.prisma,
+      items.flatMap((m) => m.showtimes),
+    );
     const byMovie = new Map<string, typeof slots>();
     for (const slot of slots) {
       const group = byMovie.get(slot.movieId) ?? [];
@@ -204,7 +166,7 @@ export class CatalogController {
     return {
       businessDate: window.businessDate,
       serverTime: now.toISOString(),
-      items: await this.slotJson(items),
+      items: await slotJson(this.prisma, items),
     };
   }
 }

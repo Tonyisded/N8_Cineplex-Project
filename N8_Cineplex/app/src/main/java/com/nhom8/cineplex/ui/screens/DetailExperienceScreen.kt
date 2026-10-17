@@ -95,7 +95,7 @@ fun DetailExperienceScreen(vm: CineplexViewModel, movie: Movie) {
 
 @Composable internal fun DetailHeader(title: String, back: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(60.dp).background(C.Surface).padding(horizontal = 12.dp),verticalAlignment = Alignment.CenterVertically) {
-        IconButton(back,Modifier.size(48.dp)) { CineplexIcon("back",color = C.Text) }
+        IconButton(back,Modifier.size(48.dp).semantics { contentDescription = "Quay lại" }) { CineplexIcon("back",color = C.Text) }
         Text(title,Modifier.padding(start = 8.dp),style = MaterialTheme.typography.titleMedium)
     }
 }

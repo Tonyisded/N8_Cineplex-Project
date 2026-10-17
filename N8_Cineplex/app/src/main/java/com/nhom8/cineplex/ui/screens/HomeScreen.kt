@@ -83,7 +83,7 @@ private fun TimeSelector(vm: CineplexViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DateSelector(vm: CineplexViewModel) {
+internal fun DateSelector(vm: CineplexViewModel) {
     val selected = vm.catalogDate.ifBlank { vm.todayDate }
     val dates = vm.catalogDateChoices
     val row = rememberLazyListState()

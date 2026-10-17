@@ -229,19 +229,26 @@ function fakeDb() {
     },
     auditorium: {
       findFirst: async ({ where }) =>
-        rooms.find(
-          (r) =>
-            r.type === where.type &&
-            !Array.from(slots.values()).some(
-              (s) =>
-                s.auditoriumId === r.id &&
-                s.status === "ACTIVE" &&
-                s.startAt < where.showtimes.none.startAt.lt &&
-                s.endAt > where.showtimes.none.endAt.gt,
-            ),
-        ) ?? null,
+        [...rooms]
+          .sort(
+            (a, b) =>
+              Number(a.isExtra) - Number(b.isExtra) ||
+              a.name.localeCompare(b.name),
+          )
+          .find(
+            (r) =>
+              r.type === where.type &&
+              r.status === where.status &&
+              !Array.from(slots.values()).some(
+                (s) =>
+                  s.auditoriumId === r.id &&
+                  s.status === "ACTIVE" &&
+                  s.startAt < where.showtimes.none.startAt.lt &&
+                  s.endAt > where.showtimes.none.endAt.gt,
+              ),
+          ) ?? null,
       create: async ({ data }) => {
-        const r = { ...data, id: randomUUID() };
+        const r = { ...data, id: randomUUID(), status: "ACTIVE" };
         rooms.push(r);
         return r;
       },
@@ -553,4 +560,63 @@ test("movie detail age is canonical when CGV schedule badge is stale; fallback o
   );
   assert.throws(() => parseMovie(url, { ...raw, age: "T16 T18" }, "icon-P"));
   assert.throws(() => parseMovie(url, { ...raw, age: "" }, ""));
+});
+
+test("room capabilities skip inactive rooms, prefer base rooms and reuse free extras", async () => {
+  for (const [format, type, capacity] of [
+    ["STANDARD_2D", "STANDARD", 160],
+    ["STANDARD_3D", "STANDARD", 160],
+    ["IMAX_2D", "IMAX", 496],
+    ["IMAX_3D", "IMAX", 496],
+    ["SCREENX", "SCREENX", 180],
+    ["GOLD_CLASS", "GOLD", 32],
+  ]) {
+    const db = fakeDb();
+    db.rooms.splice(0);
+    const inactive = {
+      id: randomUUID(),
+      name: "A inactive",
+      type,
+      capacity,
+      isExtra: false,
+      status: "INACTIVE",
+    };
+    const extra = {
+      id: randomUUID(),
+      name: "A extra",
+      type,
+      capacity,
+      isExtra: true,
+      status: "ACTIVE",
+    };
+    const base = {
+      id: randomUUID(),
+      name: "Z base",
+      type,
+      capacity,
+      isExtra: false,
+      status: "ACTIVE",
+    };
+    db.rooms.push(inactive, extra, base);
+    const snap = {
+      movies: [parseMovie(url, raw)],
+      showtimes: [0, 1, 2, 3].map((n) => ({
+        movieUrl: url,
+        sourceKey: `fixture:${n}`,
+        startAt: new Date(`2026-10-10T${n === 3 ? "11:35" : "10:00"}:00+07:00`),
+        format,
+      })),
+      skipped: [],
+    };
+    const result = await new CrawlerImportService(null, db).import(snap);
+    const slots = [...db.slots.values()];
+    assert.equal(slots[0].auditoriumId, base.id);
+    assert.equal(slots[1].auditoriumId, extra.id);
+    assert.notEqual(slots[2].auditoriumId, base.id);
+    assert.notEqual(slots[2].auditoriumId, extra.id);
+    assert.equal(slots[3].auditoriumId, base.id);
+    assert.equal(db.rooms.length, 4);
+    assert.equal(result.seatsCreated, 4 * capacity);
+    assert.ok(!slots.some((slot) => slot.auditoriumId === inactive.id));
+  }
 });

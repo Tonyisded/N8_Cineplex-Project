@@ -29,6 +29,7 @@ class CatalogDateUiTest {
                 return CatalogDay(selected, selected.flatMap { showtimes(it.id,date).items }, "${today}T00:00:00.000Z")
             }
             override suspend fun movie(id: String) = films.first { it.id == id }
+            override suspend fun showtime(id: String) = ShowtimeResponse("${today}T00:00:00.000Z", showtimes(films.first().id, id.removePrefix("slot-")).items.single())
             override suspend fun showtimes(id: String,date: String) = ShowtimesResponse(date,listOf(ShowtimeDto("slot-$date",id,"fixture:$date","${date}T03:00:00.000Z","${date}T05:00:00.000Z","STANDARD_2D","100000","ACTIVE",AuditoriumDto("room","Cinema 3","STANDARD",160,false),"Phụ đề Việt",160,160)),"${today}T00:00:00.000Z")
         }
         vm = CineplexViewModel(MockAccountAdapter(MockAccountRepository()),catalog,{ today })
@@ -46,9 +47,13 @@ class CatalogDateUiTest {
         compose.onNodeWithContentDescription("Xem chi tiết Phim ngày mai").performClick()
         compose.waitUntil(5_000) { !vm.detailLoading }
         Assert.assertEquals("2026-10-11T03:00:00.000Z",vm.showtimes.single().startAt)
-        compose.onNodeWithText("Lịch chiếu 11/10/2026 · CGV Landmark 81").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Chọn suất chiếu").performClick()
+        compose.waitUntil(5_000) { vm.screen == com.nhom8.cineplex.model.Screen.SHOWTIMES && !vm.detailLoading }
+        compose.onNodeWithText("Ngày xem: 11/10/2026").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("schedule-slot-slot-2026-10-11").performScrollTo().assertIsDisplayed()
         screenshot("dates-detail")
-        compose.onNodeWithContentDescription("Quay lại Trang chủ").performClick()
+        compose.onNodeWithContentDescription("Quay lại").performClick()
+        compose.onNodeWithContentDescription("Quay lại").performClick()
         grid().performScrollToNode(hasTestTag("catalog-date-2026-10-11"))
         compose.onNodeWithTag("catalog-date-2026-10-11").assertIsSelected()
     }
