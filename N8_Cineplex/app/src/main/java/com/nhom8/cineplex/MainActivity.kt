@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -53,7 +54,8 @@ fun CineplexApp(vm: CineplexViewModel) {
     val grid = rememberLazyListState()
     val signedIn = vm.session != null
     LaunchedEffect(signedIn) { if(!signedIn) grid.scrollToItem(0) }
-    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.PROFILE)) { vm.back() }
+    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.ageSheet || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.SHOWTIMES,Screen.SEAT_SUMMARY,Screen.PROFILE)) { vm.back() }
+    val savedScreens = rememberSaveableStateHolder()
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, vm) {
@@ -86,7 +88,9 @@ fun CineplexApp(vm: CineplexViewModel) {
                     when(vm.screen) {
                         Screen.LOGIN,Screen.SIGNUP,Screen.STAFF -> AuthScreen(vm)
                         Screen.HOME -> HomeScreen(vm,grid)
-                        Screen.DETAIL -> vm.movie?.let { MovieDetailScreen(vm,it) }
+                        Screen.DETAIL -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("detail-${selected.id}") { DetailExperienceScreen(vm,selected) } }
+                        Screen.SHOWTIMES -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("showtimes-${selected.id}") { DetailShowtimesScreen(vm,selected) } }
+                        Screen.SEAT_SUMMARY -> vm.movie?.let { selected -> SeatSummaryScreen(vm,selected) }
                         Screen.ADMIN -> AdminScreen(vm)
                         Screen.STAFF_HOME -> StaffScreen(vm)
                         Screen.PROFILE -> ProfileScreen(vm)
