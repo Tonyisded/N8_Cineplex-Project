@@ -2,12 +2,13 @@ package com.nhom8.cineplex.ui.screens
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -20,14 +21,13 @@ import com.nhom8.cineplex.ui.theme.CineplexColors as C
 
 @Composable
 fun DetailShowtimesScreen(vm: CineplexViewModel, movie: Movie) {
-    val dates = DetailSchedule.dates(vm.todayDate)
-    val slots = vm.sampleSlots
-    val chosen = vm.selectedSampleSlot?.takeIf { selected -> slots.any { it.id == selected.id && !it.soldOut } }
+    val slots = vm.scheduleSlots
+    val chosen = vm.selectedShowtime?.takeIf { selected -> slots.any { it.id == selected.id && it.totalSeats > 0 && it.availableSeats > 0 } }
     Scaffold(containerColor = C.Surface,topBar = { DetailHeader("Chọn lịch chiếu",vm::back) },bottomBar = {
         DetailActionBar {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(chosen?.let { "${it.time} · ${displayCalendarDate(it.date)} · ${it.cinema.name}" } ?: "Chưa chọn suất chiếu",fontWeight = FontWeight.SemiBold)
-                Button(vm::continueSchedule,Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("continue-showtime"),enabled = chosen != null,shape = RoundedCornerShape(12.dp)) { Text("Tiếp tục") }
+                Text(chosen?.let { "${showtimeRange(it)} · ${displayCalendarDate(vm.catalogDate)} · ${it.auditorium.name}" } ?: "Chưa chọn suất chiếu",fontWeight = FontWeight.SemiBold)
+                Button(vm::continueSchedule,Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("continue-showtime"),enabled = chosen != null && !vm.detailLoading && vm.detailError.isEmpty() && !vm.scheduleChecking,shape = RoundedCornerShape(12.dp)) { Text(if (vm.scheduleChecking) "Đang kiểm tra…" else "Tiếp tục") }
             }
         }
     }) { inset ->
@@ -40,84 +40,75 @@ fun DetailShowtimesScreen(vm: CineplexViewModel, movie: Movie) {
                 }
             }
             HorizontalDivider(color = C.Line)
-            Column(Modifier.fillMaxWidth().background(C.Background).padding(vertical = 18.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Chọn ngày xem",Modifier.padding(horizontal = 20.dp),fontWeight = FontWeight.SemiBold)
-                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp),horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(dates) { date ->
-                        val selected = vm.scheduleDate == date
-                        val empty = date == dates[3]
-                        Surface(onClick = { vm.chooseScheduleDate(date) },color = if(selected) C.Primary else C.Surface,shape = RoundedCornerShape(12.dp),border = BorderStroke(1.dp,if(selected) C.Primary else C.Line),modifier = Modifier.width(83.dp).heightIn(min = 84.dp).testTag("schedule-date-$date")) {
-                            Column(Modifier.padding(8.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(calendarWeekday(date),fontSize = 12.sp,color = if(selected) androidx.compose.ui.graphics.Color.White else C.Muted)
-                                Text(displayCalendarDate(date).take(5),fontWeight = FontWeight.Bold,color = if(selected) androidx.compose.ui.graphics.Color.White else C.Text)
-                                Text(if(empty) "Chưa có" else "Có suất",fontSize = 11.sp,color = if(selected) androidx.compose.ui.graphics.Color.White else C.Muted)
-                            }
-                        }
-                    }
-                }
-            }
+            Column(Modifier.fillMaxWidth().background(C.Background).padding(20.dp)) { DateSelector(vm) }
             HorizontalDivider(color = C.Line)
             Row(Modifier.fillMaxWidth().padding(20.dp),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ScheduleDropDown("Khu vực",DetailSchedule.areas.getValue(vm.scheduleArea),DetailSchedule.areas.toList(),vm::chooseScheduleArea,Modifier.weight(1f))
-                val cinemas = listOf("all" to "Tất cả rạp") + DetailSchedule.cinemas.filter { it.area == vm.scheduleArea }.map { it.id to it.name.removePrefix("Cineplex ") }
-                ScheduleDropDown("Rạp chiếu",cinemas.firstOrNull { it.first == vm.scheduleCinema }?.second ?: "Tất cả rạp",cinemas,vm::chooseScheduleCinema,Modifier.weight(1f))
+                Column(Modifier.weight(1f),verticalArrangement = Arrangement.spacedBy(7.dp)) { Text("Khu vực",fontSize = 13.sp,fontWeight = FontWeight.Medium); Text("TP. Hồ Chí Minh",fontSize = 14.sp) }
+                Column(Modifier.weight(1f),verticalArrangement = Arrangement.spacedBy(7.dp)) { Text("Rạp chiếu",fontSize = 13.sp,fontWeight = FontWeight.Medium); Text("Landmark 81",fontSize = 14.sp) }
             }
             HorizontalDivider(color = C.Line)
-            if (slots.isEmpty()) Column(Modifier.fillMaxWidth().padding(40.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("▦",fontSize = 32.sp,color = C.Primary)
-                Text("Chưa có suất chiếu trong ngày này",style = MaterialTheme.typography.headlineMedium,textAlign = TextAlign.Center)
-                Text("Hãy chọn một ngày hoặc rạp khác.",color = C.Muted,textAlign = TextAlign.Center)
-                TextButton({ dates.firstOrNull { it != vm.scheduleDate && it != dates[3] }?.let(vm::chooseScheduleDate) }) { Text("Chọn ngày có suất") }
-            }
-            else DetailSchedule.cinemas.filter { cinema -> slots.any { it.cinema.id == cinema.id } }.forEach { cinema ->
-                Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("⌖ ${cinema.name}",style = MaterialTheme.typography.titleMedium)
-                    Text(cinema.address,color = C.Muted,fontSize = 14.sp)
-                    slots.filter { it.cinema.id == cinema.id }.groupBy { it.format }.forEach { (format, group) ->
-                        Text(format,fontWeight = FontWeight.SemiBold,fontSize = 14.sp)
-                        group.chunked(3).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                row.forEach { slot ->
-                                    val selected = chosen?.id == slot.id
-                                    Surface(onClick = { vm.chooseSampleSlot(slot.id) },enabled = !slot.soldOut,color = if(selected) C.Raised else if(slot.soldOut) C.Background else C.Surface,shape = RoundedCornerShape(8.dp),border = BorderStroke(if(selected) 2.dp else 1.dp,if(selected) C.Primary else C.Line),modifier = Modifier.weight(1f).heightIn(min = 68.dp).testTag("schedule-slot-${slot.id}")) {
-                                        Column(Modifier.padding(7.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.Center) {
-                                            Text(slot.time,fontWeight = FontWeight.SemiBold,color = if(selected) C.Primary else if(slot.soldOut) C.Muted else C.Text)
-                                            Text(if(slot.soldOut) "Hết vé" else if(selected) "✓ Đã chọn" else "Còn vé",fontSize = 11.sp,color = if(selected) C.Primary else C.Muted)
+            when {
+                vm.detailLoading -> Box(Modifier.fillMaxWidth().padding(40.dp),contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.testTag("schedule-loading")) }
+                vm.detailError.isNotEmpty() -> Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(vm.detailError,color = C.Error,textAlign = TextAlign.Center)
+                    TextButton(vm::refreshMovie,Modifier.testTag("schedule-retry")) { Text("Thử lại") }
+                }
+                slots.isEmpty() -> Column(Modifier.fillMaxWidth().padding(40.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("▦",fontSize = 32.sp,color = C.Primary)
+                    Text("Chưa có suất chiếu trong ngày này",style = MaterialTheme.typography.headlineMedium,textAlign = TextAlign.Center)
+                    Text("Hãy chọn một ngày khác.",color = C.Muted,textAlign = TextAlign.Center)
+                }
+                else -> slots.groupBy { it.format to it.presentationLabel.orEmpty() }.values.sortedBy { it.minOf { slot -> slot.startAt } }.forEach { group ->
+                    Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(scheduleFormat(group.first()),fontWeight = FontWeight.SemiBold,fontSize = 14.sp)
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            val columns = ((maxWidth + 8.dp) / (96.dp * LocalDensity.current.fontScale + 8.dp)).toInt().coerceIn(1,3)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                group.chunked(columns).forEach { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        row.forEach { slot ->
+                                            val selected = chosen?.id == slot.id
+                                            val available = slot.totalSeats > 0 && slot.availableSeats > 0
+                                            Surface(onClick = { vm.chooseShowtime(slot.id) },enabled = available && !vm.scheduleChecking,color = if(selected) C.Raised else if(!available) C.Background else C.Surface,shape = RoundedCornerShape(8.dp),border = BorderStroke(if(selected) 2.dp else 1.dp,if(selected) C.Primary else C.Line),modifier = Modifier.weight(1f).heightIn(min = 104.dp).testTag("schedule-slot-${slot.id}").semantics { contentDescription = "Suất ${showtimeRange(slot)}, ${slot.auditorium.name}, ${seatSummary(slot)}" }) {
+                                                Column(Modifier.padding(7.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.Center) {
+                                                    Text(showtimeRange(slot),fontWeight = FontWeight.SemiBold,color = if(selected) C.Primary else if(!available) C.Muted else C.Text,fontSize = 13.sp)
+                                                    Text(slot.auditorium.name,fontSize = 12.sp,color = C.Muted)
+                                                    Text(if(slot.totalSeats == 0) "Chưa có dữ liệu ghế" else if(!available) "Hết vé" else if(selected) "✓ Đã chọn" else seatSummary(slot),fontSize = 11.sp,color = if(selected) C.Primary else C.Muted)
+                                                }
+                                            }
                                         }
+                                        repeat(columns-row.size) { Spacer(Modifier.weight(1f)) }
                                     }
                                 }
-                                repeat(3-row.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
                     }
+                    HorizontalDivider(color = C.Line)
                 }
-                HorizontalDivider(color = C.Line)
             }
-            Text("Lịch chiếu và rạp đang là dữ liệu minh họa.",Modifier.padding(20.dp),fontSize = 12.sp,color = C.Muted)
         }
     }
     if (vm.ageSheet) AgeConfirmationSheet(vm,movie)
 }
 
-@Composable
-private fun ScheduleDropDown(label: String, value: String, options: List<Pair<String,String>>, choose: (String) -> Unit, modifier: Modifier) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(modifier,verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(label,fontSize = 13.sp,fontWeight = FontWeight.Medium)
-        Box {
-            Surface(onClick = { expanded = true },shape = RoundedCornerShape(12.dp),border = BorderStroke(1.dp,C.Line),color = C.Surface,modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
-                Row(Modifier.padding(horizontal = 10.dp),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.SpaceBetween) { Text(value,maxLines = 1,fontSize = 13.sp); Text("⌄",color = C.Primary) }
-            }
-            DropdownMenu(expanded,onDismissRequest = { expanded = false }) { options.forEach { (id,name) -> DropdownMenuItem(text = { Text(name) },onClick = { choose(id); expanded = false }) } }
-        }
+private fun scheduleFormat(slot: ShowtimeDto): String {
+    val format = when (slot.format) {
+        "STANDARD_2D" -> "2D"
+        "STANDARD_3D" -> "3D"
+        "IMAX_2D" -> "IMAX 2D"
+        "IMAX_3D" -> "IMAX 3D"
+        "SCREENX" -> "SCREENX"
+        "GOLD_CLASS" -> "GOLD CLASS"
+        else -> slot.format
     }
+    return format + slot.presentationLabel?.let { " · $it" }.orEmpty()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AgeConfirmationSheet(vm: CineplexViewModel, movie: Movie) {
     val age = DetailSchedule.ageLimit(movie)
-    val selected = vm.selectedSampleSlot
+    val selected = vm.selectedShowtime
     ModalBottomSheet(onDismissRequest = vm::closeAgeSheet,containerColor = C.Surface) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Surface(color = C.Raised,shape = RoundedCornerShape(16.dp)) { Text(if(vm.underAgeSheet) "!" else movie.age,Modifier.padding(16.dp),color = C.Primary,fontWeight = FontWeight.Bold,fontSize = 23.sp) }
@@ -129,11 +120,11 @@ private fun AgeConfirmationSheet(vm: CineplexViewModel, movie: Movie) {
             } else {
                 Text(if(age != null) "Phim dành cho khán giả từ đủ $age tuổi" else "Lưu ý phân loại độ tuổi ${movie.age}",style = MaterialTheme.typography.headlineMedium)
                 Text("Rạp có thể yêu cầu giấy tờ xác minh độ tuổi khi soát vé.",color = C.Muted)
-                selected?.let { Text("${movie.name}\n${it.time} · ${displayCalendarDate(it.date)} · ${it.cinema.name}",Modifier.fillMaxWidth().background(C.Background,RoundedCornerShape(12.dp)).padding(16.dp)) }
-                ActionButton(if(age != null) "Tôi từ đủ $age tuổi — Tiếp tục" else "Tôi đáp ứng phân loại tuổi — Tiếp tục",vm::confirmAge,Modifier.fillMaxWidth())
+                selected?.let { Text("${movie.name}\n${showtimeRange(it)} · ${displayCalendarDate(vm.catalogDate)} · ${it.auditorium.name}",Modifier.fillMaxWidth().background(C.Background,RoundedCornerShape(12.dp)).padding(16.dp)) }
+                ActionButton(if(age != null) "Tôi từ đủ $age tuổi — Tiếp tục" else "Tôi đáp ứng phân loại tuổi — Tiếp tục",vm::confirmAge,Modifier.fillMaxWidth(),loading = vm.scheduleChecking)
                 ActionButton("Quay lại",vm::closeAgeSheet,Modifier.fillMaxWidth(),secondary = true)
                 if(age != null) TextButton(vm::showUnderAge,Modifier.align(Alignment.CenterHorizontally)) { Text("Tôi chưa đủ $age tuổi") }
-                Text("Xác nhận này chỉ minh họa luồng giao diện; chưa xác minh độ tuổi thực tế.",fontSize = 12.sp,color = C.Muted)
+                Text("Đây là xác nhận tự khai; rạp có thể kiểm tra giấy tờ khi soát vé.",fontSize = 12.sp,color = C.Muted)
             }
         }
     }
@@ -141,22 +132,23 @@ private fun AgeConfirmationSheet(vm: CineplexViewModel, movie: Movie) {
 
 @Composable
 fun SeatSummaryScreen(vm: CineplexViewModel, movie: Movie) {
-    val slot = vm.selectedSampleSlot
+    val slot = vm.selectedShowtime
     Scaffold(containerColor = C.Surface,topBar = { DetailHeader("Tóm tắt suất chiếu",vm::back) },bottomBar = { DetailActionBar { ActionButton("Đổi suất chiếu",vm::back,Modifier.fillMaxWidth(),secondary = true) } }) { inset ->
         Column(Modifier.fillMaxSize().padding(inset).verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement = Arrangement.spacedBy(22.dp),horizontalAlignment = Alignment.CenterHorizontally) {
             Text("✓",fontSize = 36.sp,color = C.Primary)
-            Text("Sẵn sàng chọn ghế",style = MaterialTheme.typography.headlineMedium)
-            Text("Bạn đã xác nhận điều kiện độ tuổi. Đây là thông tin suất chiếu đã chọn.",color = C.Muted,textAlign = TextAlign.Center)
+            Text("Thông tin suất chiếu",style = MaterialTheme.typography.headlineMedium)
+            Text("Đây là thông tin suất chiếu đã chọn. Chưa giữ chỗ hoặc tạo đơn.",color = C.Muted,textAlign = TextAlign.Center)
             Surface(color = C.Background,shape = RoundedCornerShape(16.dp),border = BorderStroke(1.dp,C.Line),modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(movie.name,style = MaterialTheme.typography.titleMedium)
                     DetailAgeBadge(movie.age)
                     Text("Rạp chiếu",color = C.Muted)
-                    Text(slot?.cinema?.name.orEmpty(),fontWeight = FontWeight.SemiBold)
-                    Text(slot?.cinema?.address.orEmpty(),color = C.Muted)
+                    Text("Landmark 81 · ${slot?.auditorium?.name.orEmpty()}",fontWeight = FontWeight.SemiBold)
+                    Text("Phòng và ghế mô phỏng N8, không phải sơ đồ ghế CGV.",color = C.Muted)
                     Text("Suất chiếu",color = C.Muted)
-                    Text(slot?.let { "${it.time} · ${displayCalendarDate(it.date)}" }.orEmpty(),fontWeight = FontWeight.SemiBold)
-                    Text(slot?.format.orEmpty())
+                    Text(slot?.let { "${showtimeRange(it)} · ${displayCalendarDate(vm.catalogDate)}" }.orEmpty(),fontWeight = FontWeight.SemiBold)
+                    Text(slot?.let(::scheduleFormat).orEmpty())
+                    Text(slot?.let { "Giá vé cơ sở: ${it.basePrice} VND" }.orEmpty())
                 }
             }
             Text("Chức năng chọn ghế sẽ có trong phiên bản sau.",color = C.Muted,textAlign = TextAlign.Center)

@@ -63,18 +63,21 @@ fun searchMovies(items: List<Movie>, query: String): List<Movie> {
 @Serializable data class MoviesResponse(val businessDate: String, val items: List<MovieDto>, val serverTime: String)
 @Serializable data class AuditoriumDto(val id: String, val name: String, val type: String, val capacity: Int, val isExtra: Boolean)
 @Serializable data class ShowtimeDto(val id: String, val movieId: String, val sourceKey: String, val startAt: String, val endAt: String, val format: String, val basePrice: String, val status: String, val auditorium: AuditoriumDto, val presentationLabel: String? = null, val availableSeats: Int = 0, val totalSeats: Int = 0)
+@Serializable data class ShowtimeResponse(val serverTime: String, val item: ShowtimeDto)
 @Serializable data class ShowtimesResponse(val businessDate: String, val items: List<ShowtimeDto>, val serverTime: String)
 data class CatalogDay(val movies: List<Movie>, val showtimes: List<ShowtimeDto>, val serverTime: String)
 interface CatalogRepository {
     suspend fun dates(): List<String>
     suspend fun movies(date: String): CatalogDay
     suspend fun movie(id: String): Movie
+    suspend fun showtime(id: String): ShowtimeResponse
     suspend fun showtimes(id: String, date: String): ShowtimesResponse
 }
 interface CatalogApi {
     @GET("movies/dates") suspend fun dates(): CatalogDatesResponse
     @GET("movies") suspend fun movies(@Query("date") date: String): MoviesResponse
     @GET("movies/{id}") suspend fun movie(@Path("id") id: String): MovieDto
+    @GET("showtimes/{id}") suspend fun showtime(@Path("id") id: String): ShowtimeResponse
     @GET("movies/{id}/showtimes") suspend fun showtimes(@Path("id") id: String, @Query("date") date: String): ShowtimesResponse
 }
 class ApiCatalogRepository : CatalogRepository {
@@ -94,10 +97,20 @@ class ApiCatalogRepository : CatalogRepository {
         return CatalogDay(r.items.map { it.movie() }, r.items.flatMap { it.showtimes }, r.serverTime)
     }
     override suspend fun movie(id: String) = api.movie(id).movie().also { check(it.id == id) }
+    override suspend fun showtime(id: String): ShowtimeResponse {
+        val r = api.showtime(id); isoMillis(r.serverTime); check(r.item.id == id); validateSlot(r.item); return r
+    }
     override suspend fun showtimes(id: String, date: String): ShowtimesResponse { val r = api.showtimes(id,date); check(r.businessDate == date); isoMillis(r.serverTime); validateSlots(r.items,id,date); return r }
     private fun validateSlots(items: List<ShowtimeDto>, id: String, date: String) {
         check(items.map { it.id }.distinct().size == items.size)
-        items.forEach { check(it.movieId == id && vietnamDate(Date(isoMillis(it.startAt))) == date && isoMillis(it.endAt) > isoMillis(it.startAt) && it.status == "ACTIVE" && it.availableSeats >= 0 && it.availableSeats <= it.totalSeats) }
+        items.forEach { validateSlot(it); check(it.movieId == id && vietnamDate(Date(isoMillis(it.startAt))) == date && it.status == "ACTIVE") }
+    }
+    private fun validateSlot(slot: ShowtimeDto) {
+        check(isoMillis(slot.endAt) > isoMillis(slot.startAt))
+        check(slot.status in setOf("ACTIVE", "CANCELED"))
+        check(slot.format in setOf("STANDARD_2D", "STANDARD_3D", "IMAX_2D", "IMAX_3D", "SCREENX", "GOLD_CLASS"))
+        check(slot.availableSeats >= 0 && slot.availableSeats <= slot.totalSeats)
+        check(Regex("[0-9]+").matches(slot.basePrice))
     }
 }
 
@@ -106,5 +119,11 @@ object MockCatalogRepository : CatalogRepository {
     override suspend fun dates() = listOf(vietnamDate())
     override suspend fun movies(date: String) = CatalogDay(MockMovies.all, MockMovies.all.flatMap { showtimes(it.id,date).items }, "${vietnamDate()}T00:00:00.000Z")
     override suspend fun movie(id: String) = MockMovies.all.first { it.id == id }
+    override suspend fun showtime(id: String): ShowtimeResponse {
+        val date = id.takeLast(10)
+        val movie = MockMovies.all.first { id == "fixture-${it.id}-$date" }
+        val response = showtimes(movie.id, date)
+        return ShowtimeResponse(response.serverTime, response.items.single())
+    }
     override suspend fun showtimes(id: String, date: String) = ShowtimesResponse(date, listOf(ShowtimeDto("fixture-$id-$date",id,"fixture","${date}T16:30:00.000Z","${nextCalendarDate(date)}T00:00:00.000Z","STANDARD_2D","100000","ACTIVE",AuditoriumDto("fixture-room","Cinema 3","STANDARD",160,false),"Phụ đề Việt",160,160)), "${vietnamDate()}T00:00:00.000Z")
 }

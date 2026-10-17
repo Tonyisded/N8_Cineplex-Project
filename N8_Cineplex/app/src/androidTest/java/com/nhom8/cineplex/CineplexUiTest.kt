@@ -56,9 +56,14 @@ class CineplexUiTest {
         compose.onNodeWithText("Chi tiết phim").assertIsDisplayed()
         screenshot("detail")
         compose.onNodeWithText("Đặt vé").assertDoesNotExist()
-        compose.onNode(hasContentDescription("Suất ",substring = true)).performScrollTo().performClick()
+        compose.onNodeWithText("Chọn suất chiếu").performClick()
+        compose.waitUntil(5_000) { vm.screen == Screen.SHOWTIMES && !vm.detailLoading }
+        compose.onNodeWithTag("schedule-slot-${vm.scheduleSlots.single().id}").performScrollTo().performClick()
+        compose.onNodeWithTag("continue-showtime").performClick()
+        com.nhom8.cineplex.data.DetailSchedule.ageLimit(vm.movie!!)?.let { age -> compose.onNodeWithText("Tôi từ đủ $age tuổi — Tiếp tục").performScrollTo().performClick() }
+        compose.waitUntil(5_000) { vm.screen == Screen.SEAT_SUMMARY }
         compose.onNodeWithText("Thông tin suất chiếu").assertIsDisplayed()
-        compose.onNodeWithText("Đã hiểu").performClick(); back()
+        back(); back(); back()
         Assert.assertEquals("linh hon",vm.query); Assert.assertTrue(vm.soon)
         compose.onNode(hasScrollToIndexAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).performScrollToNode(hasText("Sắp chiếu"))
         compose.onNodeWithText("Sắp chiếu").assertIsSelected()

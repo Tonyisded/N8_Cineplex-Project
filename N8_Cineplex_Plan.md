@@ -1716,6 +1716,15 @@ GET /showtimes/:id/seats
 GET /combos
 ```
 
+
+**Hợp đồng triển khai catalog tuần 6 — 2026-10-17:**
+
+- `GET /api/v1/showtimes/:id` trả `{serverTime,item}`; `item` cùng cấu trúc suất trong `/movies/:id/showtimes`, gồm `id/movieId/sourceKey/startAt/endAt/format/presentationLabel/basePrice/status/auditorium/availableSeats/totalSeats`.
+- `GET /api/v1/showtimes/:id/seats` trả `{serverTime,showtimeId,items}`; ghế chỉ có `id/seatCode/rowName/seatNumber/seatType/price/status`, sắp theo hàng rồi số ghế. Không trả người giữ ghế hoặc hạn giữ ghế. Inventory thiếu trả `[]`, không sinh ghế từ capacity.
+- UUID sai400, suất không tồn tại404 `SHOWTIME_NOT_FOUND`. Chi tiết suất tồn tại vẫn200 khi đã bắt đầu hoặc CANCELED; client phải kiểm tra trạng thái/thời gian/số ghế trước bước tiếp tục. GET chỉ đọc, không giữ ghế hay sửa trạng thái. Tiền là chuỗi VND, thời gian UTC ISO và serverTime có milliseconds.
+- Giữ các envelope/list/date và lọc ACTIVE/tương lai hiện có; không thêm endpoint format/rating riêng. Rating trong scope này là ageRating P/K/T13/T16/T18, không phải điểm đánh giá phim. Một địa điểm Landmark 81, phòng và inventory logic N8; không hỗ trợ nhiều rạp/khu vực.
+
+
 ## 29.4. Booking
 
 ```text
@@ -2705,3 +2714,34 @@ Trạng thái: **Hoàn thành phần source/build/unit; Bị chặn kiểm tra e
 API hiện tại chưa có chọn khu vực/nhiều rạp và endpoint đặt vé. `DetailSchedule` chứa ba rạp/hai khu vực và suất 7 ngày tương đối theo ngày hiện hành, gồm suất hết vé và một ngày trống; toàn bộ màn lịch chiếu ghi rõ dữ liệu minh họa. Đổi ngày/khu vực/rạp xóa suất đã chọn; nút tiếp tục chỉ mở khi suất hợp lệ. Back giữ state/scroll của màn chi tiết/lịch qua `SaveableStateHolder`, Home giữ LazyListState sẵn có. `Scaffold` dành riêng bottom bar, app dùng safe drawing insets hiện có.
 
 Kiểm tra: Gradle Wrapper `assembleDebug testDebugUnitTest lintDebug` đạt khi dùng Gradle/Android user home trong vùng build ghi được; 35/35 unit tests đạt, gồm test mới chọn suất/nhánh tuổi; lint 0 lỗi, 44 cảnh báo, 2 hints. Sau sửa cuối về state/semantics, chạy lại `assembleDebug testDebugUnitTest` đạt. Emulator đã khởi động nhưng ADB bị sandbox chặn tạo `\\.android`; chưa có ảnh chụp/kiểm tra tương tác trên emulator và không suy diễn visual đã đạt. Không đổi backend/API/DB nên không triển khai VPS. Chưa commit/push. Bước tiếp theo: kiểm tra trực quan luồng trên emulator khi ADB truy cập được, rồi cập nhật bằng chứng vào cả hai file.
+
+
+### Catalog/showtime và tích hợp lịch chiếu tuần 6 — 2026-10-17
+
+Trạng thái: **Đang làm**. Theo phạm vi đã được xác nhận: bổ sung GET /api/v1/showtimes/:id và /showtimes/:id/seats; nối màn lịch chiếu Android vào API thật, chỉ Landmark 81, giữ bố cục của Nhân. Tái sử dụng format/ageRating và thuật toán phân phòng hiện có; không thêm bảng/migration/dependency, không làm giữ ghế/đơn/thanh toán. Backend local giữ localhost; VPS giữ overlay proxy ngoài repo. Đã lưu PRE_WEEK6_BASELINE.zip ngoài repo, SHA256 390131264373894706e159bbc1fbeca3c9cfb8de0601e67ca91a25f3b316be57; typecheck và 17/17 catalog tests baseline đạt exit0. Còn source/tests mới, kiểm chứng Android, rollback bản sao, triển khai/nghiệm thu VPS và cập nhật kết quả. Giữ bộ bốn role hiện hành tại D:\NT118\verification\week5-crawler-20261010, bổ sung baseline/mode --week6 mà không thay các mốc cũ.
+
+
+### Kết quả hoàn thiện catalog/showtime tuần 6 — 2026-10-17
+
+Trạng thái: **Hoàn thành local/VPS/Android trong phạm vi đã chốt**, thay mốc Đang làm của catalog/showtime tuần 6 phía trên. Phạm vi là API đọc catalog/suất/ghế và tích hợp màn chọn suất thật cho Landmark 81, không phải hoàn thành đặt vé. Source của màn chi tiết/lịch chiếu được giữ bố cục, thay dữ liệu mẫu bằng DTO/repository thật; bộ lọc nhiều rạp mẫu bỏ theo spec một địa điểm.
+
+- Backend: ShowtimesController.detail/seats và serializer dùng chung; không đổi hợp đồng API cũ, không thêm bảng/field/migration/dependency. Format sáu loại và ageRating tiếp tục dùng chuẩn hiện có. Tái sử dụng room assignment, bổ sung kiểm thử phòng inactive, ưu tiên seed, tạo/tái sử dụng extra và ranh giới [start,end); không đổi importer để ép kết quả.
+- Android: selectedShowtime thay SampleSlot; lịch/ngày dùng chung Home/chi tiết/lịch, nhóm format+presentationLabel, phòng/counter/giá từ API. Loading/error/retry/empty tách biệt, không fallback lịch/rạp/điểm đánh giá/ngày/trailer mẫu. API chi tiết kiểm tra lại trước tóm tắt, chặn suất hủy/quá giờ/hết ghế/thiếu inventory; epoch/cancel chống phản hồi muộn sau đổi ngày/back/logout. Cảnh báo tuổi dùng movie.age; xác nhận tự khai không xác minh tuổi thật. Qua ngày Việt Nam xóa lựa chọn và trở lại lịch thay vì để tóm tắt rỗng. Grid dùng min width theo fontScale, có nhãn trợ năng cho back/suất.
+- Local: build/typecheck/format backend đạt; 61/61 tests đạt. Local127.0.0.1:5000 qua tunnel DB chung health200/database up, payload ngày17/18 khớp VPS cũ; chi tiết/ghế mới khớp inventory32 ghế GOLD. Process API/tunnel do phiên tạo đã dừng. Android41/41 unit, assembleDebug/AndroidTest/lint đạt, lint0 lỗi/44 cảnh báo/2 hints có sẵn.
+- Android bản cuối: native21/21 trên360×800dp gồm UI/Auth/date/preview/trailer thật và hai catalog tests qua HTTPS VPS, thêm Auth connectivity; tablet820×1180dp3/3 và393×852dp font1.5 3/3 đạt. Ảnh native đã mở kiểm tra; giờ không bị ngắt dòng ở font lớn sau grid responsive. APK debug WEEK6_CATALOG.apk, SHA256 6acb8705ec34bf7cab86638d0b4d637ed3a637bdebbca4c5a519cdb7eb8a7036, lưu tại bộ verification hiện hành. Chưa thử máy vật lý.
+- VPS: đã build và triển khai catalog-preview-780c6b76031e7acc, source identity 780c6b76031e7acce9ea401dbf0e7e9c5543576f1723116e0d0f7fbaf9409445, manifest42 file; đúng4 file overlay proxy môi trường so với public backend, không đưa proxy/secrets vào source local. 64/64 tests chạy thật trong tools container Linux network-none với cấu hình fixture và theme readonly, không gọi đó là tests local. Native Argon2/sharp/Chromium đạt. API healthy/start2026-10-17T07:04:53.111260125Z, health200/database up, Swagger200/OpenAPI có hai endpoint mới; HOST0.0.0.0:5000 nội bộ, TLS/host key kiểm tra bình thường.
+- DB đọc-only:10 bảng/109 cột, overlap phòng ACTIVE0, sai capability0, thiếu inventory so capacity0, trùng seat_code0. Snapshot ngày18 tại07:07UTC có11 phim/43 suất; đã đối chiếu chi tiết/ghế cho GOLD_CLASS/STANDARD_2D/IMAX_2D/SCREENX đang có; các format3D được kiểm thử bằng fixture, không bịa suất thật. Dữ liệu/counter có thể thay đổi theo thời gian. Hash users/inventory trước triển khai và qua nghiệm thu giữ nguyên; không chạy migration/reset/restore hay backfill.
+- Proxy crawler Playwright thật trên release mới CGV HTTP200 lúc07:07:15.266Z. Cấu hình riêng3 env/hash/quyền giữ nguyên, PostgreSQL/Nginx ID/StartedAt/mount giữ nguyên. Backup timer và snap.certbot.renew.timer active; release dùng family catalog-preview được backup.sh chấp nhận. Không thay lịch cron00/06/12/18 giờ Việt Nam.
+- Sau nghiệm thu API/UI qua VPS đã dọn image/cache theo khóa deploy-cleanup: giữ đúng3 image đang chạy, thu hồi4.813GB builder +4.482GB image, còn22GB. API/PG/Nginx trạng thái/startup/mount/env giữ nguyên, health/Swagger vẫn200. Giữ source release/manifest và cấu hình dựng lại, không prune volume/network, không reboot.
+- Bằng chứng: cùng probe với UUID fixture cố định: BASELINE hai endpoint404 → MODIFIED200, IMAX_2D/counter2/3 và ghế A1,A2,A10 → ROLLBACK bản sao404; exit0. Rollback --week6 phục hồi138 file/hash pristine từ PRE_WEEK6_BASELINE.zip SHA256 390131264373894706e159bbc1fbeca3c9cfb8de0601e67ca91a25f3b316be57; regression restored59/59 đạt với env fixture không-secret. Source chính giữ bản mới. Cùng4 role tại D:\NT118\verification\week5-crawler-20261010 được cập nhật, giữ baseline/mode cũ và bổ sung patch tuần6; không tự rollback VPS hoặc DB.
+
+Các lỗi kiểm chứng đã giữ ngoài repo và sửa/rerun: patch tool từ chối hai thao tác cùng file (chưa chạy sửa đó); emulator ban đầu bị LOW_MEMORY, tăng RAM phiên test lên4096MB; capture Compose có2 root khi dialog mở chuyển sang UiAutomation; hai UI selectors cũ cập nhật để đi qua màn chọn suất mới, giữ kiểm tra ngày/search/logout; rollback copy không có .env dùng cấu hình fixture rồi59/59 đạt. Query certbot.timer không phải unit đang dùng; xác nhận đúng snap.certbot.renew.timer active, không sửa dịch vụ chứng chỉ. Không bỏ tests hoặc nới TLS/state guard để ép đạt.
+
+Giới hạn: chưa chọn/giữ ghế, tạo đơn, combo/payment/ticket; đọc số ghế không bảo đảm chỗ. Không triển khai nhiều rạp, VIP/couple zoning hay xác minh tuổi thực tế. Không coi probe CGV là một lượt import hoặc tick cron. Bước tiếp theo ngoài nhiệm vụ hiện tại là người dùng chạy thử APK; nghiệp vụ đặt vé thuộc các tuần sau.
+
+
+### Công bố phần tuần 6 trên nhánh riêng — 2026-10-17
+
+Trạng thái: **Đang làm phần công bố**, không thay đổi kết quả hoàn thành local/VPS/Android ở trên. Người dùng đã yêu cầu tạo commit và push. GitHub API /user xác nhận tài khoản xác thực thnguyen290106; email thnguyen290106@gmail.com đã liên kết và verified. Repository dùng Author/Committer Trần Thanh Nguyên <thnguyen290106@gmail.com> cho các commit mới, không co-author/bot. Nhánh feat/nguyen-week6-catalog-showtimes tách từ main bcc666d6d5867b207d136fc8a1b17f1af78dc8a2; không sửa lịch sử hoặc đẩy lên main. Chỉ công bố 22 file của thay đổi tuần 6, không đưa secrets, log, APK hoặc selftest tạm vào repository.
+
+Các source backend hiện tại đã đối chiếu byte/hash với manifest public của release VPS catalog-preview-780c6b76031e7acc đã nghiệm thu; bước công bố không thay đổi runtime, schema hoặc cấu hình VPS. Bằng chứng Git/định danh lưu ngoài repository tại bộ verification hiện hành; chưa ghi SHA/kết quả push trước khi thực thi. Bước tiếp theo: kiểm tra staged diff, tạo commit đúng danh tính, push nhánh, đối chiếu SHA remote và tài khoản tác giả trên GitHub rồi cập nhật cả hai tài liệu.

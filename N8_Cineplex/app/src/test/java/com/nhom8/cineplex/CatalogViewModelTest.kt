@@ -31,6 +31,7 @@ class CatalogViewModelTest {
             return CatalogDay(selected, selected.flatMap { MockCatalogRepository.showtimes(it.id,date).items }, "${vietnamDate()}T00:00:00.000Z")
         }
         override suspend fun movie(id: String) = films.first { it.id == id }
+        override suspend fun showtime(id: String) = MockCatalogRepository.showtime(id)
         override suspend fun showtimes(id: String, date: String): ShowtimesResponse { detailDates += date; return ShowtimesResponse(date, emptyList(), "${vietnamDate()}T00:00:00.000Z") }
     }
     private fun login(catalog: Catalog): CineplexViewModel {
