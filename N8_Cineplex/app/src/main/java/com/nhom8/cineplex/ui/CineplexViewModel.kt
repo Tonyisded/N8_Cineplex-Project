@@ -22,6 +22,24 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     var query by mutableStateOf("")
     var soon by mutableStateOf(false)
     var movie by mutableStateOf<Movie?>(null); private set
+    var scheduleDate by mutableStateOf(""); private set
+    var scheduleArea by mutableStateOf("hcm"); private set
+    var scheduleCinema by mutableStateOf("all"); private set
+    var selectedSampleSlot by mutableStateOf<SampleSlot?>(null); private set
+    var ageSheet by mutableStateOf(false); private set
+    var underAgeSheet by mutableStateOf(false); private set
+    val sampleSlots get() = movie?.let { DetailSchedule.slots(it.id, scheduleDate, today(), nowMillis.takeIf { clock -> clock > 0 } ?: System.currentTimeMillis()) }.orEmpty()
+        .filter { it.cinema.area == scheduleArea && (scheduleCinema == "all" || it.cinema.id == scheduleCinema) }
+    fun openSchedule() { if (session?.role == Role.CUSTOMER && movie != null) { if (scheduleDate !in DetailSchedule.dates(today())) { scheduleDate = catalogDate.takeIf { it in DetailSchedule.dates(today()) } ?: today(); selectedSampleSlot = null }; screen = Screen.SHOWTIMES } }
+    fun chooseScheduleDate(date: String) { if (date in DetailSchedule.dates(today())) { scheduleDate = date; selectedSampleSlot = null } }
+    fun chooseScheduleArea(area: String) { if (area in DetailSchedule.areas) { scheduleArea = area; scheduleCinema = "all"; selectedSampleSlot = null } }
+    fun chooseScheduleCinema(id: String) { if (id == "all" || DetailSchedule.cinemas.any { it.id == id && it.area == scheduleArea }) { scheduleCinema = id; selectedSampleSlot = null } }
+    fun chooseSampleSlot(id: String) { selectedSampleSlot = sampleSlots.firstOrNull { it.id == id && !it.soldOut } }
+    fun continueSchedule() { if (selectedSampleSlot?.let { selected -> sampleSlots.any { it.id == selected.id && !it.soldOut } } == true) { if (movie?.let(DetailSchedule::ageLimit) == null) screen = Screen.SEAT_SUMMARY else { ageSheet = true; underAgeSheet = false } } }
+    fun showUnderAge() { if (ageSheet) underAgeSheet = true }
+    fun closeAgeSheet() { ageSheet = false; underAgeSheet = false }
+    fun confirmAge() { if (ageSheet && !underAgeSheet && selectedSampleSlot?.let { selected -> sampleSlots.any { it.id == selected.id && !it.soldOut } } == true) { closeAgeSheet(); screen = Screen.SEAT_SUMMARY } }
+    fun chooseAnotherMovie() { closeAgeSheet(); detailEpoch++; detailRequest?.cancel(); selectedSampleSlot = null; movie = null; screen = Screen.HOME }
     var notice by mutableStateOf<Notice?>(null); private set
     var dialog by mutableStateOf<String?>(null); private set
     var googleRequested by mutableStateOf(false); private set
@@ -38,7 +56,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     fun selectTimeWindow(value: Int) { require(value in timeWindows.indices); timeWindow = value }
     fun slotsFor(id: String, filtered: Boolean = true) = upcomingSlots(catalogShowtimes.filter { it.movieId == id }, nowMillis, if (filtered) timeWindow else 0)
     val visibleShowtimes get() = upcomingSlots(showtimes, nowMillis, timeWindow)
-    fun openTrailer(value: Movie) { if (session?.role == Role.CUSTOMER && value.trailerYoutubeId?.matches(Regex("[A-Za-z0-9_-]{11}")) == true) trailer = value }
+    fun openTrailer(value: Movie) { val id = DetailSchedule.filmMeta(value).trailerYoutubeId; if (session?.role == Role.CUSTOMER && id?.matches(Regex("[A-Za-z0-9_-]{11}")) == true) trailer = value.copy(trailerYoutubeId = id) }
     fun closeTrailer() { trailer = null }
     fun showSlot(slot: ShowtimeDto) {
         tickCatalogClock()
@@ -67,7 +85,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     private var detailEpoch = 0
     private fun clearCatalog() {
         catalogEpoch++; detailEpoch++; catalogRequest?.cancel(); detailRequest?.cancel()
-        catalogRequest = null; detailRequest = null; movies = emptyList(); showtimes = emptyList(); catalogShowtimes = emptyList(); movie = null; trailer = null; timeWindow = 0; serverMillis = 0L; nowMillis = 0L
+        catalogRequest = null; detailRequest = null; movies = emptyList(); showtimes = emptyList(); catalogShowtimes = emptyList(); movie = null; trailer = null; selectedSampleSlot = null; closeAgeSheet(); timeWindow = 0; serverMillis = 0L; nowMillis = 0L
         catalogLoading = false; detailLoading = false; catalogError = ""; detailError = ""; catalogDate = ""; availableDates = emptyList(); lastCatalogToday = ""
     }
     fun selectCatalogDate(date: String) {
@@ -159,12 +177,13 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
             }
         }
     }
-    fun openMovie(value: Movie) { if (session?.role == Role.CUSTOMER) { movie = value; screen = Screen.DETAIL; refreshMovie() } }
+    fun openMovie(value: Movie) { if (session?.role == Role.CUSTOMER) { movie = value; scheduleDate = ""; scheduleArea = "hcm"; scheduleCinema = "all"; selectedSampleSlot = null; screen = Screen.DETAIL; refreshMovie() } }
     fun back() {
+        if (ageSheet) { closeAgeSheet(); return }
         if (trailer != null) { closeTrailer(); return }
         if (notice != null) { dismissNotice(); return }
         if (dialog != null) { if (!loading) dialog = null; return }
-        when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.DETAIL -> { detailEpoch++; detailRequest?.cancel(); detailLoading = false; movie = null; showtimes = emptyList(); screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }
+        when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.SEAT_SUMMARY -> screen = Screen.SHOWTIMES; Screen.SHOWTIMES -> screen = Screen.DETAIL; Screen.DETAIL -> { detailEpoch++; detailRequest?.cancel(); detailLoading = false; movie = null; showtimes = emptyList(); screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }
     }
     fun logout() {
         query = ""; soon = false; movie = null; navigate(Screen.LOGIN)
