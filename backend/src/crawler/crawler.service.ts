@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { chromium, type Page } from "playwright";
+import { chromium, type Page, type Response } from "playwright";
 
 import {
   businessDate,
@@ -10,12 +10,19 @@ import {
   normalizeFormat,
   presentationLabel,
   clean,
+  type ComingSoonSnapshot,
   type CrawlSnapshot,
 } from "./normalize.js";
-import { parseMovie, type MovieDom } from "./parse-movie.js";
+import {
+  parseComingSoonMovie,
+  parseMovie,
+  type MovieDom,
+} from "./parse-movie.js";
 
 export const CGV_LANDMARK_URL =
   "https://www.cgv.vn/default/cinox/site/cgv-vincom-landmark-81/";
+export const CGV_COMING_SOON_URL =
+  "https://www.cgv.vn/default/movies/coming-soon-1.html";
 
 export type CrawlerProbeResult = {
   sourceUrl: string;
@@ -30,16 +37,26 @@ export type CrawlerProbeResult = {
 @Injectable()
 export class CrawlerService {
   async probe(): Promise<CrawlerProbeResult> {
-    return this.visit(async (_page, result) => result);
+    return this.withPage(
+      CGV_LANDMARK_URL,
+      (page) => this.checkTheater(page),
+      async (page, response, theater) => ({
+        sourceUrl: CGV_LANDMARK_URL,
+        finalUrl: page.url(),
+        status: response.status(),
+        title: await page.title(),
+        theaterName: theater.name,
+        address: theater.address,
+        checkedAt: new Date().toISOString(),
+      }),
+    );
   }
 
-  private async visit<T>(
-    read: (page: Page, result: CrawlerProbeResult) => Promise<T>,
-    date?: string,
+  private async withPage<V, T>(
+    targetUrl: string,
+    validate: (page: Page) => Promise<V>,
+    read: (page: Page, response: Response, value: V) => Promise<T>,
   ): Promise<T> {
-    const targetUrl = date
-      ? `${CGV_LANDMARK_URL}?selecteddate=${date.replaceAll("-", "")}`
-      : CGV_LANDMARK_URL;
     const browser = await chromium.launch({ headless: true, timeout: 15_000 });
     try {
       const context = await browser.newContext({
@@ -87,45 +104,43 @@ export class CrawlerService {
         throw new Error(`CGV returned HTTP ${response?.status() ?? "unknown"}`);
       }
       if (page.url() !== targetUrl) {
-        throw new Error("CGV navigated outside the fixed theater page");
+        throw new Error("CGV navigated outside the requested page");
       }
-      const heading = page.locator(".theater-title h3");
-      const location = page.locator(".theater-address");
-      await Promise.all([
-        heading.waitFor({ state: "visible" }),
-        location.waitFor({ state: "visible" }),
-      ]);
-      const theaterName = clean(await heading.innerText());
-      const address = clean(await location.innerText());
-      if (
-        theaterName !== "CGV Vincom Center Landmark 81" ||
-        !address.includes("Landmark 81") ||
-        !address.includes("772")
-      ) {
-        throw new Error(
-          "CGV theater content is missing or does not match Landmark 81",
-        );
-      }
-      return await read(page, {
-        sourceUrl: CGV_LANDMARK_URL,
-        finalUrl: page.url(),
-        status: response.status(),
-        title: await page.title(),
-        theaterName,
-        address,
-        checkedAt: new Date().toISOString(),
-      });
+      return await read(page, response, await validate(page));
     } finally {
       await browser.close();
     }
   }
 
+  private async checkTheater(page: Page) {
+    const heading = page.locator(".theater-title h3");
+    const location = page.locator(".theater-address");
+    await Promise.all([
+      heading.waitFor({ state: "visible" }),
+      location.waitFor({ state: "visible" }),
+    ]);
+    const name = clean(await heading.innerText());
+    const address = clean(await location.innerText());
+    if (
+      name !== "CGV Vincom Center Landmark 81" ||
+      !address.includes("Landmark 81") ||
+      !address.includes("772")
+    ) {
+      throw new Error(
+        "CGV theater content is missing or does not match Landmark 81",
+      );
+    }
+    return { name, address };
+  }
+
   async collect(date = businessDate()): Promise<CrawlSnapshot> {
     dateWindow(date);
-    return this.visit(
+    const dy = date.replaceAll("-", "");
+    return this.withPage(
+      `${CGV_LANDMARK_URL}?selecteddate=${dy}`,
+      (page) => this.checkTheater(page),
       async (page) =>
         this.collectPage(page, date, await page.context().newPage(), new Map()),
-      date,
     );
   }
 
@@ -140,37 +155,169 @@ export class CrawlerService {
     stopDate: string;
   }> {
     dateWindow(today);
-    return this.visit(async (page) => {
-      const ids = await page
-        .locator('[id^="cgv"]')
-        .evaluateAll((nodes) =>
-          nodes.map((node) => node.id).filter((id) => /^cgv\d{8}$/.test(id)),
+    const dy = today.replaceAll("-", "");
+    return this.withPage(
+      `${CGV_LANDMARK_URL}?selecteddate=${dy}`,
+      (page) => this.checkTheater(page),
+      async (page) => {
+        const ids = await page
+          .locator('[id^="cgv"]')
+          .evaluateAll((nodes) =>
+            nodes.map((node) => node.id).filter((id) => /^cgv\d{8}$/.test(id)),
+          );
+        const dates = new Set(
+          ids.map((id) => {
+            const value = id.slice(3);
+            const date = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`;
+            dateWindow(date);
+            return date;
+          }),
         );
-      const dates = new Set(
-        ids.map((id) => {
-          const dy = id.slice(3);
-          const date = `${dy.slice(0, 4)}-${dy.slice(4, 6)}-${dy.slice(6)}`;
-          dateWindow(date);
-          return date;
-        }),
+        const details = await page.context().newPage();
+        const cache = new Map<string, MovieDom>();
+        const read = (date: string) =>
+          consume(date, () => this.collectPage(page, date, details, cache));
+        // Today may have no remaining slots; only a future empty day ends the range.
+        if (dates.has(today)) await read(today);
+        for (
+          let date = nextBusinessDate(today);
+          ;
+          date = nextBusinessDate(date)
+        ) {
+          if (!dates.has(date))
+            return { stopReason: "UNPUBLISHED_DATE", stopDate: date };
+          if ((await read(date)).empty)
+            return { stopReason: "EMPTY_DAY", stopDate: date };
+        }
+      },
+    );
+  }
+
+  async collectComingSoon(): Promise<ComingSoonSnapshot> {
+    return this.withPage(
+      CGV_COMING_SOON_URL,
+      (page) => this.checkComingSoon(page),
+      async (page) => {
+        const rows = await page
+          .locator(".film-lists.item")
+          .evaluateAll((items) =>
+            items.map((item) => {
+              const link =
+                item.querySelector<HTMLAnchorElement>(".product-name a");
+              const rating = item.querySelector(".nmovie-rating");
+              const info = [...item.querySelectorAll(".cgv-movie-info")].map(
+                (row) => ({
+                  label: row.querySelector(".cgv-info-bold")?.textContent ?? "",
+                  value:
+                    row.querySelector(".cgv-info-normal")?.textContent ?? "",
+                }),
+              );
+              const value = (label: string) =>
+                info.find((row) => row.label.trim().startsWith(label))?.value ??
+                "";
+              return {
+                url: link?.href ?? "",
+                title: link?.textContent ?? "",
+                age: rating
+                  ? `${rating.className} ${rating.textContent ?? ""}`
+                  : "",
+                duration: value("Thời lượng"),
+                release: value("Khởi chiếu"),
+                poster:
+                  item
+                    .querySelector<HTMLImageElement>(".product-images img")
+                    ?.getAttribute("src") ?? "",
+              };
+            }),
+          );
+        const snapshot: ComingSoonSnapshot = {
+          capturedAt: new Date().toISOString(),
+          sourceMovies: rows.length,
+          movies: [],
+          skipped: [],
+          omitted: [],
+        };
+        const details = await page.context().newPage();
+        for (const row of rows) {
+          let url = row.url;
+          try {
+            url = sourceMovieUrl(url);
+            const response = await details.goto(url, {
+              waitUntil: "domcontentloaded",
+              timeout: 30000,
+            });
+            if (response?.status() !== 200 || details.url() !== url)
+              throw new Error("CGV movie navigation failed");
+            await details
+              .locator(".product-view h1")
+              .first()
+              .waitFor({ state: "visible" });
+            const movie = parseComingSoonMovie(
+              url,
+              await this.readMovieDom(details),
+              row,
+            );
+            if (!movie) {
+              snapshot.omitted.push({
+                source: url,
+                reason: "Missing release date",
+              });
+              continue;
+            }
+            snapshot.movies.push(movie);
+          } catch (error) {
+            snapshot.skipped.push({
+              source: url,
+              reason: error instanceof Error ? error.message : "Invalid movie",
+            });
+          }
+        }
+        return snapshot;
+      },
+    );
+  }
+
+  private async checkComingSoon(page: Page) {
+    await page
+      .locator(".category-products.cgv-movies")
+      .first()
+      .waitFor({ state: "attached" });
+    if (
+      !(await page.evaluate(() =>
+        document.body.classList.contains("category-coming-soon"),
+      ))
+    ) {
+      throw new Error(
+        "CGV coming-soon content is missing or does not match the source page",
       );
-      const details = await page.context().newPage();
-      const cache = new Map<string, MovieDom>();
-      const read = (date: string) =>
-        consume(date, () => this.collectPage(page, date, details, cache));
-      // Today may have no remaining slots; only a future empty day ends the range.
-      if (dates.has(today)) await read(today);
-      for (
-        let date = nextBusinessDate(today);
-        ;
-        date = nextBusinessDate(date)
-      ) {
-        if (!dates.has(date))
-          return { stopReason: "UNPUBLISHED_DATE", stopDate: date };
-        if ((await read(date)).empty)
-          return { stopReason: "EMPTY_DAY", stopDate: date };
-      }
-    }, today);
+    }
+    if ((await page.locator(".film-lists.item").count()) === 0) {
+      throw new Error("CGV coming-soon listing is empty");
+    }
+  }
+
+  private async readMovieDom(page: Page): Promise<MovieDom> {
+    return page.evaluate(() => ({
+      trailer:
+        document
+          .querySelector<HTMLIFrameElement>(
+            '.product-view iframe[src*="youtube"]',
+          )
+          ?.getAttribute("src") ?? "",
+      title: document.querySelector(".product-view h1")?.textContent ?? "",
+      rows: [...document.querySelectorAll(".movie-info")].map(
+        (el) => el.textContent ?? "",
+      ),
+      synopsis:
+        document.querySelector(".product-collateral .std")?.textContent ?? "",
+      poster:
+        document
+          .querySelector<HTMLImageElement>(".product-img-box img")
+          ?.getAttribute("src") ?? "",
+      age: [...document.querySelectorAll(".movie-rating, .movie-rating-detail")]
+        .map((el) => `${el.className} ${el.textContent}`)
+        .join(" "),
+    }));
   }
 
   private async collectPage(
@@ -273,33 +420,7 @@ export class CrawlerService {
             .locator(".product-view h1")
             .first()
             .waitFor({ state: "visible" });
-          raw = await details.evaluate(() => ({
-            trailer:
-              document
-                .querySelector<HTMLIFrameElement>(
-                  '.product-view iframe[src*="youtube"]',
-                )
-                ?.getAttribute("src") ?? "",
-            title:
-              document.querySelector(".product-view h1")?.textContent ?? "",
-            rows: [...document.querySelectorAll(".movie-info")].map(
-              (el) => el.textContent ?? "",
-            ),
-            synopsis:
-              document.querySelector(".product-collateral .std")?.textContent ??
-              "",
-            poster:
-              document
-                .querySelector<HTMLImageElement>(".product-img-box img")
-                ?.getAttribute("src") ?? "",
-            age: [
-              ...document.querySelectorAll(
-                ".movie-rating, .movie-rating-detail",
-              ),
-            ]
-              .map((el) => `${el.className} ${el.textContent}`)
-              .join(" "),
-          }));
+          raw = await this.readMovieDom(details);
           cache.set(url, raw);
         }
         const movie = parseMovie(url, raw, row.age);

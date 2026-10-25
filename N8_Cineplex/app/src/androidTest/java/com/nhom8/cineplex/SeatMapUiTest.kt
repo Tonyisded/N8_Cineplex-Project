@@ -24,6 +24,7 @@ class SeatMapUiTest {
         val slot=ShowtimeDto("seat-slot-$type",film.id,"fixture","2026-10-25T12:00:00.000Z","2026-10-25T14:00:00.000Z",format,"100000","ACTIVE",AuditoriumDto("room",type,type,capacity,false),null,capacity,capacity)
         val catalog=object: CatalogRepository {
             override suspend fun dates()=listOf("2026-10-25")
+            override suspend fun comingSoon()=emptyList<Movie>()
             override suspend fun movie(id: String)=film
             override suspend fun movies(date: String)=CatalogDay(listOf(film),listOf(slot),"2026-10-25T00:00:00.000Z")
             override suspend fun showtime(id: String)=ShowtimeResponse("2026-10-25T00:00:00.000Z",slot)

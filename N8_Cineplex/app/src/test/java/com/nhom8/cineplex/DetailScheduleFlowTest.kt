@@ -26,6 +26,7 @@ class DetailScheduleFlowTest {
         override suspend fun dates() = listOf(today, nextCalendarDate(today))
         override suspend fun movie(id: String) = film
         override suspend fun movies(date: String) = CatalogDay(listOf(film), showtimes(film.id, date).items, serverTime)
+        override suspend fun comingSoon() = emptyList<Movie>()
         override suspend fun showtimes(id: String, date: String): ShowtimesResponse {
             val slot = ShowtimeDto("available-$date", id, "fixture", "${date}T03:00:00.000Z", "${date}T05:00:00.000Z", "IMAX_2D", "150000", "ACTIVE", AuditoriumDto("room", "Cinema 1", "IMAX", 496, false), "Phu de Viet", 3, 4)
             return ShowtimesResponse(date, if (date in emptyDays) emptyList() else listOf(slot, slot.copy(id = "sold-$date", availableSeats = 0), slot.copy(id = "missing-$date", availableSeats = 0, totalSeats = 0)), serverTime)
@@ -100,5 +101,13 @@ class DetailScheduleFlowTest {
     @Test fun filmMetadataDoesNotInventRatingsReleaseDateOrTrailer() {
         val meta = DetailSchedule.filmMeta(MockMovies.all.first().copy(id = "dune", releaseDate = null, trailerYoutubeId = null))
         assertNull(meta.releaseDate); assertNull(meta.rating); assertNull(meta.reviewCount); assertNull(meta.trailerYoutubeId)
+    }
+    @Test fun upcomingReleaseNoticeOnlyForFutureParseableReleaseDates() {
+        val movie = MockMovies.all.first()
+        assertNull(DetailSchedule.upcomingReleaseNotice(movie.copy(releaseDate = null), "2026-10-25"))
+        assertNull(DetailSchedule.upcomingReleaseNotice(movie.copy(releaseDate = "2026-10-25"), "2026-10-25"))
+        assertNull(DetailSchedule.upcomingReleaseNotice(movie.copy(releaseDate = "2026-10-24"), "2026-10-25"))
+        assertNull(DetailSchedule.upcomingReleaseNotice(movie.copy(releaseDate = "2026-13-40"), "2026-10-25"))
+        assertEquals("Phim khởi chiếu 25/12/2026 — lịch chiếu sẽ được cập nhật.", DetailSchedule.upcomingReleaseNotice(movie.copy(releaseDate = "2026-12-25"), "2026-10-25"))
     }
 }

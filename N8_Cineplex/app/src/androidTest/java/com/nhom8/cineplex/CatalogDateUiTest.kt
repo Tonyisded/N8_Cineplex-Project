@@ -24,6 +24,7 @@ class CatalogDateUiTest {
         val catalog = object : CatalogRepository {
             val films = listOf(MockMovies.all[0].copy(name = "Phim hôm nay",soon = false),MockMovies.all[1].copy(name = "Phim ngày mai",soon = false))
             override suspend fun dates() = listOf(today,"2026-10-11")
+            override suspend fun comingSoon() = emptyList<Movie>()
             override suspend fun movies(date: String): CatalogDay {
                 val selected = when(date) { today -> listOf(films[0]); "2026-10-11" -> listOf(films[1]); else -> emptyList() }
                 return CatalogDay(selected, selected.flatMap { showtimes(it.id,date).items }, "${today}T00:00:00.000Z")

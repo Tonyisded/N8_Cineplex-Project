@@ -9,6 +9,7 @@ import {
   PRICES,
   roomType,
   seatTemplate,
+  type ComingSoonSnapshot,
   type CrawlSnapshot,
 } from "./normalize.js";
 
@@ -81,6 +82,104 @@ export class CrawlerImportService {
       );
       throw error;
     }
+  }
+
+  async runComingSoon() {
+    const runId = randomUUID();
+    const startedAt = new Date().toISOString();
+    const business = businessDate();
+    try {
+      const snapshot = await this.crawler.collectComingSoon();
+      const result = await this.importComingSoon(snapshot);
+      const event = {
+        job: "crawl-cgv-coming-soon",
+        runId,
+        businessDate: business,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: snapshot.skipped.length ? "PARTIAL" : "SUCCESS",
+        capturedAt: snapshot.capturedAt,
+        sourceMovies: snapshot.sourceMovies,
+        parsedMovies: snapshot.movies.length,
+        omitted: snapshot.omitted,
+        skipped: snapshot.skipped,
+        ...result,
+      };
+      this.logger.log(JSON.stringify(event));
+      return { event, snapshot };
+    } catch (error) {
+      this.logger.error(
+        JSON.stringify({
+          job: "crawl-cgv-coming-soon",
+          runId,
+          businessDate: business,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          status: "FAILED",
+          reason: error instanceof Error ? error.message : "Crawler failed",
+        }),
+      );
+      throw error;
+    }
+  }
+
+  async importComingSoon(snapshot: ComingSoonSnapshot) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        // Serialize with movie/showtime imports; network work is already complete.
+        await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(810710)`;
+        let moviesCreated = 0,
+          moviesUpdated = 0,
+          moviesUnchanged = 0;
+        for (const data of snapshot.movies) {
+          const existing = await tx.movie.findUnique({
+            where: { sourceUrl: data.sourceUrl },
+          });
+          if (!existing) {
+            await tx.movie.create({ data });
+            moviesCreated++;
+            continue;
+          }
+          // Coming-soon rows may lack duration/age; never overwrite known values.
+          const next = {
+            title: data.title,
+            posterUrl: data.posterUrl ?? existing.posterUrl,
+            durationMinutes:
+              data.durationMinutes > 0
+                ? data.durationMinutes
+                : existing.durationMinutes,
+            synopsis: data.synopsis ?? existing.synopsis,
+            ageRating:
+              data.ageRating === "NO" ? existing.ageRating : data.ageRating,
+            genre: data.genre ?? existing.genre,
+            language: data.language ?? existing.language,
+            originalTitle: data.originalTitle ?? existing.originalTitle,
+            releaseDate: data.releaseDate ?? existing.releaseDate,
+            director: data.director ?? existing.director,
+            cast: data.cast ?? existing.cast,
+            trailerYoutubeId:
+              data.trailerYoutubeId ?? existing.trailerYoutubeId,
+          };
+          const current = existing as unknown as Record<string, unknown>;
+          const merged = next as unknown as Record<string, unknown>;
+          const changed = Object.keys(merged).some((key) => {
+            const before = current[key],
+              after = merged[key];
+            return before instanceof Date && after instanceof Date
+              ? before.getTime() !== after.getTime()
+              : before !== after;
+          });
+          if (!changed) {
+            moviesUnchanged++;
+            continue;
+          }
+          await tx.movie.update({ where: { id: existing.id }, data: next });
+          moviesUpdated++;
+        }
+        return { moviesCreated, moviesUpdated, moviesUnchanged };
+      },
+      { maxWait: 10000, timeout: 60000 },
+    );
   }
 
   private async execute(

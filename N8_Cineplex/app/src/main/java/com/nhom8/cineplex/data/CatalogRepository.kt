@@ -61,6 +61,7 @@ fun searchMovies(items: List<Movie>, query: String): List<Movie> {
 }
 @Serializable data class CatalogDatesResponse(val businessDate: String, val dates: List<String>)
 @Serializable data class MoviesResponse(val businessDate: String, val items: List<MovieDto>, val serverTime: String)
+@Serializable data class ComingSoonResponse(val businessDate: String, val items: List<MovieDto>, val serverTime: String)
 @Serializable data class AuditoriumDto(val id: String, val name: String, val type: String, val capacity: Int, val isExtra: Boolean)
 @Serializable data class ShowtimeDto(val id: String, val movieId: String, val sourceKey: String, val startAt: String, val endAt: String, val format: String, val basePrice: String, val status: String, val auditorium: AuditoriumDto, val presentationLabel: String? = null, val availableSeats: Int = 0, val totalSeats: Int = 0)
 @Serializable data class ShowtimeResponse(val serverTime: String, val item: ShowtimeDto)
@@ -69,6 +70,7 @@ data class CatalogDay(val movies: List<Movie>, val showtimes: List<ShowtimeDto>,
 interface CatalogRepository {
     suspend fun dates(): List<String>
     suspend fun movies(date: String): CatalogDay
+    suspend fun comingSoon(): List<Movie>
     suspend fun movie(id: String): Movie
     suspend fun showtime(id: String): ShowtimeResponse
     suspend fun showtimes(id: String, date: String): ShowtimesResponse
@@ -76,6 +78,7 @@ interface CatalogRepository {
 interface CatalogApi {
     @GET("movies/dates") suspend fun dates(): CatalogDatesResponse
     @GET("movies") suspend fun movies(@Query("date") date: String): MoviesResponse
+    @GET("movies/coming-soon") suspend fun comingSoon(): ComingSoonResponse
     @GET("movies/{id}") suspend fun movie(@Path("id") id: String): MovieDto
     @GET("showtimes/{id}") suspend fun showtime(@Path("id") id: String): ShowtimeResponse
     @GET("movies/{id}/showtimes") suspend fun showtimes(@Path("id") id: String, @Query("date") date: String): ShowtimesResponse
@@ -95,6 +98,12 @@ class ApiCatalogRepository : CatalogRepository {
         val r = api.movies(date); check(r.businessDate == date); isoMillis(r.serverTime)
         r.items.forEach { movie -> validateSlots(movie.showtimes, movie.id, date) }
         return CatalogDay(r.items.map { it.movie() }, r.items.flatMap { it.showtimes }, r.serverTime)
+    }
+    override suspend fun comingSoon(): List<Movie> {
+        val r = api.comingSoon(); calendarDateMillis(r.businessDate); isoMillis(r.serverTime)
+        check(r.items.map { it.id }.distinct().size == r.items.size)
+        r.items.forEach { val release = checkNotNull(it.releaseDate); calendarDateMillis(release) }
+        return r.items.map { it.movie().copy(soon = true) }
     }
     override suspend fun movie(id: String) = api.movie(id).movie().also { check(it.id == id) }
     override suspend fun showtime(id: String): ShowtimeResponse {
@@ -118,6 +127,7 @@ class ApiCatalogRepository : CatalogRepository {
 object MockCatalogRepository : CatalogRepository {
     override suspend fun dates() = listOf(vietnamDate())
     override suspend fun movies(date: String) = CatalogDay(MockMovies.all, MockMovies.all.flatMap { showtimes(it.id,date).items }, "${vietnamDate()}T00:00:00.000Z")
+    override suspend fun comingSoon() = MockMovies.all.filter { it.soon }
     override suspend fun movie(id: String) = MockMovies.all.first { it.id == id }
     override suspend fun showtime(id: String): ShowtimeResponse {
         val date = id.takeLast(10)

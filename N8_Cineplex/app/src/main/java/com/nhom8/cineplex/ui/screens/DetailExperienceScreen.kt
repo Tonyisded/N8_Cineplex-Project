@@ -25,6 +25,7 @@ import coil3.compose.AsyncImage
 import com.nhom8.cineplex.R
 import com.nhom8.cineplex.data.*
 import com.nhom8.cineplex.model.Movie
+import com.nhom8.cineplex.model.classifiedAgeRatings
 import com.nhom8.cineplex.ui.CineplexViewModel
 import com.nhom8.cineplex.ui.components.*
 import com.nhom8.cineplex.ui.theme.CineplexColors as C
@@ -59,9 +60,11 @@ fun DetailExperienceScreen(vm: CineplexViewModel, movie: Movie) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Text("◷ ${movie.minutes} phút",color = C.Muted,fontSize = 14.sp)
+                    if (movie.minutes > 0) Text("◷ ${movie.minutes} phút",color = C.Muted,fontSize = 14.sp)
                     Text("▦ Khởi chiếu ${meta.releaseDate?.let { runCatching { displayCalendarDate(it) }.getOrDefault(it) } ?: "đang cập nhật"}",color = C.Muted,fontSize = 14.sp)
                 }
+                val releaseNotice = if (!vm.detailLoading && vm.detailError.isEmpty() && vm.scheduleSlots.isEmpty()) DetailSchedule.upcomingReleaseNotice(movie, vm.todayDate) else null
+                if (releaseNotice != null) Text(releaseNotice,Modifier.fillMaxWidth().background(C.Background,RoundedCornerShape(12.dp)).padding(16.dp),color = C.Muted)
                 if (meta.rating != null) Surface(color = C.Background,shape = RoundedCornerShape(12.dp)) {
                     Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("★",color = Color(0xFF85500D),fontSize = 28.sp)
@@ -103,5 +106,6 @@ fun DetailExperienceScreen(vm: CineplexViewModel, movie: Movie) {
     Column(Modifier.fillMaxWidth().background(C.Surface).border(BorderStroke(1.dp,C.Line)).padding(horizontal = 20.dp,vertical = 12.dp)) { content() }
 }
 @Composable internal fun DetailAgeBadge(age: String) {
+    if (age !in classifiedAgeRatings) return
     Surface(color = C.Raised,shape = RoundedCornerShape(8.dp),modifier = Modifier.semantics { contentDescription = "Phân loại $age" }) { Text(age,Modifier.padding(horizontal = 9.dp,vertical = 5.dp),color = C.Primary,fontWeight = FontWeight.Bold,fontSize = 13.sp) }
 }

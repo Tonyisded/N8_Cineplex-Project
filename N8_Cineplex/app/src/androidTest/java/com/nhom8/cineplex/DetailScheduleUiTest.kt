@@ -25,6 +25,7 @@ class DetailScheduleUiTest {
     private lateinit var seatVm: SeatSelectionViewModel
     private val api = object : CatalogRepository {
         override suspend fun dates() = listOf(today)
+        override suspend fun comingSoon() = emptyList<Movie>()
         override suspend fun movie(id: String) = film
         override suspend fun movies(date: String) = CatalogDay(listOf(film), listOf(slot), "2026-10-17T00:00:00.000Z")
         override suspend fun showtimes(id: String, date: String): ShowtimesResponse {
