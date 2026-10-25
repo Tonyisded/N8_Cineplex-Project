@@ -22,7 +22,7 @@
     "test": "node --test tests/*.test.mjs",
     "crawler:run": "node --env-file-if-exists=.env dist/crawler/run.js",
     "crawler:smoke": "node --env-file-if-exists=.env dist/crawler/smoke.js",
-    "format:check": "npx --yes prettier@3.9.9 --end-of-line auto --check package.json tsconfig.json src/app.module.ts src/config.ts src/main.ts src/prisma.module.ts src/auth src/crawler src/catalog tests ../.github/workflows/backend-ci.yml"
+    "format:check": "npx --yes prettier@3.9.9 --end-of-line auto --check package.json tsconfig.json src/app.module.ts src/config.ts src/main.ts src/prisma.module.ts src/auth src/crawler src/catalog src/seats src/booking tests ../.github/workflows/backend-ci.yml"
   },
   "dependencies": {
     "@nestjs/common": "12.1.2",
@@ -30,9 +30,11 @@
     "@nestjs/core": "12.1.2",
     "@nestjs/jwt": "^12.0.2",
     "@nestjs/platform-express": "12.1.2",
+    "@nestjs/platform-socket.io": "12.1.2",
     "@nestjs/schedule": "12.0.2",
     "@nestjs/swagger": "12.0.2",
     "@nestjs/throttler": "^6.7.1",
+    "@nestjs/websockets": "12.1.2",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "argon2": "^0.45.1",
@@ -43,7 +45,8 @@
     "playwright": "1.63.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "sharp": "^0.35.5"
+    "sharp": "^0.35.5",
+    "socket.io": "4.8.4"
   },
   "devDependencies": {
     "@nestjs/testing": "^12.1.2",
@@ -53,9 +56,13 @@
     "@types/nodemailer": "^8.0.2",
     "dotenv": "^17.0.0",
     "prisma": "7.10.0",
+    "socket.io-client": "4.8.4",
     "typescript": "~6.0.0"
   },
   "overrides": {
+    "body-parser": "2.4.0",
+    "fast-uri": "3.1.9",
+    "multer": "2.5.0",
     "deepmerge-ts": "8.0.2",
     "mysql2": "3.24.5"
   }

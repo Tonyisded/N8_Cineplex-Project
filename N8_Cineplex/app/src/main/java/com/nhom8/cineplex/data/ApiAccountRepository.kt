@@ -84,6 +84,8 @@ class ApiAccountRepository(context: Context) : AccountRepository {
             block("Bearer $renewed")
         }
     }
+    internal suspend fun <T> withAuthorization(block: suspend (String) -> T): T = authorized(block)
+    internal suspend fun socketToken(): String = authorized { api.me(it); it.removePrefix("Bearer ") }
     override suspend fun register(form: AuthForm): String = call { api.register(buildJsonObject { put("fullName", form.name.trim()); put("email", normalizeEmail(form.email)); put("password", form.password); put("consent", form.consent) }).message }
     override suspend fun login(form: AuthForm, staff: Boolean): LoginResult = call {
         val expected = generation

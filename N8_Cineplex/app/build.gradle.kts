@@ -41,6 +41,7 @@ android {
 }
 
 dependencies {
+    implementation("io.socket:socket.io-client:2.1.2") { exclude(group = "org.json", module = "json") }
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:3.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")

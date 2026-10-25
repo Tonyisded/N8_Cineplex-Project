@@ -1,194 +1,228 @@
 package com.nhom8.cineplex.ui
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.nhom8.cineplex.data.DemoSeat
-import com.nhom8.cineplex.data.SeatAvailability
-import com.nhom8.cineplex.data.SeatDemo
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.lang.ref.WeakReference
+import com.nhom8.cineplex.data.*
+import kotlinx.coroutines.*
+import java.io.Closeable
+import java.util.UUID
 
-/** UI-only reservation simulation. No order, server hold, or shared realtime channel exists yet. */
-class SeatSelectionViewModel(private val clock: () -> Long = System::currentTimeMillis) : ViewModel() {
-    companion object { var debugCurrent: WeakReference<SeatSelectionViewModel>? = null; private set }
+class SeatSelectionViewModel(private val repository: SeatRepository? = null,
+    // Includes deep sleep, without letting wall-clock changes extend a hold.
+    private val monotonicMillis: () -> Long = { android.os.SystemClock.elapsedRealtime() }) : ViewModel() {
+    var userId = ""; private set
     var showtimeId by mutableStateOf(""); private set
-    var seats by mutableStateOf(SeatDemo.initial()); private set
-    private var snapshot = seats.associate { it.id to it.availability }.toMutableMap()
-    private var codeSnapshot = seats.flatMap { seat -> seat.codes.map { it to seat.availability } }.toMap().toMutableMap()
+    var seats by mutableStateOf<List<SeatDto>>(emptyList()); private set
+    var layout by mutableStateOf<SeatLayout?>(null); private set
     var selected by mutableStateOf<Set<String>>(emptySet()); private set
-    var pending by mutableStateOf<String?>(null); private set
+    var order by mutableStateOf<HoldOrder?>(null); private set
     var deadlineMillis by mutableStateOf<Long?>(null); private set
     var secondsLeft by mutableStateOf(0); private set
-    var online by mutableStateOf(true); private set
+    var online by mutableStateOf(false); private set
     var syncing by mutableStateOf(false); private set
     var confirming by mutableStateOf(false); private set
+    var loading by mutableStateOf(false); private set
     var expiredDialog by mutableStateOf(false); private set
     var leaveDialog by mutableStateOf(false); private set
     var message by mutableStateOf(""); private set
-    private var epoch = 0
-    private var pendingJob: Job? = null
-    private var syncJob: Job? = null
-    private val failNext = mutableSetOf<String>()
+    var realtime by mutableStateOf(false); private set
+    var resumeOrder by mutableStateOf<HoldOrder?>(null); private set
+    private var resumeJob: Job?=null
+    private var until=0L
+    private var epoch=0
+    private var request: HoldRequest? = null
+    private var socket: Closeable? = null
+    private var foreground=false
+    private var poll: Job? = null
+    private var load: Job? = null
+    private var socketJob: Job? = null
+    private var action: Job? = null
+    private var dirty=false
+    val pending: String? get() = if(confirming) "order" else null
+    val chosen get() = seats.filter { it.id in selected }
+    val places get() = if(held) order!!.seats.size else chosen.size
+    val total get() = if(held) order!!.totalAmount.toLong() else chosen.sumOf { it.price.toLong() }
+    val held get() = order?.status=="PENDING_PAYMENT"
+    val canContinue get() = online && !loading && !confirming && !syncing && selected.isNotEmpty() && !held &&
+        selected.all { id -> seats.any { it.id==id && it.status=="AVAILABLE" } }
 
-    init { debugCurrent = WeakReference(this) }
-
-    val chosen: List<DemoSeat> get() = seats.filter { it.id in selected || it.id == pending }
-    val places: Int get() = chosen.sumOf { it.places }
-    val total: Long get() = chosen.sumOf { it.price }
-    val canContinue: Boolean get() = online && !syncing && !confirming && pending == null && selected.isNotEmpty() && secondsLeft > 0 &&
-        selected.all { id -> seats.any { it.id == id && it.availability == SeatAvailability.AVAILABLE } }
-
-    fun bind(id: String) {
-        if (id == showtimeId) { refreshClock(); return }
-        release()
-        showtimeId = id
-        seats = SeatDemo.initial()
-        snapshot = seats.associate { it.id to it.availability }.toMutableMap()
-        codeSnapshot = seats.flatMap { seat -> seat.codes.map { it to seat.availability } }.toMap().toMutableMap()
-        online = true; syncing = false; message = ""
+    fun bind(user: String, id: String) {
+        if(user==userId && id==showtimeId) return
+        detach(); epoch++; action?.cancel(); load?.cancel()
+        userId=user; showtimeId=id; seats=emptyList(); layout=null; selected=emptySet(); order=null; request=null
+        deadlineMillis=null; secondsLeft=0; until=0; expiredDialog=false; leaveDialog=false; message=""; online=false; confirming=false
+        val version=epoch
+        load=viewModelScope.launch {
+            loading=true
+            try {
+                val repo=checkNotNull(repository) { "Không có kết nối dữ liệu ghế." }
+                val saved=repo.saved(user,id)
+                val snapshot=repo.seats(id)
+                if(version!=epoch) return@launch
+                seats=snapshot.items; layout=snapshot.layout; online=true; request=saved
+                if(saved!=null) {
+                    try { accept(repo.order(saved.key),saved) }
+                    catch(e: ApiFailure) { if(e.code!="ORDER_NOT_FOUND") throw e else { selected=saved.seatIds.toSet(); message="Yêu cầu giữ chỗ chưa được xác nhận. Nhấn Đặt vé để thử lại." } }
+                }
+            } catch(e: CancellationException) { throw e }
+              catch(e: Exception) { if(version==epoch) { online=false; message=e.message ?: "Không tải được sơ đồ ghế." } }
+            finally { if(version==epoch) { loading=false; load=null; if(foreground) attach(); if(dirty) refresh() } }
+        }
     }
-
-    fun refreshClock() {
-        val deadline = deadlineMillis
-        secondsLeft = if (deadline == null) 0 else ((deadline - clock() + 999) / 1_000).coerceAtLeast(0).toInt()
-        if (deadline != null && secondsLeft == 0) expire()
+    private fun pair(id: String): List<SeatDto> {
+        val seat=seats.firstOrNull { it.id==id } ?: return emptyList()
+        if(seat.seatType!="COUPLE") return listOf(seat)
+        val partner="${seat.rowName}${if(seat.seatNumber%2==1) seat.seatNumber+1 else seat.seatNumber-1}"
+        return seats.filter { it.id==id || it.seatCode==partner }.takeIf { it.size==2 && it.all { s->s.seatType=="COUPLE" } } ?: emptyList()
     }
-
-    private fun expire() {
-        epoch++; pendingJob?.cancel(); pending = null; selected = emptySet(); deadlineMillis = null
-        confirming = false; leaveDialog = false; secondsLeft = 0; expiredDialog = true
-        message = "Đã hết thời gian. Lựa chọn mô phỏng được xóa."
-    }
-
-    fun dismissExpired() { expiredDialog = false }
-    fun requestLeave() { if (selected.isNotEmpty() || pending != null || confirming) leaveDialog = true else release() }
-    fun stay() { leaveDialog = false }
-    fun release() {
-        epoch++; pendingJob?.cancel(); syncJob?.cancel()
-        selected = emptySet(); pending = null; deadlineMillis = null; secondsLeft = 0
-        confirming = false; syncing = false; expiredDialog = false; leaveDialog = false; failNext.clear()
-    }
-
     fun select(id: String) {
-        refreshClock()
-        val seat = seats.firstOrNull { it.id == id } ?: return
-        if (!online) { message = "Mất kết nối mô phỏng. Chờ đồng bộ để chọn ghế."; return }
-        if (syncing || confirming || pending != null) { message = "Đang cập nhật ghế. Vui lòng đợi."; return }
-        if (seat.availability != SeatAvailability.AVAILABLE) {
-            message = "Ghế ${seat.label} ${if (seat.availability == SeatAvailability.SOLD) "đã bán" else "đang được người khác giữ"}."
-            return
-        }
-        if (id in selected) {
-            selected = selected - id
-            message = "Đã bỏ chọn ${seat.label}${if (seat.places == 2) " (cả cặp)" else ""}."
-            return
-        }
-        val token = epoch
-        pending = id
-        message = "Đang xử lý ${seat.label}…"
-        pendingJob = viewModelScope.launch {
-            delay(650)
-            if (token != epoch || pending != id || !online) return@launch
-            pending = null
-            val actual = snapshot[id] ?: SeatAvailability.AVAILABLE
-            if (id in failNext || actual != SeatAvailability.AVAILABLE) {
-                failNext.remove(id)
-                val conflict = if (actual == SeatAvailability.AVAILABLE) SeatAvailability.HELD else actual
-                snapshot[id] = conflict
-                seat.codes.forEach { codeSnapshot[it] = conflict }
-                updateSeat(id, conflict)
-                message = "Ghế ${seat.label} vừa được người khác giữ. Hãy chọn ghế khác."
-                return@launch
-            }
-            refreshClock()
-            selected = selected + id
-            if (deadlineMillis == null) deadlineMillis = clock() + 600_000
-            refreshClock()
-            message = "Đã chọn ${seat.label} trong bản mô phỏng · ${seat.places} chỗ."
-        }
+        if(held) { message="Hãy hủy giữ chỗ hiện tại trước khi đổi ghế."; return }
+        if(!online || loading || syncing || confirming) return
+        if(request!=null) { message="Hãy xác nhận hoặc hủy yêu cầu giữ chỗ trước khi đổi ghế."; return }
+        val group=pair(id)
+        if(group.isEmpty() || group.any { it.status!="AVAILABLE" }) { message="Ghế không còn khả dụng."; return }
+        val ids=group.map { it.id }.toSet()
+        selected=if(selected.containsAll(ids)) selected-ids else selected+ids; message=""
     }
-
     fun continueToSummary(onSuccess: () -> Unit) {
-        refreshClock()
-        if (!canContinue) { message = "Hãy chọn ghế hợp lệ và kiểm tra kết nối để tiếp tục."; return }
-        confirming = true
-        val token = epoch
-        viewModelScope.launch {
-            delay(800)
-            if (token != epoch) return@launch
-            confirming = false
-            refreshClock()
-            if (canContinue) onSuccess() else message = "Ghế hoặc thời gian đã thay đổi. Hãy kiểm tra lại."
+        if(!canContinue) return
+        val version=epoch; val user=userId; val id=showtimeId; confirming=true
+        action=viewModelScope.launch {
+            try {
+                val repo=checkNotNull(repository)
+                val sent=request ?: HoldRequest(UUID.randomUUID().toString(),id,selected.sorted()).also { request=it }
+                repo.remember(user,id,sent)
+                val response=repo.hold(sent)
+                if(version!=epoch) return@launch
+                accept(response,sent)
+                if(held && secondsLeft>0) onSuccess()
+                refresh()
+            } catch(e: CancellationException) { throw e }
+              catch(e: Exception) { if(version==epoch) {
+                  message=e.message ?: "Chưa xác nhận được giữ chỗ. Vui lòng thử lại."
+                  if(e is ApiFailure && e.code !in setOf("NETWORK_ERROR","HTTP_502","HTTP_503","HTTP_504")) {
+                      request=null; repository?.remember(user,id,null); refresh()
+                  }
+              } }
+            finally { if(version==epoch) confirming=false }
         }
     }
-
-    private fun updateSeat(id: String, status: SeatAvailability) {
-        seats = seats.map { if (it.id == id) it.copy(availability = status) else it }
-        if (status != SeatAvailability.AVAILABLE) selected = selected - id
-    }
-
-    /** Called only from the separate debug control surface. */
-    fun debugChange(id: String, status: SeatAvailability) {
-        val seat = seats.firstOrNull { it.id == id } ?: return
-        seat.codes.forEach { codeSnapshot[it] = status }
-        snapshot[id] = status
-        if (online && !syncing) {
-            val removed = id in selected && status != SeatAvailability.AVAILABLE
-            updateSeat(id, status)
-            message = if (removed) "Ghế $id không còn khả dụng; lựa chọn và tổng tiền đã cập nhật." else "Ghế $id: ${status.name.lowercase()} (mô phỏng)."
-        } else message = "Có thay đổi ghế chờ đồng bộ mô phỏng."
-    }
-
-    fun debugChangeCode(code: String, status: SeatAvailability) {
-        val seat = seats.firstOrNull { code in it.codes } ?: return
-        codeSnapshot[code] = status
-        val pairStatus = when {
-            seat.codes.any { codeSnapshot[it] == SeatAvailability.SOLD } -> SeatAvailability.SOLD
-            seat.codes.any { codeSnapshot[it] == SeatAvailability.HELD } -> SeatAvailability.HELD
-            else -> SeatAvailability.AVAILABLE
-        }
-        snapshot[seat.id] = pairStatus
-        if (online && !syncing) {
-            val removed = seat.id in selected && pairStatus != SeatAvailability.AVAILABLE
-            updateSeat(seat.id, pairStatus)
-            message = if (removed) "Một chỗ của ${seat.label} không còn khả dụng; cả cặp đã bỏ chọn." else "${seat.label}: một chỗ đổi trạng thái (mô phỏng)."
-        } else message = "Có thay đổi ghế chờ đồng bộ mô phỏng."
-    }
-
-    fun debugFailNext(id: String) { if (seats.any { it.id == id }) failNext.add(id) }
-    fun debugOffline() {
-        online = false; syncing = false; epoch++; pendingJob?.cancel(); pending = null; confirming = false
-        message = "Mất kết nối mô phỏng. Không thể chọn ghế hoặc tiếp tục."
-    }
-    fun debugReconnect() {
-        online = true; syncing = true
-        val token = ++epoch
-        syncJob?.cancel()
-        syncJob = viewModelScope.launch {
-            delay(900)
-            if (token != epoch || !online) return@launch
-            val removed = selected.filter { snapshot[it] != SeatAvailability.AVAILABLE }
-            seats = seats.map { it.copy(availability = snapshot[it.id] ?: SeatAvailability.AVAILABLE) }
-            selected = selected - removed.toSet()
-            syncing = false
-            refreshClock()
-            message = if (removed.isEmpty()) "Đã đồng bộ trạng thái mô phỏng và thời gian còn lại." else "Ghế ${removed.joinToString()} không còn khả dụng; tổng tiền đã cập nhật."
+    private suspend fun accept(response: HoldResponse,expected: HoldRequest) {
+        val current=response.item
+        check(current.showtimeId==expected.showtimeId && current.id==expected.key)
+        check(current.status in setOf("PENDING_PAYMENT","EXPIRED","CANCELED","PAID","REFUNDED"))
+        check(current.seats.map { it.id }.sorted()==expected.seatIds.sorted())
+        isoMillis(response.serverTime); isoMillis(current.expiresAt); check(current.totalAmount.toLong()>=0)
+        if(request?.key!=expected.key || current.showtimeId!=showtimeId) return
+        order=current
+        if(held) {
+            selected=current.seats.map { it.id }.toSet()
+            val deadline=isoMillis(current.expiresAt)
+            val anchor=monotonicMillis()+(deadline-isoMillis(response.serverTime)).coerceAtLeast(0)
+            until=if(deadlineMillis==deadline && until>0) minOf(until,anchor) else anchor
+            deadlineMillis=deadline; expiredDialog=false; refreshClock()
+        } else {
+            selected=emptySet(); deadlineMillis=null; secondsLeft=0
+            expiredDialog=current.status=="EXPIRED"
+            repository?.remember(userId,showtimeId,null); request=null
         }
     }
-    fun debugSetRemaining(millis: Long) {
-        if (deadlineMillis != null) { deadlineMillis = clock() + millis; refreshClock() }
+    fun refreshClock() {
+        secondsLeft=if(deadlineMillis==null) 0 else ((until-monotonicMillis()+999)/1000).coerceAtLeast(0).toInt()
+        if(held && secondsLeft==0 && !expiredDialog) { expiredDialog=true; refresh() }
     }
-    fun debugReset() {
-        release()
-        seats = SeatDemo.initial()
-        snapshot = seats.associate { it.id to it.availability }.toMutableMap()
-        codeSnapshot = seats.flatMap { seat -> seat.codes.map { it to seat.availability } }.toMap().toMutableMap()
-        online = true
-        message = "Đã đặt lại phiên mô phỏng."
+    fun refresh() {
+        if(showtimeId.isBlank()) return
+        if(load?.isActive==true) { dirty=true; return }
+        val version=epoch; val id=showtimeId; dirty=false
+        load=viewModelScope.launch {
+            syncing=true
+            try {
+                val snapshot=checkNotNull(repository).seats(id)
+                if(version!=epoch || dirty) return@launch
+                seats=snapshot.items; layout=snapshot.layout; online=true
+                val saved=request
+                if(saved!=null) {
+                    try { accept(repository.order(saved.key),saved) }
+                    catch(e: ApiFailure) { if(e.code!="ORDER_NOT_FOUND") throw e }
+                } else {
+                    val invalid=selected.filter { seatId -> pair(seatId).isEmpty() || pair(seatId).any { it.status!="AVAILABLE" } }.toSet()
+                    if(invalid.isNotEmpty()) { selected=selected-invalid; message="Một số ghế không còn khả dụng. Lựa chọn và tổng tiền đã cập nhật." }
+                }
+            } catch(e: CancellationException) { throw e }
+              catch(e: Exception) { if(version==epoch) { online=false; message=e.message ?: "Không đồng bộ được ghế." } }
+            finally { if(version==epoch) { syncing=false; load=null; if(dirty) refresh() } }
+        }
     }
+    fun cancelHold(onSuccess: () -> Unit = {}) {
+        if(confirming) return
+        if(request==null) { release(); onSuccess(); return }
+        val sent=request!!; val version=epoch; confirming=true
+        action=viewModelScope.launch {
+            try {
+                val repo=checkNotNull(repository)
+                if(order==null) repo.hold(sent)
+                val response=repo.cancel(sent.key)
+                if(version!=epoch) return@launch
+                accept(response,sent)
+                if(!held) { message="Đã hủy giữ chỗ."; leaveDialog=false; onSuccess(); refresh() }
+            } catch(e: CancellationException) { throw e }
+              catch(e: Exception) { if(version==epoch) {
+                  if(e is ApiFailure && e.code=="ORDER_NOT_FOUND") { repository?.remember(userId,showtimeId,null); request=null; release(); onSuccess() }
+                  else message="Chưa xác nhận được hủy giữ chỗ. Ghế vẫn được giữ đến hạn nếu server chưa nhận yêu cầu."
+              } }
+            finally { if(version==epoch) confirming=false }
+        }
+    }
+    fun requestLeave() { leaveDialog=true }
+    fun findResume(user: String) {
+        val repo=repository ?: return
+        resumeJob?.cancel(); val version=epoch
+        resumeJob=viewModelScope.launch {
+            try {
+                resumeOrder=null
+                for(saved in repo.requests(user)) {
+                    val response=try { repo.order(saved.key) } catch(e: ApiFailure) { if(e.code=="ORDER_NOT_FOUND") continue else throw e }
+                    if(version!=epoch) return@launch
+                    if(response.item.status=="PENDING_PAYMENT" && isoMillis(response.item.expiresAt)>isoMillis(response.serverTime)) { resumeOrder=response.item; break }
+                    repo.remember(user,saved.showtimeId,null)
+                }
+            } catch(e: CancellationException) { throw e } catch(_: Exception) { /* Retry on the next Home/resume. */ }
+        }
+    }
+    fun stay() { leaveDialog=false }
+    fun dismissExpired() { expiredDialog=false }
+    fun clearSession() {
+        detach(); epoch++; action?.cancel(); load?.cancel(); resumeJob?.cancel(); resumeOrder=null; load=null
+        userId=""; showtimeId=""; seats=emptyList(); layout=null; selected=emptySet(); order=null; request=null
+        deadlineMillis=null; secondsLeft=0; confirming=false; loading=false; syncing=false; online=false; leaveDialog=false; expiredDialog=false; message=""
+    }
+    fun release() {
+        if(request!=null || held || confirming) { requestLeave(); return }
+        selected=emptySet(); leaveDialog=false; message=""
+    }
+    fun foreground(active: Boolean) {
+        foreground=active
+        if(active) { refreshClock(); refresh(); attach() } else detach()
+    }
+    private fun attach() {
+        if(!foreground || showtimeId.isBlank() || repository==null) return
+        if(poll?.isActive!=true) poll=viewModelScope.launch { while(isActive) { delay(10_000); refresh(); if(!realtime) openSocket() } }
+        openSocket()
+    }
+    private fun openSocket() {
+        if(socketJob?.isActive==true || realtime || !foreground || repository==null) return
+        val version=epoch; val id=showtimeId
+        socketJob=viewModelScope.launch {
+            try {
+                socket?.close(); socket=null
+                val opened=repository.watch(id, { viewModelScope.launch { if(version==epoch) refresh() } },
+                    { connected -> viewModelScope.launch { if(version==epoch) realtime=connected } })
+                if(version!=epoch || !foreground) opened.close() else socket=opened
+            } catch(e: CancellationException) { throw e } catch(_: Exception) { if(version==epoch) realtime=false }
+        }
+    }
+    private fun detach() { poll?.cancel(); poll=null; socketJob?.cancel(); socket?.close(); socket=null; realtime=false }
+    override fun onCleared() { detach() }
 }

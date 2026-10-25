@@ -171,7 +171,7 @@ test("six formats and source-screen capability take precedence over subtitle lab
   );
   assert.equal(PRICES.STANDARD_2D, 100000);
 });
-test("seat template exactly matches capacities including last partial row", () => {
+test("seat templates match capacities and room-specific zoning", () => {
   for (const [type, n] of [
     ["STANDARD", 145],
     ["IMAX", 496],
@@ -182,7 +182,10 @@ test("seat template exactly matches capacities including last partial row", () =
     assert.equal(seats.length, n);
     assert.equal(new Set(seats.map((s) => s.seatCode)).size, n);
     assert.equal(seats[0].seatCode, "A1");
-    assert.equal(seats[0].seatType, type === "GOLD" ? "GOLD" : "NORMAL");
+    assert.equal(
+      seats[0].seatType,
+      type === "GOLD" ? "GOLD" : type === "IMAX" ? "VIP" : "NORMAL",
+    );
   }
   assert.throws(() => seatTemplate("STANDARD", 0));
 });

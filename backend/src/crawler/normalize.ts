@@ -166,22 +166,7 @@ export const CAPACITIES: Record<AuditoriumType, number> = {
   SCREENX: 180,
   GOLD: 32,
 };
-export function seatTemplate(type: AuditoriumType, capacity: number) {
-  const columns = { STANDARD: 16, IMAX: 31, SCREENX: 12, GOLD: 8 }[type];
-  if (!Number.isInteger(capacity) || capacity < 1 || capacity > columns * 26)
-    throw new Error("Invalid auditorium capacity");
-  // shortcut: no VIP/couple zoning in crawler import; add it with the booking seat-map task.
-  return Array.from({ length: capacity }, (_, i) => {
-    const rowName = String.fromCharCode(65 + Math.floor(i / columns));
-    const seatNumber = (i % columns) + 1;
-    return {
-      seatCode: `${rowName}${seatNumber}`,
-      rowName,
-      seatNumber,
-      seatType: type === "GOLD" ? ("GOLD" as const) : ("NORMAL" as const),
-    };
-  });
-}
+export { seatTemplate } from "../seats/layout.js";
 export type CrawledMovie = {
   sourceUrl: string;
   title: string;

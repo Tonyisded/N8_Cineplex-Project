@@ -3,6 +3,7 @@ package com.nhom8.cineplex
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.nhom8.cineplex.data.*
 import com.nhom8.cineplex.model.*
@@ -34,7 +35,7 @@ class DetailScheduleUiTest {
     }
     @Before fun setup() {
         vm = CineplexViewModel(MockAccountAdapter(MockAccountRepository()), api, { today }, { 0L })
-        seatVm = SeatSelectionViewModel()
+        seatVm = SeatSelectionViewModel(FakeSeatRepository("IMAX"))
         compose.setContent { CineplexMockTheme { CineplexApp(vm, seatVm) } }
         compose.runOnUiThread { vm.update(AuthForm(email = "user@cineplex.test", password = "123456")); vm.submit() }
         compose.waitUntil(10_000) { vm.movies.isNotEmpty() }
@@ -70,18 +71,18 @@ class DetailScheduleUiTest {
         compose.onNodeWithText("Landmark 81 · Cinema 1").assertExists()
         assertEquals(slot.id, vm.selectedShowtime?.id)
         screenshot("week6-summary")
-        compose.onNodeWithTag("seat-A2").performClick()
+        compose.onNodeWithTag("seat-A2").performSemanticsAction(SemanticsActions.OnClick) {it()}
         compose.waitUntil(5_000) { "A2" in seatVm.selected }
-        compose.runOnUiThread { seatVm.select("J1-J2") }
-        compose.waitUntil(5_000) { "J1-J2" in seatVm.selected }
+        compose.runOnUiThread { seatVm.select("A1"); seatVm.select("A3") }
+        compose.waitUntil(5_000) { "A3" in seatVm.selected }
         assertEquals(3, seatVm.places)
-        assertEquals(330_000L, seatVm.total)
+        assertEquals(450_000L, seatVm.total)
         compose.onNodeWithTag("seat-map").performTouchInput { swipeUp() }
         compose.onNodeWithTag("seat-map").performTouchInput { swipeUp() }
-        screenshot("seat-couple")
+        screenshot("seat-imax")
         compose.onNodeWithTag("seat-continue").assertIsEnabled().performClick()
         compose.waitUntil(5_000) { vm.screen == Screen.SEAT_HANDOFF }
-        compose.onNodeWithText("Tóm tắt lựa chọn").assertIsDisplayed()
+        compose.onNodeWithText("Thông tin giữ chỗ").assertIsDisplayed()
         assertNotNull(seatVm.deadlineMillis)
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { vm.screen == Screen.SEAT_SUMMARY }

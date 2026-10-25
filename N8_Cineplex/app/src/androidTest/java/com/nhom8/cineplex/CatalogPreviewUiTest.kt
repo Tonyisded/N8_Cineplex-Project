@@ -38,7 +38,8 @@ class CatalogPreviewUiTest {
             override suspend fun showtimes(id: String,date: String) = ShowtimesResponse(date,slots,"2026-10-13T07:09:59.000Z")
         }
         vm = CineplexViewModel(MockAccountAdapter(MockAccountRepository()),catalog,{ "2026-10-13" },{ elapsed })
-        compose.setContent { CineplexMockTheme { CineplexApp(vm) } }
+        val seats = com.nhom8.cineplex.ui.SeatSelectionViewModel(FakeSeatRepository("IMAX"))
+        compose.setContent { CineplexMockTheme { CineplexApp(vm,seats) } }
         compose.runOnUiThread { vm.update(AuthForm(email = "user@cineplex.test",password = "123456")); vm.submit() }
         compose.waitUntil(5_000) { !vm.catalogLoading && vm.filteredMovies.isNotEmpty() }
     }
@@ -63,7 +64,7 @@ class CatalogPreviewUiTest {
         compose.onNodeWithText("Thông tin suất chiếu").assertIsDisplayed()
         compose.onNodeWithTag("seat-selection-screen").assertIsDisplayed()
         compose.onNodeWithTag("seat-A1").assert(hasContentDescription("Còn trống", substring = true))
-        compose.onNodeWithTag("seat-I3-I4").assert(hasContentDescription("Còn trống", substring = true))
+        compose.onNodeWithTag("seat-P1").assert(hasContentDescription("Còn trống", substring = true))
         screenshot("home-seat-all-available")
         Assert.assertEquals("first", vm.selectedShowtime?.id)
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }

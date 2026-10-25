@@ -9,15 +9,20 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.CustomCredential
@@ -29,6 +34,7 @@ import com.nhom8.cineplex.data.ApiCatalogRepository
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import com.nhom8.cineplex.data.ApiAccountRepository
+import com.nhom8.cineplex.data.ApiSeatRepository
 import kotlinx.coroutines.CancellationException
 import com.nhom8.cineplex.model.Screen
 import com.nhom8.cineplex.ui.CineplexViewModel
@@ -42,13 +48,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT))
+        val account = ApiAccountRepository(applicationContext)
         val vm = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = CineplexViewModel(ApiAccountRepository(applicationContext), ApiCatalogRepository()) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = CineplexViewModel(account, ApiCatalogRepository()) as T
         })[CineplexViewModel::class.java]
         val seats = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = SeatSelectionViewModel() as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = SeatSelectionViewModel(ApiSeatRepository(applicationContext, account)) as T
         })[SeatSelectionViewModel::class.java]
         setContent { CineplexMockTheme { CineplexApp(vm, seats) } }
     }
@@ -67,11 +74,21 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
         when { seats.leaveDialog -> seats.stay(); seats.expiredDialog -> seats.dismissExpired(); vm.screen == Screen.SEAT_SUMMARY -> seatBack(); else -> vm.back() }
     }
     LaunchedEffect(vm.session?.id, vm.selectedShowtime?.id, vm.screen) {
-        if (vm.screen == Screen.SEAT_SUMMARY || vm.screen == Screen.SEAT_HANDOFF) vm.selectedShowtime?.let { seats.bind("${vm.session?.id}:${it.id}") }
-        else seats.release()
+        if(vm.session==null) seats.clearSession()
+        if (vm.screen == Screen.SEAT_SUMMARY || vm.screen == Screen.SEAT_HANDOFF) vm.selectedShowtime?.let { seats.bind(vm.session?.id.orEmpty(), it.id) }
+        else if(vm.screen==Screen.HOME) vm.session?.id?.let(seats::findResume)
     }
     val savedScreens = rememberSaveableStateHolder()
     val context = LocalContext.current
+    val darkSeats = vm.screen == Screen.SEAT_SUMMARY
+    SideEffect {
+        (context as? android.app.Activity)?.let { activity ->
+            WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
+                isAppearanceLightStatusBars = !darkSeats
+                isAppearanceLightNavigationBars = !darkSeats
+            }
+        }
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, vm) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { seats.refreshClock(); vm.refreshProfile(); vm.refreshCatalog() } }
@@ -81,9 +98,10 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
     LaunchedEffect(lifecycle, vm) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { while (true) { vm.tickCatalogClock(); vm.refreshCatalog(force = false); delay(60_000 - vm.nowMillis % 60_000) } }
     }
-    LaunchedEffect(lifecycle, seats) {
+    LaunchedEffect(lifecycle, seats, vm.screen) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) { seats.refreshClock(); delay(1_000) }
+            try { seats.foreground(vm.screen in listOf(Screen.SEAT_SUMMARY, Screen.SEAT_HANDOFF)); while (true) { seats.refreshClock(); delay(1_000) } }
+            finally { seats.foreground(false) }
         }
     }
     LaunchedEffect(vm.googleRequested) {
@@ -101,16 +119,24 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
               catch (_: Exception) { vm.googleFailed(false) }
         }
     }
-    Surface(Modifier.fillMaxSize(),color = CineplexColors.Background) {
+    Surface(Modifier.fillMaxSize(),color = if(darkSeats) Color(0xFF111111) else CineplexColors.Background) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),contentAlignment = Alignment.TopCenter) {
             Box(Modifier.widthIn(max = 1280.dp).fillMaxSize()) {
                 key(vm.screen) {
                     when(vm.screen) {
                         Screen.LOGIN,Screen.SIGNUP,Screen.STAFF -> AuthScreen(vm)
-                        Screen.HOME -> HomeScreen(vm,grid)
+                        Screen.HOME -> Column(Modifier.fillMaxSize()) {
+                            seats.resumeOrder?.let { order ->
+                                Row(Modifier.fillMaxWidth().padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically) {
+                                    Text("Bạn đang giữ ${order.seats.joinToString { it.seatCode }}",Modifier.weight(1f),maxLines=2)
+                                    TextButton({vm.resumeHold(order.showtimeId)},enabled=!vm.scheduleChecking,modifier=Modifier.testTag("resume-hold")) {Text("Xem giữ chỗ")}
+                                }
+                            }
+                            Box(Modifier.weight(1f)) {HomeScreen(vm,grid)}
+                        }
                         Screen.DETAIL -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("detail-${selected.id}") { DetailExperienceScreen(vm,selected) } }
                         Screen.SHOWTIMES -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("showtimes-${selected.id}") { DetailShowtimesScreen(vm,selected) } }
-                        Screen.SEAT_SUMMARY -> vm.movie?.let { selected -> SeatSelectionScreen(vm,seats,selected,::seatBack) }
+                        Screen.SEAT_SUMMARY -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("seat-${vm.selectedShowtime?.id}") { SeatSelectionScreen(vm,seats,selected,::seatBack) } }
                         Screen.SEAT_HANDOFF -> vm.movie?.let { selected -> SeatHandoffScreen(vm,seats,selected) }
                         Screen.ADMIN -> AdminScreen(vm)
                         Screen.STAFF_HOME -> StaffScreen(vm)
