@@ -279,6 +279,37 @@ test("hold is atomic, uses DB prices, lasts exactly 600 seconds and publishes af
   );
   assert.equal(f.events.length, 1);
 });
+test("deadline uses fresh database time after locks, not time spent waiting", async () => {
+  const f = fixture();
+  const started = Date.now();
+  const raw = f.db.$queryRaw;
+  let reads = 0;
+  f.db.$queryRaw = async (q, ...values) => {
+    const text = Array.isArray(q) ? q.join("?") : q.sql;
+    return text.includes("clock_timestamp")
+      ? [{ now: new Date(started + (reads++ ? 30000 : 0)) }]
+      : raw(q, ...values);
+  };
+  const result = await f.service.create(f.userId, randomUUID(), body(f));
+  assert.equal(new Date(result.item.expiresAt).getTime(), started + 630000);
+  const g = fixture();
+  const raw2 = g.db.$queryRaw;
+  let ticks = 0;
+  g.slot.startAt = new Date(started + 20000);
+  g.db.$queryRaw = async (q, ...values) => {
+    const text = Array.isArray(q) ? q.join("?") : q.sql;
+    return text.includes("clock_timestamp")
+      ? [{ now: new Date(started + (ticks++ ? 30000 : 0)) }]
+      : raw2(q, ...values);
+  };
+  await assert.rejects(
+    g.service.create(g.userId, randomUUID(), body(g)),
+    (e) => e.getResponse().code === "SHOWTIME_UNAVAILABLE",
+  );
+  assert.equal(g.orders.size, 0);
+  assert.equal(g.events.length, 0);
+});
+
 test("Couple incomplete and mixed-seat conflicts never partially hold or emit", async () => {
   const f = fixture();
   await assert.rejects(

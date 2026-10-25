@@ -232,7 +232,10 @@ export class BookingService implements OnApplicationBootstrap {
         const total = seats
           .reduce((sum, s) => sum + BigInt(s.price.toString()), 0n)
           .toString();
-        const expiresAt = new Date(now.getTime() + 600_000);
+        const holdTime = await this.now(tx);
+        if (slot.startAt <= holdTime)
+          throw conflict("SHOWTIME_UNAVAILABLE", "Suất chiếu đã bắt đầu.");
+        const expiresAt = new Date(holdTime.getTime() + 600_000);
         const created = await tx.order.create({
           data: {
             id: key,
