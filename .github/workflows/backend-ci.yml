@@ -1,6 +1,14 @@
 name: Backend and crawler
 
 on:
+  push:
+    branches:
+      - "feature/manh-nhan"
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+      - "N8_Cineplex_Plan.md"
+      - "AGENTS.md"
   pull_request:
     paths:
       - "backend/**"
@@ -42,6 +50,11 @@ jobs:
       - run: npm run typecheck
       - run: npx --no-install playwright install --with-deps chromium
       - run: npm run format:check
+      - name: Show suggested formatting changes
+        if: failure()
+        run: |
+          npx --yes prettier@3.9.9 --end-of-line auto --write src/booking tests/auth.test.mjs tests/booking.test.mjs tests/realtime*.test.mjs
+          git diff --exit-code
       - run: npm test
 
   live-cgv:
