@@ -24,13 +24,20 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     var movie by mutableStateOf<Movie?>(null); private set
     var selectedShowtime by mutableStateOf<ShowtimeDto?>(null); private set
     var scheduleChecking by mutableStateOf(false); private set
+    var seatReturnScreen by mutableStateOf(Screen.SHOWTIMES); private set
     private var selectionRequest: Job? = null
     private var selectionEpoch = 0
     val scheduleSlots get() = upcomingSlots(showtimes, nowMillis)
     private fun canContinue(slot: ShowtimeDto) = slot.movieId == movie?.id && slot.status == "ACTIVE" &&
         vietnamDate(java.util.Date(isoMillis(slot.startAt))) == catalogDate && isoMillis(slot.startAt) > nowMillis && slot.totalSeats > 0 && slot.availableSeats > 0
     private fun cancelShowtimeCheck() { selectionEpoch++; selectionRequest?.cancel(); selectionRequest = null; scheduleChecking = false }
-    private fun clearScheduleSelection() { selectedShowtime = null; closeAgeSheet(); if (screen == Screen.SEAT_SUMMARY) screen = Screen.SHOWTIMES }
+    private fun clearScheduleSelection() {
+        selectedShowtime = null; closeAgeSheet()
+        if (screen == Screen.SEAT_SUMMARY || screen == Screen.SEAT_HANDOFF) {
+            screen = seatReturnScreen
+            if (screen == Screen.HOME) movie = null
+        }
+    }
     fun openSchedule() { if (session?.role == Role.CUSTOMER && movie != null) { screen = Screen.SHOWTIMES; refreshMovie() } }
     fun chooseShowtime(id: String) { if (!detailLoading && detailError.isEmpty() && !scheduleChecking) { clearScheduleSelection(); selectedShowtime = scheduleSlots.firstOrNull { it.id == id && canContinue(it) } } }
     fun continueSchedule() {
@@ -46,6 +53,8 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     private fun checkSelectedShowtime() {
         val selected = selectedShowtime ?: return
         val api = catalog ?: return
+        val origin = screen
+        if (origin != Screen.HOME && origin != Screen.SHOWTIMES) return
         tickCatalogClock()
         if (selectedShowtime?.id != selected.id || !canContinue(selected) || scheduleChecking) return
         val date = catalogDate
@@ -54,18 +63,18 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
         selectionRequest = viewModelScope.launch {
             try {
                 val response = api.showtime(selected.id)
-                if (epoch != selectionEpoch || session?.role != Role.CUSTOMER || screen != Screen.SHOWTIMES || catalogDate != date || selectedShowtime?.id != selected.id) return@launch
+                if (epoch != selectionEpoch || session?.role != Role.CUSTOMER || screen != origin || catalogDate != date || selectedShowtime?.id != selected.id) return@launch
                 recordClock(response.serverTime)
                 if (canContinue(response.item)) {
-                    selectedShowtime = response.item; ageSheet = false; underAgeSheet = false; screen = Screen.SEAT_SUMMARY
+                    selectedShowtime = response.item; seatReturnScreen = origin; ageSheet = false; underAgeSheet = false; screen = Screen.SEAT_SUMMARY
                 } else {
-                    clearScheduleSelection(); refreshMovie()
+                    clearScheduleSelection(); if (origin == Screen.HOME) { movie = null; refreshCatalog() } else refreshMovie()
                     notice = Notice("Suất chiếu không còn khả dụng", "Suất đã bắt đầu, bị hủy hoặc không còn ghế. Hãy chọn suất khác.")
                 }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) {
                 if (epoch == selectionEpoch) {
-                    clearScheduleSelection(); refreshMovie()
+                    clearScheduleSelection(); if (origin == Screen.HOME) { movie = null; refreshCatalog() } else refreshMovie()
                     notice = Notice("Chưa thể xác nhận suất chiếu", "Không tải được thông tin mới nhất. Kiểm tra mạng và chọn lại suất.")
                 }
             } finally { if (epoch == selectionEpoch) { scheduleChecking = false; selectionRequest = null } }
@@ -95,9 +104,16 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     fun closeTrailer() { trailer = null }
     fun showSlot(slot: ShowtimeDto) {
         tickCatalogClock()
-        if (session?.role != Role.CUSTOMER) return
-        val name = movies.firstOrNull { it.id == slot.movieId }?.name ?: movie?.name.orEmpty()
-        notice = if (isoMillis(slot.startAt) <= nowMillis) Notice("Suất chiếu đã bắt đầu", "Hãy chọn một suất chiếu khác.") else Notice("Thông tin suất chiếu", "$name\n${displayCalendarDate(vietnamDate(java.util.Date(isoMillis(slot.startAt))))} · ${showtimeRange(slot)}\n${slot.auditorium.name} · ${seatSummary(slot)}\nPhòng và ghế mô phỏng N8. Chưa hỗ trợ đặt vé trong phiên bản này.")
+        if (session?.role != Role.CUSTOMER || screen != Screen.HOME || scheduleChecking) return
+        val selectedMovie = movies.firstOrNull { it.id == slot.movieId } ?: return
+        if (slot.status != "ACTIVE" || isoMillis(slot.startAt) <= nowMillis || slot.totalSeats <= 0 || slot.availableSeats <= 0) {
+            notice = Notice("Suất chiếu không còn khả dụng", "Suất đã bắt đầu hoặc không còn ghế. Hãy chọn suất khác.")
+            return
+        }
+        clearScheduleSelection()
+        movie = selectedMovie
+        selectedShowtime = slot
+        checkSelectedShowtime()
     }
     var catalogDate by mutableStateOf(""); private set
     var availableDates by mutableStateOf<List<String>>(emptyList()); private set
@@ -146,7 +162,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
             catch (_: Exception) { if (epoch == catalogEpoch) catalogError = "Không tải được danh sách phim. Kiểm tra mạng rồi thử lại." }
             finally { if (epoch == catalogEpoch) catalogLoading = false }
         }
-        if (screen in listOf(Screen.DETAIL, Screen.SHOWTIMES, Screen.SEAT_SUMMARY)) refreshMovie()
+        if (screen in listOf(Screen.DETAIL, Screen.SHOWTIMES)) refreshMovie()
     }
     fun refreshMovie() {
         val selected = movie ?: return
@@ -221,12 +237,13 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
         }
     }
     fun openMovie(value: Movie) { if (session?.role == Role.CUSTOMER) { movie = value; clearScheduleSelection(); screen = Screen.DETAIL; refreshMovie() } }
+    fun seatHandoff() { if (screen == Screen.SEAT_SUMMARY && selectedShowtime != null) screen = Screen.SEAT_HANDOFF }
     fun back() {
         if (ageSheet) { closeAgeSheet(); return }
         if (trailer != null) { closeTrailer(); return }
         if (notice != null) { dismissNotice(); return }
         if (dialog != null) { if (!loading) dialog = null; return }
-        when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.SEAT_SUMMARY -> screen = Screen.SHOWTIMES; Screen.SHOWTIMES -> { cancelShowtimeCheck(); screen = Screen.DETAIL }; Screen.DETAIL -> { clearScheduleSelection(); detailEpoch++; detailRequest?.cancel(); detailLoading = false; movie = null; showtimes = emptyList(); screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }
+        when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.SEAT_HANDOFF -> screen = Screen.SEAT_SUMMARY; Screen.SEAT_SUMMARY -> { screen = seatReturnScreen; if (screen == Screen.HOME) { selectedShowtime = null; movie = null } }; Screen.SHOWTIMES -> { cancelShowtimeCheck(); screen = Screen.DETAIL }; Screen.DETAIL -> { clearScheduleSelection(); detailEpoch++; detailRequest?.cancel(); detailLoading = false; movie = null; showtimes = emptyList(); screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }
     }
     fun logout() {
         query = ""; soon = false; movie = null; navigate(Screen.LOGIN)
