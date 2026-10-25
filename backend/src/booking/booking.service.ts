@@ -334,8 +334,9 @@ export class BookingService implements OnApplicationBootstrap {
     if (this.running) return;
     this.running = true;
     try {
+      const now = await this.now(this.prisma);
       const due = await this.prisma.order.findMany({
-        where: { status: "PENDING_PAYMENT", expiresAt: { lte: new Date() } },
+        where: { status: "PENDING_PAYMENT", expiresAt: { lte: now } },
         select: { id: true },
         take: 100,
         orderBy: { expiresAt: "asc" },
