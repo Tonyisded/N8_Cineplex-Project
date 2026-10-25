@@ -12,13 +12,15 @@ type SubscriptionState = {
   requests: number;
 };
 
-const uuid =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Only authenticated Socket.IO connections reach this policy through the
 // gateway. Each connection may follow one showtime while retaining its user room.
 export class ShowtimeSubscriptions {
-  private readonly states = new WeakMap<SubscriptionSocket, SubscriptionState>();
+  private readonly states = new WeakMap<
+    SubscriptionSocket,
+    SubscriptionState
+  >();
 
   join(
     socket: SubscriptionSocket,
@@ -29,7 +31,11 @@ export class ShowtimeSubscriptions {
       return Promise.resolve({ ok: false, code: "AUTH_REQUIRED" });
     let state = this.states.get(socket);
     if (!state) {
-      state = { queue: Promise.resolve(), windowStart: Date.now(), requests: 0 };
+      state = {
+        queue: Promise.resolve(),
+        windowStart: Date.now(),
+        requests: 0,
+      };
       this.states.set(socket, state);
     }
     if (Date.now() - state.windowStart >= 60_000) {

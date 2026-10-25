@@ -212,7 +212,9 @@ function fixture(now = () => new Date()) {
       await previous;
       const savedSeats = seats.map((s) => ({ ...s })),
         savedOrders = new Map([...orders].map(([id, o]) => [id, withSeats(o)])),
-        savedBalances = new Map([...users].map(([id, u]) => [id, u.creditBalance]));
+        savedBalances = new Map(
+          [...users].map(([id, u]) => [id, u.creditBalance]),
+        );
       phase = "TRANSACTION";
       try {
         const result = await fn(db);
@@ -270,7 +272,10 @@ test("expiry follows PostgreSQL time when the application clock is behind", asyn
   await f.service.expire();
   assert.equal(f.orders.get(key).status, "EXPIRED");
   assert.ok(f.seats.slice(0, 2).every((seat) => seat.status === "AVAILABLE"));
-  assert.deepEqual(f.events.map((event) => event.name), ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"]);
+  assert.deepEqual(
+    f.events.map((event) => event.name),
+    ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"],
+  );
 });
 
 test("an application clock ahead of PostgreSQL never shortens a hold", async (t) => {
@@ -301,14 +306,25 @@ test("expiry and cancellation contention restore credit and release once, preser
     ...Array.from({ length: 10 }, () => f.service.cancel(key, f.userId)),
   ]);
   assert.equal(f.orders.get(key).status, "EXPIRED");
-  assert.ok(f.orders.get(key).seats.every((seat) => seat.status === "CANCELED"));
+  assert.ok(
+    f.orders.get(key).seats.every((seat) => seat.status === "CANCELED"),
+  );
   assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
-  assert.deepEqual(f.events.map((event) => event.name), ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"]);
+  assert.deepEqual(
+    f.events.map((event) => event.name),
+    ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"],
+  );
   const resale = randomUUID();
   await f.service.create(f.otherId, resale, body(f));
   await f.service.cancel(key, f.userId);
   await f.service.expire();
-  assert.ok(f.seats.slice(0, 2).every((seat) => seat.heldByUserId === f.otherId && seat.status === "HELD"));
+  assert.ok(
+    f.seats
+      .slice(0, 2)
+      .every(
+        (seat) => seat.heldByUserId === f.otherId && seat.status === "HELD",
+      ),
+  );
   assert.equal(f.orders.get(resale).status, "PENDING_PAYMENT");
   assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
 });
@@ -324,7 +340,10 @@ test("failed expiry rolls back seats, credit and events before a later retry suc
   const update = f.db.order.update;
   let fail = true;
   f.db.order.update = async (query) => {
-    if (fail) { fail = false; throw Error("Fixture write failed"); }
+    if (fail) {
+      fail = false;
+      throw Error("Fixture write failed");
+    }
     return update(query);
   };
   const log = t.mock.method(f.service.logger, "error", () => {});
@@ -338,7 +357,10 @@ test("failed expiry rolls back seats, credit and events before a later retry suc
   await f.service.expire();
   assert.equal(f.orders.get(key).status, "EXPIRED");
   assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
-  assert.deepEqual(f.events.map((event) => event.name), ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"]);
+  assert.deepEqual(
+    f.events.map((event) => event.name),
+    ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"],
+  );
 });
 
 test("hold is atomic, uses DB prices, lasts exactly 600 seconds and publishes after commit", async () => {

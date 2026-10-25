@@ -9,8 +9,12 @@ function fixture() {
   const socket = {
     connected: true,
     rooms,
-    async join(room) { rooms.add(room); },
-    async leave(room) { rooms.delete(room); },
+    async join(room) {
+      rooms.add(room);
+    },
+    async leave(room) {
+      rooms.delete(room);
+    },
   };
   const policy = new ShowtimeSubscriptions();
   return { socket, rooms, policy };
@@ -18,14 +22,20 @@ function fixture() {
 
 function deferred() {
   let resolve;
-  const promise = new Promise((done) => { resolve = done; });
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
 test("canonical UUID rooms preserve the socket and authenticated owner room", async () => {
   const f = fixture();
   const id = "abcdefff-1234-4000-8000-123456abcdef";
-  const result = await f.policy.join(f.socket, id.toUpperCase(), async (value) => value === id);
+  const result = await f.policy.join(
+    f.socket,
+    id.toUpperCase(),
+    async (value) => value === id,
+  );
   assert.deepEqual(result, { ok: true });
   assert.deepEqual([...f.rooms], ["socket-id", "user:owner", `showtime:${id}`]);
 });
@@ -33,8 +43,18 @@ test("canonical UUID rooms preserve the socket and authenticated owner room", as
 test("invalid room names, payload objects and missing showtimes cannot add rooms", async () => {
   const f = fixture();
   let reads = 0;
-  const exists = async () => { reads++; return false; };
-  for (const value of [null, [], {}, { userId: "victim" }, "user:victim", "invalid"]) {
+  const exists = async () => {
+    reads++;
+    return false;
+  };
+  for (const value of [
+    null,
+    [],
+    {},
+    { userId: "victim" },
+    "user:victim",
+    "invalid",
+  ]) {
     assert.equal((await f.policy.join(f.socket, value, exists)).ok, false);
   }
   assert.equal(reads, 0);
@@ -44,11 +64,16 @@ test("invalid room names, payload objects and missing showtimes cannot add rooms
 
 test("concurrent asynchronous joins leave exactly the last selected showtime", async () => {
   const f = fixture();
-  const a = randomUUID(), b = randomUUID();
-  const gate = deferred(), entered = deferred();
+  const a = randomUUID(),
+    b = randomUUID();
+  const gate = deferred(),
+    entered = deferred();
   const join = f.socket.join.bind(f.socket);
   f.socket.join = async (room) => {
-    if (room === `showtime:${a}`) { entered.resolve(); await gate.promise; }
+    if (room === `showtime:${a}`) {
+      entered.resolve();
+      await gate.promise;
+    }
     await join(room);
   };
   const first = f.policy.join(f.socket, a, async () => true);
@@ -62,9 +87,12 @@ test("concurrent asynchronous joins leave exactly the last selected showtime", a
 
 test("disconnect while validating a showtime prevents any room join", async () => {
   const f = fixture();
-  const gate = deferred(), entered = deferred();
+  const gate = deferred(),
+    entered = deferred();
   const pending = f.policy.join(f.socket, randomUUID(), async () => {
-    entered.resolve(); await gate.promise; return true;
+    entered.resolve();
+    await gate.promise;
+    return true;
   });
   await entered.promise;
   f.socket.connected = false;
@@ -76,10 +104,13 @@ test("disconnect while validating a showtime prevents any room join", async () =
 
 test("disconnect during an adapter join removes late membership", async () => {
   const f = fixture();
-  const gate = deferred(), entered = deferred();
+  const gate = deferred(),
+    entered = deferred();
   const id = randomUUID();
   f.socket.join = async (room) => {
-    entered.resolve(); await gate.promise; f.rooms.add(room);
+    entered.resolve();
+    await gate.promise;
+    f.rooms.add(room);
   };
   const pending = f.policy.join(f.socket, id, async () => true);
   await entered.promise;
@@ -92,7 +123,14 @@ test("disconnect during an adapter join removes late membership", async () => {
 
 test("a failed lookup does not poison later subscriptions", async () => {
   const f = fixture();
-  assert.equal((await f.policy.join(f.socket, randomUUID(), async () => { throw Error("fixture unavailable"); })).ok, false);
+  assert.equal(
+    (
+      await f.policy.join(f.socket, randomUUID(), async () => {
+        throw Error("fixture unavailable");
+      })
+    ).ok,
+    false,
+  );
   const id = randomUUID();
   assert.equal((await f.policy.join(f.socket, id, async () => true)).ok, true);
   assert.ok(f.rooms.has(`showtime:${id}`));
@@ -103,10 +141,18 @@ test("rate limit bounds concurrent work per socket and recovers after a minute",
   const f = fixture();
   let reads = 0;
   const id = randomUUID();
-  const exists = async () => { reads++; return true; };
-  const results = await Promise.all(Array.from({ length: 50 }, () => f.policy.join(f.socket, id, exists)));
+  const exists = async () => {
+    reads++;
+    return true;
+  };
+  const results = await Promise.all(
+    Array.from({ length: 50 }, () => f.policy.join(f.socket, id, exists)),
+  );
   assert.equal(results.filter((result) => result.ok).length, 30);
-  assert.equal(results.filter((result) => result.code === "RATE_LIMITED").length, 20);
+  assert.equal(
+    results.filter((result) => result.code === "RATE_LIMITED").length,
+    20,
+  );
   assert.equal(reads, 30);
   t.mock.timers.tick(60000);
   assert.equal((await f.policy.join(f.socket, id, exists)).ok, true);
@@ -125,10 +171,9 @@ test("a blocked socket does not block another authenticated connection", async (
   await entered.promise;
   try {
     const id = randomUUID();
-    assert.deepEqual(
-      await f.policy.join(other.socket, id, async () => true),
-      { ok: true },
-    );
+    assert.deepEqual(await f.policy.join(other.socket, id, async () => true), {
+      ok: true,
+    });
     assert.ok(other.rooms.has(`showtime:${id}`));
     assert.deepEqual([...f.rooms], ["socket-id", "user:owner"]);
   } finally {
