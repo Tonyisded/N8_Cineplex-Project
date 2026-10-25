@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cineplex · Preview tình huống chọn ghế</title>
+  <link rel="stylesheet" href="../app.css">
+  <link rel="stylesheet" href="preview.css">
+  <script src="preview.js" defer></script>
+</head>
+<body class="preview-page">
+  <header class="preview-header"><div><a href="../index.html" class="brand">cineplex<span class="brand-mark"></span></a><h1>Phòng mô phỏng chọn ghế</h1></div><a class="btn btn-secondary" href="../index.html" target="_blank" rel="noopener">Mở giao diện khách hàng</a></header>
+  <main class="preview-layout">
+    <section class="preview-stage" aria-label="Ứng dụng khách hàng"><iframe id="customer-frame" src="../index.html?preview=1#seat-handoff" title="Prototype chọn ghế Cineplex" allow="fullscreen"></iframe></section>
+    <aside class="preview-panel" aria-label="Công cụ riêng của chế độ preview">
+      <div class="preview-intro"><span class="preview-label">CHỈ TRONG PREVIEW</span><h2>Kích hoạt tình huống</h2><p>Các công cụ này nằm ngoài giao diện khách hàng. Chọn một ghế trong điện thoại để bắt đầu phiên 10 phút.</p></div>
+      <section class="preview-state" aria-label="Trạng thái hiện tại"><div><span>Kết nối</span><strong id="connection-state">Đang khởi tạo</strong></div><div><span>Giữ ghế còn</span><strong id="remaining-state">—</strong></div><div><span>Số chỗ</span><strong id="places-state">0</strong></div><div><span>Tổng tiền</span><strong id="total-state">0đ</strong></div><p id="selection-state">Chưa chọn ghế</p></section>
+      <section class="scenario-group"><h3>Cập nhật sơ đồ</h3><button type="button" data-scenario="hold">Người khác giữ A2</button><button type="button" data-scenario="sell">B4 được mua</button><button type="button" data-scenario="release">Giải phóng A2 và E2</button><button type="button" data-scenario="updating">Đang cập nhật ghế…</button></section>
+      <section class="scenario-group"><h3>Giữ ghế thất bại</h3><p>Tự thử chọn ghế, sau đó trả về xung đột để quan sát lựa chọn và tổng tiền.</p><button type="button" data-scenario="conflict">Xung đột ghế F6</button><button type="button" data-scenario="couple-conflict">Xung đột Couple J1–J2</button></section>
+      <section class="scenario-group"><h3>Thời gian giữ ghế</h3><p>Chọn ghế thành công trước khi kích hoạt. Thao tác này chỉ đổi deadline của phiên mô phỏng.</p><button type="button" data-scenario="urgent">Còn 01:59</button><button type="button" data-scenario="expire">Hết thời gian giữ ghế</button></section>
+      <section class="scenario-group"><h3>Kết nối và đồng bộ</h3><button type="button" data-scenario="offline">Mất kết nối</button><button type="button" data-scenario="reconnect">Kết nối lại</button><button type="button" data-scenario="reconnect-change">Kết nối lại, một lựa chọn bị giữ</button><p>Để thấy snapshot khác nhau: mất kết nối → cập nhật A2/B4 → kết nối lại. Sơ đồ khách hàng chỉ đổi khi đồng bộ.</p></section>
+      <section class="scenario-group"><h3>Phiên mới</h3><button type="button" class="scenario-reset" data-scenario="reset">Đặt lại toàn bộ mô phỏng</button></section>
+      <section class="preview-log" aria-label="Thông báo từ ứng dụng"><h3>Thông báo gần nhất</h3><p id="preview-message" role="status" aria-live="polite">Sẵn sàng nhận thao tác trong prototype.</p></section>
+      <p class="preview-footnote">Dữ liệu và độ trễ được mô phỏng cục bộ. Không có WebSocket, giữ ghế hoặc thanh toán thật. Tải lại trang sẽ tạo phiên mới.</p>
+    </aside>
+  </main>
+</body>
+</html>

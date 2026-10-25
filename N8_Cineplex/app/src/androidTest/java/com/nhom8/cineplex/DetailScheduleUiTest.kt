@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.nhom8.cineplex.data.*
 import com.nhom8.cineplex.model.*
 import com.nhom8.cineplex.ui.CineplexViewModel
+import com.nhom8.cineplex.ui.SeatSelectionViewModel
 import com.nhom8.cineplex.ui.theme.CineplexMockTheme
 import org.junit.*
 import org.junit.Assert.*
@@ -20,6 +21,7 @@ class DetailScheduleUiTest {
     private var canceled = false
     private var offline = false
     private lateinit var vm: CineplexViewModel
+    private lateinit var seatVm: SeatSelectionViewModel
     private val api = object : CatalogRepository {
         override suspend fun dates() = listOf(today)
         override suspend fun movie(id: String) = film
@@ -32,7 +34,8 @@ class DetailScheduleUiTest {
     }
     @Before fun setup() {
         vm = CineplexViewModel(MockAccountAdapter(MockAccountRepository()), api, { today }, { 0L })
-        compose.setContent { CineplexMockTheme { CineplexApp(vm) } }
+        seatVm = SeatSelectionViewModel()
+        compose.setContent { CineplexMockTheme { CineplexApp(vm, seatVm) } }
         compose.runOnUiThread { vm.update(AuthForm(email = "user@cineplex.test", password = "123456")); vm.submit() }
         compose.waitUntil(10_000) { vm.movies.isNotEmpty() }
         compose.runOnUiThread { vm.openMovie(film) }
@@ -67,6 +70,25 @@ class DetailScheduleUiTest {
         compose.onNodeWithText("Landmark 81 · Cinema 1").assertExists()
         assertEquals(slot.id, vm.selectedShowtime?.id)
         screenshot("week6-summary")
+        compose.onNodeWithTag("seat-A2").performClick()
+        compose.waitUntil(5_000) { "A2" in seatVm.selected }
+        compose.runOnUiThread { seatVm.select("J1-J2") }
+        compose.waitUntil(5_000) { "J1-J2" in seatVm.selected }
+        assertEquals(3, seatVm.places)
+        assertEquals(330_000L, seatVm.total)
+        compose.onNodeWithTag("seat-map").performTouchInput { swipeUp() }
+        compose.onNodeWithTag("seat-map").performTouchInput { swipeUp() }
+        screenshot("seat-couple")
+        compose.onNodeWithTag("seat-continue").assertIsEnabled().performClick()
+        compose.waitUntil(5_000) { vm.screen == Screen.SEAT_HANDOFF }
+        compose.onNodeWithText("Tóm tắt lựa chọn").assertIsDisplayed()
+        assertNotNull(seatVm.deadlineMillis)
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(5_000) { vm.screen == Screen.SEAT_SUMMARY }
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("Rời màn hình chọn ghế?").assertIsDisplayed()
+        compose.onNodeWithText("Ở lại").performClick()
+        assertEquals(Screen.SEAT_SUMMARY, vm.screen)
     }
     @Test fun networkFailureRetryAndEmptyDayNeverGenerateSchedules() {
         compose.runOnUiThread { offline = true; vm.refreshMovie() }

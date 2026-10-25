@@ -67,6 +67,9 @@ fun HomeScreen(vm: CineplexViewModel, grid: LazyListState) {
                     }
                 }
             }
+            if (vm.scheduleChecking) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().testTag("home-showtime-checking"))
+            }
             CustomerNavigation(0, { scope.launch { grid.animateScrollToItem(0) } }, vm::account, vm::coming)
         }
     }

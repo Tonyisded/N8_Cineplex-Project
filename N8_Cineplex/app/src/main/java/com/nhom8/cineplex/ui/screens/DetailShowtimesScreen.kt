@@ -130,28 +130,3 @@ private fun AgeConfirmationSheet(vm: CineplexViewModel, movie: Movie) {
     }
 }
 
-@Composable
-fun SeatSummaryScreen(vm: CineplexViewModel, movie: Movie) {
-    val slot = vm.selectedShowtime
-    Scaffold(containerColor = C.Surface,topBar = { DetailHeader("Tóm tắt suất chiếu",vm::back) },bottomBar = { DetailActionBar { ActionButton("Đổi suất chiếu",vm::back,Modifier.fillMaxWidth(),secondary = true) } }) { inset ->
-        Column(Modifier.fillMaxSize().padding(inset).verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement = Arrangement.spacedBy(22.dp),horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("✓",fontSize = 36.sp,color = C.Primary)
-            Text("Thông tin suất chiếu",style = MaterialTheme.typography.headlineMedium)
-            Text("Đây là thông tin suất chiếu đã chọn. Chưa giữ chỗ hoặc tạo đơn.",color = C.Muted,textAlign = TextAlign.Center)
-            Surface(color = C.Background,shape = RoundedCornerShape(16.dp),border = BorderStroke(1.dp,C.Line),modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(movie.name,style = MaterialTheme.typography.titleMedium)
-                    DetailAgeBadge(movie.age)
-                    Text("Rạp chiếu",color = C.Muted)
-                    Text("Landmark 81 · ${slot?.auditorium?.name.orEmpty()}",fontWeight = FontWeight.SemiBold)
-                    Text("Phòng và ghế mô phỏng N8, không phải sơ đồ ghế CGV.",color = C.Muted)
-                    Text("Suất chiếu",color = C.Muted)
-                    Text(slot?.let { "${showtimeRange(it)} · ${displayCalendarDate(vm.catalogDate)}" }.orEmpty(),fontWeight = FontWeight.SemiBold)
-                    Text(slot?.let(::scheduleFormat).orEmpty())
-                    Text(slot?.let { "Giá vé cơ sở: ${it.basePrice} VND" }.orEmpty())
-                }
-            }
-            Text("Chức năng chọn ghế sẽ có trong phiên bản sau.",color = C.Muted,textAlign = TextAlign.Center)
-        }
-    }
-}

@@ -16,6 +16,32 @@ class CatalogPreviewTest {
     @Before fun setup() { Dispatchers.setMain(dispatcher) }
     @After fun teardown() { Dispatchers.resetMain() }
     private fun slot(id: String, time: String, available: Int = 7, total: Int = 10) = ShowtimeDto(id,"film","fixture","2026-10-13T${time}:00.000Z","2026-10-13T16:30:00.000Z","IMAX_2D","150000","ACTIVE",AuditoriumDto("room","Cinema 1","IMAX",496,false),"Phụ đề Việt",available,total)
+    @Test fun tappingHomeShowtimeValidatesThenReturnsHomeAndRejectsUnavailable() = runTest(dispatcher) {
+        val film = MockMovies.all[0].copy(id = "film", soon = false)
+        val chosen = slot("home-slot", "07:10")
+        var fresh = chosen
+        val catalog = object : CatalogRepository {
+            override suspend fun dates() = listOf("2026-10-13")
+            override suspend fun movies(date: String) = CatalogDay(listOf(film), listOf(chosen), "2026-10-13T07:09:59.000Z")
+            override suspend fun movie(id: String) = film
+            override suspend fun showtime(id: String) = ShowtimeResponse("2026-10-13T07:09:59.000Z", fresh)
+            override suspend fun showtimes(id: String, date: String) = ShowtimesResponse(date, listOf(chosen), "2026-10-13T07:09:59.000Z")
+        }
+        val vm = CineplexViewModel(MockAccountAdapter(MockAccountRepository()), catalog, { "2026-10-13" }, { 0L })
+        vm.update(AuthForm(email = "user@cineplex.test", password = "123456")); vm.submit(); advanceUntilIdle()
+        vm.showSlot(chosen); advanceUntilIdle()
+        assertEquals(Screen.SEAT_SUMMARY, vm.screen)
+        assertEquals(chosen.id, vm.selectedShowtime?.id)
+        assertEquals(Screen.HOME, vm.seatReturnScreen)
+        vm.back()
+        assertEquals(Screen.HOME, vm.screen)
+        assertNull(vm.selectedShowtime)
+        fresh = chosen.copy(availableSeats = 0)
+        vm.showSlot(chosen); advanceUntilIdle()
+        assertEquals(Screen.HOME, vm.screen)
+        assertNull(vm.selectedShowtime)
+        assertEquals("Suất chiếu không còn khả dụng", vm.notice?.title)
+    }
     @Test fun exactStartHidesSlotAndFinalStartHidesMovieWithoutNetworkAndTimeFilterWorks() = runTest(dispatcher) {
         var elapsed = 0L
         var calls = 0

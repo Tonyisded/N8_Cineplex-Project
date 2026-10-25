@@ -52,15 +52,22 @@ class CatalogPreviewUiTest {
         compose.onNodeWithText("Lịch chiếu từ CGV",substring = true).assertDoesNotExist()
         screenshot("preview-clean-overnight-times")
     }
-    @Test fun groupsCountsReadOnlyInteractionAndExactTimeRemoval() {
+    @Test fun groupsCountsOpenSeatSelectionAndExactTimeRemoval() {
         scrollTo("showtime-first")
         compose.onNodeWithTag("format-IMAX").assertExists()
         compose.onAllNodesWithText("Còn 480/496").assertCountEquals(3)
         screenshot("preview-schedules")
         compose.onNodeWithTag("showtime-first").performClick()
+        compose.waitUntil(5_000) { vm.screen == Screen.SEAT_SUMMARY || vm.notice != null }
+        Assert.assertEquals(Screen.SEAT_SUMMARY, vm.screen)
         compose.onNodeWithText("Thông tin suất chiếu").assertIsDisplayed()
-        compose.onNodeWithText("Chưa hỗ trợ đặt vé",substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Đã hiểu").performClick()
+        compose.onNodeWithTag("seat-selection-screen").assertIsDisplayed()
+        compose.onNodeWithTag("seat-A1").assert(hasContentDescription("Còn trống", substring = true))
+        compose.onNodeWithTag("seat-I3-I4").assert(hasContentDescription("Còn trống", substring = true))
+        screenshot("home-seat-all-available")
+        Assert.assertEquals("first", vm.selectedShowtime?.id)
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(5_000) { vm.screen == Screen.HOME }
         compose.runOnUiThread { elapsed = 1000; vm.tickCatalogClock() }
         compose.onNodeWithTag("showtime-first").assertDoesNotExist()
         compose.runOnUiThread { vm.selectTimeWindow(5) }

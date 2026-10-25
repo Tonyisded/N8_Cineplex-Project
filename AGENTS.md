@@ -1612,3 +1612,19 @@ Trạng thái: **Hoàn thành công bố source trên nhánh riêng**, thay mố
 Đã kiểm tra staged diff sạch lỗi whitespace và chỉ đúng22 file; không secrets, file build, selftest hoặc log tạm. Backend công bố khớp manifest public đã nghiệm thu của VPS catalog-preview-780c6b76031e7acc; bốn file proxy overlay môi trường vẫn ở ngoài repo. Lượt công bố không đổi code runtime hoặc schema so với bản đã triển khai, không build/deploy lại, không chạy lại toàn bộ Android/VPS tests, không thay dữ liệu DB. Các kết quả61/64 backend,41 unit,21/3/3 native và BASELINE404/MODIFIED200/ROLLBACK404 là bằng chứng thực thi đã ghi trong mốc hoàn thiện phía trên, không nhận là lượt chạy mới của thao tác Git.
 
 Cả hai tài liệu được cập nhật cùng đợt. Bằng chứng đầy đủ và SHA của bản cập nhật tài liệu tiếp theo được lưu ngoài repo trong cùng bộ verification; giữ nguyên bốn role/baseline hiện hành. Bước tiếp theo: nhóm trưởng review nhánh và quyết định merge; chưa thực hiện merge.
+
+### Nhật ký UI chọn ghế Android — 2026-10-25
+
+| Ngày | Hạng mục | Trạng thái | Kết quả / phần còn lại |
+| --- | --- | --- | --- |
+| 2026-10-25 | UI chọn ghế native từ design/seat-selection | Hoàn thành phần Android mô phỏng; Chưa làm backend hold/realtime/order/payment thật | Nối sau lịch chiếu và xác nhận tuổi bằng đúng suất đã chọn; Compose có sơ đồ thường/VIP/Couple, trạng thái, zoom/cuộn, thanh tổng kết, deadline 600 giây, offline/reconnect mô phỏng, cảnh báo và dialog rời/hết hạn, điểm chuyển tiếp tóm tắt. Gradle assembleDebug/assembleDebugAndroidTest/testDebugUnitTest đạt, 43/43 unit; lint source ứng dụng 0 lỗi/44 cảnh báo/3 hints (lint đầy đủ phân tích test bị treo); emulator Pixel_10_Pro_XL 4/4 bài UI đạt (chọn ghế, khách hàng/back/logout, Signup, catalog), ảnh sơ đồ Couple đã xem. Chưa máy vật lý, chưa commit/push/merge. |
+
+Quy tắc tiếp tục: SeatDemo và SeatSelectionViewModel chỉ là mô phỏng cục bộ, không phải giữ ghế hoặc realtime nhiều người dùng. Backend hiện chỉ có GET /api/v1/showtimes/:id/seats đọc inventory và chưa có zoning VIP/Couple hay API hold/order; không dùng sơ đồ demo để khẳng định tồn kho thật. Công cụ tình huống SeatScenarioActivity chỉ trong source set debug, khởi chạy bằng adb shell am start -n com.nhom8.cineplex/.SeatScenarioActivity, không đưa lên màn khách hàng. Khi làm booking thật, đọc lại mục seat hold/transaction/WebSocket trong Plan, giữ 10 bảng và emit sau commit. Lượt này chỉ sửa Android/tài liệu, không deploy VPS. Bước tiếp theo là backend hold/order/realtime theo plan rồi thay nguồn mô phỏng; chưa triển khai thanh toán.
+
+### Nhật ký sửa ghế trống và điều hướng Home — 2026-10-25
+
+| Ngày | Hạng mục | Trạng thái | Kết quả / phần còn lại |
+| --- | --- | --- | --- |
+| 2026-10-25 | Sửa sơ đồ ghế ban đầu và thao tác chạm giờ chiếu Home | Hoàn thành Android mô phỏng/local/emulator; Chưa làm giữ ghế thật | Thay trạng thái HELD/SOLD đặt sẵn: 54 thực thể/60 chỗ SeatDemo ban đầu đều AVAILABLE, tình huống bị giữ/bán chỉ kích hoạt qua công cụ debug. Chạm giờ Home xác minh lại GET showtimes/:id rồi vào chọn ghế, Back về Home; suất không hợp lệ/lỗi vẫn ở Home. Luồng chi tiết/lịch/tuổi không đổi. Gradle build app + AndroidTest và 45/45 unit đạt; lint source 0 lỗi/44 cảnh báo/3 hints, lint đầy đủ phân tích test chưa đạt vì bị treo; emulator 3/3 bài UI liên quan đạt, ảnh sơ đồ ghế trống đã xem. Sơ đồ 60 chỗ vẫn là mẫu, chưa khớp phòng GOLD 32 chỗ/tồn kho thật; chưa commit/push/merge. |
+
+Quy tắc tiếp tục: không thêm ghế HELD/SOLD mặc định cho suất mới trong SeatDemo; chỉ đưa trạng thái bận vào khi có dữ liệu server đúng ghế hoặc công cụ debug. Không gọi thao tác Home là giữ ghế thật. Khi triển khai inventory thực, sơ đồ phải theo room/seat API và trạng thái source of truth, không dùng số ghế 60 mẫu để suy ra 32/32 của phòng GOLD. Lượt này chỉ sửa Android/tài liệu, không sửa backend/VPS.
