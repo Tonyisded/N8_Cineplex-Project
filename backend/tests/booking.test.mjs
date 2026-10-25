@@ -211,7 +211,8 @@ function fixture(now = () => new Date()) {
       tail = new Promise((r) => (unlock = r));
       await previous;
       const savedSeats = seats.map((s) => ({ ...s })),
-        savedOrders = new Map([...orders].map(([id, o]) => [id, withSeats(o)]));
+        savedOrders = new Map([...orders].map(([id, o]) => [id, withSeats(o)])),
+        savedBalances = new Map([...users].map(([id, u]) => [id, u.creditBalance]));
       phase = "TRANSACTION";
       try {
         const result = await fn(db);
@@ -221,6 +222,8 @@ function fixture(now = () => new Date()) {
       } catch (e) {
         seats = savedSeats;
         orders = savedOrders;
+        for (const [id, balance] of savedBalances)
+          users.get(id).creditBalance = balance;
         phase = "ROLLED_BACK";
         throw e;
       } finally {
@@ -254,6 +257,88 @@ function fixture(now = () => new Date()) {
 const body = (f, ids) => ({
   showtime_id: f.showtimeId,
   seat_ids: ids ?? f.seats.slice(0, 2).map((s) => s.id),
+});
+
+test("expiry follows PostgreSQL time when the application clock is behind", async (t) => {
+  let dbNow = Date.parse("2030-01-01T00:00:00Z");
+  const f = fixture(() => new Date(dbNow));
+  f.slot.startAt = new Date(dbNow + 3600000);
+  const key = randomUUID();
+  const hold = await f.service.create(f.userId, key, body(f));
+  dbNow = Date.parse(hold.item.expiresAt);
+  t.mock.timers.enable({ apis: ["Date"], now: dbNow - 300000 });
+  await f.service.expire();
+  assert.equal(f.orders.get(key).status, "EXPIRED");
+  assert.ok(f.seats.slice(0, 2).every((seat) => seat.status === "AVAILABLE"));
+  assert.deepEqual(f.events.map((event) => event.name), ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"]);
+});
+
+test("an application clock ahead of PostgreSQL never shortens a hold", async (t) => {
+  let dbNow = Date.parse("2030-01-01T00:00:00Z");
+  const f = fixture(() => new Date(dbNow));
+  f.slot.startAt = new Date(dbNow + 3600000);
+  const key = randomUUID();
+  const hold = await f.service.create(f.userId, key, body(f));
+  dbNow = Date.parse(hold.item.expiresAt) - 1;
+  t.mock.timers.enable({ apis: ["Date"], now: dbNow + 300000 });
+  await f.service.expire();
+  assert.equal(f.orders.get(key).status, "PENDING_PAYMENT");
+  assert.equal(f.orders.get(key).expiresAt.toISOString(), hold.item.expiresAt);
+  assert.ok(f.seats.slice(0, 2).every((seat) => seat.status === "HELD"));
+  assert.equal(f.events.length, 1);
+});
+
+test("expiry and cancellation contention restore credit and release once, preserving resale", async () => {
+  let dbNow = Date.now();
+  const f = fixture(() => new Date(dbNow));
+  const key = randomUUID();
+  const original = await f.service.create(f.userId, key, body(f));
+  f.orders.get(key).creditUsed = new Prisma.Decimal(100);
+  f.users.get(f.userId).creditBalance = new Prisma.Decimal(900);
+  dbNow = Date.parse(original.item.expiresAt);
+  await Promise.all([
+    f.service.expire(),
+    ...Array.from({ length: 10 }, () => f.service.cancel(key, f.userId)),
+  ]);
+  assert.equal(f.orders.get(key).status, "EXPIRED");
+  assert.ok(f.orders.get(key).seats.every((seat) => seat.status === "CANCELED"));
+  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
+  assert.deepEqual(f.events.map((event) => event.name), ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"]);
+  const resale = randomUUID();
+  await f.service.create(f.otherId, resale, body(f));
+  await f.service.cancel(key, f.userId);
+  await f.service.expire();
+  assert.ok(f.seats.slice(0, 2).every((seat) => seat.heldByUserId === f.otherId && seat.status === "HELD"));
+  assert.equal(f.orders.get(resale).status, "PENDING_PAYMENT");
+  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
+});
+
+test("failed expiry rolls back seats, credit and events before a later retry succeeds", async (t) => {
+  let dbNow = Date.now();
+  const f = fixture(() => new Date(dbNow));
+  const key = randomUUID();
+  const original = await f.service.create(f.userId, key, body(f));
+  f.orders.get(key).creditUsed = new Prisma.Decimal(100);
+  f.users.get(f.userId).creditBalance = new Prisma.Decimal(900);
+  dbNow = Date.parse(original.item.expiresAt);
+  const update = f.db.order.update;
+  let fail = true;
+  f.db.order.update = async (query) => {
+    if (fail) { fail = false; throw Error("Fixture write failed"); }
+    return update(query);
+  };
+  const log = t.mock.method(f.service.logger, "error", () => {});
+  await f.service.expire();
+  assert.equal(log.mock.callCount(), 1);
+  assert.equal(f.orders.get(key).status, "PENDING_PAYMENT");
+  assert.ok(f.seats.slice(0, 2).every((seat) => seat.status === "HELD"));
+  assert.equal(f.users.get(f.userId).creditBalance.toString(), "900");
+  assert.equal(f.events.length, 1);
+  await f.service.expire();
+  await f.service.expire();
+  assert.equal(f.orders.get(key).status, "EXPIRED");
+  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
+  assert.deepEqual(f.events.map((event) => event.name), ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"]);
 });
 
 test("hold is atomic, uses DB prices, lasts exactly 600 seconds and publishes after commit", async () => {
