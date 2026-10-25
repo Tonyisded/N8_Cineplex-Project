@@ -36,7 +36,7 @@ fun DetailShowtimesScreen(vm: CineplexViewModel, movie: Movie) {
                 MoviePoster(movie,Modifier.width(56.dp))
                 Column(Modifier.weight(1f),verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(movie.name,style = MaterialTheme.typography.titleMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),verticalAlignment = Alignment.CenterVertically) { DetailAgeBadge(movie.age); Text("${movie.minutes} phút",color = C.Muted,fontSize = 14.sp) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),verticalAlignment = Alignment.CenterVertically) { DetailAgeBadge(movie.age); if (movie.minutes > 0) Text("${movie.minutes} phút",color = C.Muted,fontSize = 14.sp) }
                 }
             }
             HorizontalDivider(color = C.Line)
@@ -53,10 +53,16 @@ fun DetailShowtimesScreen(vm: CineplexViewModel, movie: Movie) {
                     Text(vm.detailError,color = C.Error,textAlign = TextAlign.Center)
                     TextButton(vm::refreshMovie,Modifier.testTag("schedule-retry")) { Text("Thử lại") }
                 }
-                slots.isEmpty() -> Column(Modifier.fillMaxWidth().padding(40.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("▦",fontSize = 32.sp,color = C.Primary)
-                    Text("Chưa có suất chiếu trong ngày này",style = MaterialTheme.typography.headlineMedium,textAlign = TextAlign.Center)
-                    Text("Hãy chọn một ngày khác.",color = C.Muted,textAlign = TextAlign.Center)
+                slots.isEmpty() -> {
+                    val releaseNotice = DetailSchedule.upcomingReleaseNotice(movie, vm.todayDate)
+                    Column(Modifier.fillMaxWidth().padding(40.dp),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("▦",fontSize = 32.sp,color = C.Primary)
+                        if (releaseNotice != null) Text(releaseNotice,style = MaterialTheme.typography.titleMedium,textAlign = TextAlign.Center)
+                        else {
+                            Text("Chưa có suất chiếu trong ngày này",style = MaterialTheme.typography.headlineMedium,textAlign = TextAlign.Center)
+                            Text("Hãy chọn một ngày khác.",color = C.Muted,textAlign = TextAlign.Center)
+                        }
+                    }
                 }
                 else -> slots.groupBy { it.format to it.presentationLabel.orEmpty() }.values.sortedBy { it.minOf { slot -> slot.startAt } }.forEach { group ->
                     Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement = Arrangement.spacedBy(12.dp)) {

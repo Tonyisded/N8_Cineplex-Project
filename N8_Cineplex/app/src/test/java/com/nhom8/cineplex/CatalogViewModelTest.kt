@@ -24,6 +24,15 @@ class CatalogViewModelTest {
         var calls = 0
         var failed = false
         var pending: CompletableDeferred<Unit>? = null
+        var soonFilms: List<Movie> = emptyList()
+        var soonCalls = 0
+        var soonFailed = false
+        var soonPending: CompletableDeferred<Unit>? = null
+        override suspend fun comingSoon(): List<Movie> {
+            soonCalls++; soonPending?.let { withContext(NonCancellable) { it.await() } }
+            if(soonFailed) error("Offline")
+            return soonFilms
+        }
         override suspend fun movies(date: String): CatalogDay {
             calls++; requestedDates += date; waits[date]?.let { withContext(NonCancellable) { it.await() } }; pending?.let { withContext(NonCancellable) { it.await() } }
             if(failed) error("Offline")
@@ -102,5 +111,42 @@ class CatalogViewModelTest {
         assertEquals("2026-10-10",calendarDate(calendarDateMillis("2026-10-10")))
         assertEquals("10/10/2026",displayCalendarDate("2026-10-10"))
         for(value in listOf("2026-02-29","2026-13-01","2026-10-1","")) assertTrue(runCatching { calendarDateMillis(value) }.isFailure)
+    }
+    @Test fun comingSoonLoadsWithCatalogAndSearchesWithoutShowtimesOrTimeWindows() = runTest(dispatcher) {
+        val soon = listOf(MockMovies.all[4].copy(id = "soon-batman", releaseDate = "2026-12-25"), MockMovies.all[5].copy(id = "soon-spirited", releaseDate = "2026-11-01"))
+        val catalog = Catalog().apply { soonFilms = soon }
+        val vm = login(catalog); advanceUntilIdle()
+        assertEquals(2, vm.movies.size); assertEquals(1, catalog.soonCalls)
+        assertEquals(soon.map { it.id }, vm.comingSoonMovies.map { it.id })
+        assertFalse(vm.soonLoading); assertEquals("", vm.soonError)
+        vm.soon = true
+        assertEquals(soon.map { it.id }, vm.filteredMovies.map { it.id })
+        vm.query = "batman"; assertEquals(listOf("soon-batman"), vm.filteredMovies.map { it.id })
+        vm.query = ""; vm.selectTimeWindow(6)
+        assertEquals(soon.size, vm.filteredMovies.size); assertEquals(2, vm.movies.size)
+        vm.refreshCatalog(); advanceUntilIdle(); assertEquals(2, catalog.soonCalls)
+    }
+    @Test fun comingSoonFailureIsIndependentFromCatalogAndRetryRecovers() = runTest(dispatcher) {
+        val soon = listOf(MockMovies.all[4].copy(id = "soon-batman", releaseDate = "2026-12-25"))
+        val catalog = Catalog().apply { soonFilms = soon; soonFailed = true }
+        val vm = login(catalog); advanceUntilIdle()
+        assertEquals(2, vm.movies.size); assertEquals("", vm.catalogError)
+        assertTrue(vm.soonError.isNotBlank()); assertTrue(vm.comingSoonMovies.isEmpty()); assertFalse(vm.soonLoading)
+        vm.soon = true; assertTrue(vm.filteredMovies.isEmpty())
+        catalog.soonFailed = false; vm.refreshComingSoon(); advanceUntilIdle()
+        assertEquals("", vm.soonError); assertEquals(soon.map { it.id }, vm.filteredMovies.map { it.id })
+        val failingCatalog = Catalog().apply { soonFilms = soon; failed = true }
+        val other = login(failingCatalog); advanceUntilIdle()
+        assertTrue(other.movies.isEmpty()); assertTrue(other.catalogError.isNotBlank())
+        assertEquals(soon.map { it.id }, other.comingSoonMovies.map { it.id }); assertEquals("", other.soonError)
+    }
+    @Test fun lateComingSoonResponseAfterLogoutCannotRestoreMovies() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val catalog = Catalog().apply { soonFilms = listOf(MockMovies.all[4].copy(id = "soon-batman", releaseDate = "2026-12-25")); soonPending = gate }
+        val vm = login(catalog)
+        advanceTimeBy(1000); runCurrent(); assertTrue(vm.soonLoading)
+        vm.logout(); gate.complete(Unit); advanceUntilIdle()
+        assertNull(vm.session); assertEquals(Screen.LOGIN,vm.screen)
+        assertTrue(vm.comingSoonMovies.isEmpty()); assertFalse(vm.soonLoading); assertEquals("",vm.soonError)
     }
 }

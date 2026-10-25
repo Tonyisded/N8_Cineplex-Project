@@ -16,4 +16,9 @@ object DetailSchedule {
     fun isDune(movie: Movie) = movie.id == "dune" || movie.original.equals("Dune: Part Two", ignoreCase = true) ||
         (movie.name.contains("Dune", ignoreCase = true) && (movie.name.contains("Phần hai", ignoreCase = true) || movie.name.contains("Part Two", ignoreCase = true)))
     fun ageLimit(movie: Movie): Int? = Regex("^T(\\d+)$").matchEntire(movie.age)?.groupValues?.get(1)?.toIntOrNull()
+    fun upcomingReleaseNotice(movie: Movie, today: String): String? {
+        val release = movie.releaseDate?.takeIf { it > today } ?: return null
+        val shown = runCatching { displayCalendarDate(release) }.getOrNull() ?: return null
+        return "Phim khởi chiếu $shown — lịch chiếu sẽ được cập nhật."
+    }
 }

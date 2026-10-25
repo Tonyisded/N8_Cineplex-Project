@@ -126,18 +126,23 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     private var lastCatalogToday = ""
     var catalogLoading by mutableStateOf(false); private set
     var catalogError by mutableStateOf(""); private set
+    var comingSoonMovies by mutableStateOf<List<Movie>>(emptyList()); private set
+    var soonLoading by mutableStateOf(false); private set
+    var soonError by mutableStateOf(""); private set
     var detailLoading by mutableStateOf(false); private set
     var detailError by mutableStateOf(""); private set
     val fixtureCatalog get() = catalog === MockCatalogRepository
-    val filteredMovies get() = searchMovies(movies.filter { it.soon == soon && slotsFor(it.id).isNotEmpty() }, query)
+    val filteredMovies get() = if (soon) searchMovies(comingSoonMovies, query) else searchMovies(movies.filter { it.soon == soon && slotsFor(it.id).isNotEmpty() }, query)
     private var catalogRequest: Job? = null
+    private var soonRequest: Job? = null
     private var detailRequest: Job? = null
     private var catalogEpoch = 0
+    private var soonEpoch = 0
     private var detailEpoch = 0
     private fun clearCatalog() {
-        catalogEpoch++; detailEpoch++; catalogRequest?.cancel(); detailRequest?.cancel()
-        catalogRequest = null; detailRequest = null; movies = emptyList(); showtimes = emptyList(); catalogShowtimes = emptyList(); movie = null; trailer = null; clearScheduleSelection(); timeWindow = 0; serverMillis = 0L; nowMillis = 0L
-        catalogLoading = false; detailLoading = false; catalogError = ""; detailError = ""; catalogDate = ""; availableDates = emptyList(); lastCatalogToday = ""
+        catalogEpoch++; soonEpoch++; detailEpoch++; catalogRequest?.cancel(); soonRequest?.cancel(); detailRequest?.cancel()
+        catalogRequest = null; soonRequest = null; detailRequest = null; movies = emptyList(); showtimes = emptyList(); catalogShowtimes = emptyList(); movie = null; trailer = null; clearScheduleSelection(); timeWindow = 0; serverMillis = 0L; nowMillis = 0L
+        catalogLoading = false; soonLoading = false; detailLoading = false; catalogError = ""; soonError = ""; detailError = ""; catalogDate = ""; availableDates = emptyList(); lastCatalogToday = ""; comingSoonMovies = emptyList()
     }
     fun selectCatalogDate(date: String) {
         calendarDateMillis(date)
@@ -155,6 +160,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
         if (!force && catalogDate == date && lastCatalogToday == currentToday) return
         if (catalogRequest?.isActive == true && catalogDate == date) return
         if (catalogDate != date) clearScheduleSelection()
+        loadComingSoon()
         val epoch = ++catalogEpoch; catalogRequest?.cancel(); catalogDate = date; lastCatalogToday = currentToday; catalogLoading = true; catalogError = ""; movies = emptyList(); catalogShowtimes = emptyList()
         catalogRequest = viewModelScope.launch {
             try { val dates = catalog.dates(); val result = catalog.movies(date); if (epoch == catalogEpoch) { availableDates = dates; movies = result.movies; catalogShowtimes = result.showtimes; recordClock(result.serverTime) } }
@@ -163,6 +169,19 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
             finally { if (epoch == catalogEpoch) catalogLoading = false }
         }
         if (screen in listOf(Screen.DETAIL, Screen.SHOWTIMES)) refreshMovie()
+    }
+    fun refreshComingSoon() { if (session?.role == Role.CUSTOMER && catalog != null) loadComingSoon() }
+    private fun loadComingSoon() {
+        val api = catalog ?: return
+        val epoch = ++soonEpoch; soonRequest?.cancel(); soonLoading = true; soonError = ""
+        soonRequest = viewModelScope.launch {
+            try {
+                val films = api.comingSoon()
+                if (epoch == soonEpoch) comingSoonMovies = films
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { if (epoch == soonEpoch) { comingSoonMovies = emptyList(); soonError = "Không tải được danh sách phim sắp chiếu. Kiểm tra mạng rồi thử lại." } }
+            finally { if (epoch == soonEpoch) { soonLoading = false; soonRequest = null } }
+        }
     }
     fun refreshMovie() {
         val selected = movie ?: return

@@ -41,14 +41,27 @@ fun HomeScreen(vm: CineplexViewModel, grid: LazyListState) {
                         }
                     }
                 }
-                stickyHeader(key = "schedule-filters") {
+                if (!vm.soon) stickyHeader(key = "schedule-filters") {
                     Column(Modifier.fillMaxWidth().background(C.Background).padding(vertical = 8.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) { DateSelector(vm); TimeSelector(vm) }
                 }
                 item(key = "banner") {
-                    CinemaBanner(browse = { scope.launch { grid.animateScrollToItem(3) } })
+                    CinemaBanner(browse = { scope.launch { val last = grid.layoutInfo.totalItemsCount - 1; if (last >= 0) grid.animateScrollToItem((if (vm.soon) 2 else 3).coerceAtMost(last)) } })
                 }
-                items(filtered,key = { it.id }) { movie -> MovieScheduleCard(movie,vm.slotsFor(movie.id),{ vm.openMovie(movie) },{ vm.openTrailer(movie) },vm::showSlot) }
-                if(vm.soon && !vm.fixtureCatalog) item { Muted("Dữ liệu sắp chiếu chưa được tích hợp") }
+                items(filtered,key = { it.id }) { movie ->
+                    if (vm.soon) ComingSoonCard(movie,{ vm.openMovie(movie) },{ vm.openTrailer(movie) })
+                    else MovieScheduleCard(movie,vm.slotsFor(movie.id),{ vm.openMovie(movie) },{ vm.openTrailer(movie) },vm::showSlot)
+                }
+                if (vm.soon) {
+                    if (vm.soonLoading) item { Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { CircularProgressIndicator(); Muted("Đang tải phim…") } }
+                    else if (vm.soonError.isNotBlank()) item { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Muted(vm.soonError); ActionButton("Thử lại", { vm.refreshComingSoon() }) } }
+                    else if (filtered.isEmpty()) item {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text(if (vm.query.isNotBlank()) "Chưa tìm thấy phim" else "Chưa có phim sắp chiếu",style = MaterialTheme.typography.headlineMedium)
+                            Muted(if (vm.query.isNotBlank()) "Thử tên phim khác." else "Danh sách phim sắp chiếu sẽ được cập nhật khi có lịch khởi chiếu mới.")
+                            if(vm.query.isNotBlank()) ActionButton("Xóa tìm kiếm",{ vm.query = "" },secondary = true)
+                        }
+                    }
+                }
                 else if(vm.catalogLoading) item { Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { CircularProgressIndicator(); Muted("Đang tải phim…") } }
                 else if(vm.catalogError.isNotBlank()) item { Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { Muted(vm.catalogError); ActionButton("Thử lại", { vm.refreshCatalog() }) } }
                 else if(filtered.isEmpty()) item {

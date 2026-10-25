@@ -14,7 +14,9 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.nhom8.cineplex.model.Movie
+import com.nhom8.cineplex.model.classifiedAgeRatings
 import com.nhom8.cineplex.data.ShowtimeDto
+import com.nhom8.cineplex.data.displayCalendarDate
 import com.nhom8.cineplex.ui.theme.CineplexColors as C
 
 @Composable
@@ -28,8 +30,32 @@ fun MoviePoster(movie: Movie, modifier: Modifier = Modifier) {
 }
 @Composable
 fun AgeBadge(age: String) {
+    if (age !in classifiedAgeRatings) return
     Surface(shape = RoundedCornerShape(8.dp),color = androidx.compose.ui.graphics.Color.Transparent,border = BorderStroke(1.dp,C.Line)) {
         Text(if(age in listOf("T13","T16","T18")) age.drop(1) + "+" else age,Modifier.heightIn(min = 32.dp).padding(horizontal = 8.dp,vertical = 4.dp),color = C.Primary,style = MaterialTheme.typography.labelLarge)
+    }
+}
+@Composable
+fun ComingSoonCard(movie: Movie, open: () -> Unit, trailer: () -> Unit) {
+    val release = movie.releaseDate?.let { runCatching { displayCalendarDate(it) }.getOrNull() }
+    Column(Modifier.fillMaxWidth().testTag("movie-${movie.id}"),verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.Top) {
+            Text(movie.name,Modifier.weight(1f).clickable(role = Role.Button,onClick = open).padding(vertical = 12.dp),style = MaterialTheme.typography.titleMedium)
+            TextButton(open,Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Xem chi tiết ${movie.name}" }) { Text("Chi tiết") }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AgeBadge(movie.age); if(movie.genre.isNotBlank()) Muted(movie.genre)
+            Muted(if(release != null) "Khởi chiếu $release" else "Đang cập nhật")
+            Muted(if(movie.minutes > 0) "${movie.minutes} phút" else "Đang cập nhật")
+        }
+        Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.spacedBy(12.dp),verticalAlignment = Alignment.Top) {
+            MoviePoster(movie,Modifier.width(96.dp).clickable(role = Role.Button,onClickLabel = "Xem chi tiết ${movie.name}",onClick = open))
+            Column(Modifier.weight(1f),verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if(movie.original.isNotBlank() && movie.original != movie.name) Muted(movie.original)
+                TrailerButton(movie,trailer)
+            }
+        }
+        HorizontalDivider(color = C.Line)
     }
 }
 @Composable

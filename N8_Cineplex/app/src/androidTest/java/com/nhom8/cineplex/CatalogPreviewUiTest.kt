@@ -33,6 +33,7 @@ class CatalogPreviewUiTest {
         val catalog = object : CatalogRepository {
             override suspend fun dates() = listOf("2026-10-13")
             override suspend fun movies(date: String) = CatalogDay(listOf(film),slots,"2026-10-13T07:09:59.000Z")
+            override suspend fun comingSoon() = emptyList<Movie>()
             override suspend fun movie(id: String) = film
             override suspend fun showtime(id: String) = ShowtimeResponse("2026-10-13T07:09:59.000Z", slots.first { it.id == id })
             override suspend fun showtimes(id: String,date: String) = ShowtimesResponse(date,slots,"2026-10-13T07:09:59.000Z")

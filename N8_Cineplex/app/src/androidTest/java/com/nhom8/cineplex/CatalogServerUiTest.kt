@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nhom8.cineplex.data.*
 import com.nhom8.cineplex.model.AuthForm
+import com.nhom8.cineplex.model.Screen
 import com.nhom8.cineplex.ui.CineplexViewModel
 import com.nhom8.cineplex.ui.theme.CineplexMockTheme
 import kotlinx.coroutines.runBlocking
@@ -49,11 +50,36 @@ class CatalogServerUiTest {
         compose.onNodeWithText("Chi tiết phim").assertIsDisplayed()
         compose.onNodeWithText(selected.name).assertExists()
         screenshot("catalog-live-detail")
+        val soon = api.comingSoon()
+        Assert.assertTrue("VPS coming-soon must publish at least one movie", soon.isNotEmpty())
+        val upcoming = soon.first()
+        val upcomingDate = upcoming.releaseDate
+        Assert.assertNotNull("Coming-soon movies must expose a release date", upcomingDate)
+        val upcomingRelease = displayCalendarDate(upcomingDate!!)
         compose.runOnUiThread { vm.back(); vm.query = ""; vm.soon = true }
-        compose.onNode(hasScrollToIndexAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).performScrollToNode(hasText("Dữ liệu sắp chiếu chưa được tích hợp"))
-        compose.onNodeWithText("Dữ liệu sắp chiếu chưa được tích hợp").assertIsDisplayed()
+        compose.waitUntil(30_000) { !vm.soonLoading }
+        if (vm.soonError.isNotBlank()) compose.runOnUiThread { vm.refreshComingSoon() }
+        compose.waitUntil(30_000) { !vm.soonLoading && vm.soonError.isEmpty() }
+        Assert.assertEquals(soon.map { it.id }.toSet(), vm.comingSoonMovies.map { it.id }.toSet())
+        compose.onNodeWithTag("catalog-dates").assertDoesNotExist()
+        compose.onNodeWithTag("time-windows").assertDoesNotExist()
+        val grid = compose.onNode(hasScrollToIndexAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+        grid.performScrollToNode(hasContentDescription("Xem chi tiết ${upcoming.name}"))
+        compose.onNodeWithContentDescription("Xem chi tiết ${upcoming.name}").assertIsDisplayed()
+        Assert.assertTrue("Coming-soon card must show its Vietnamese release date", compose.onAllNodesWithText("Khởi chiếu $upcomingRelease").fetchSemanticsNodes().isNotEmpty())
         screenshot("catalog-live-upcoming")
-        compose.runOnUiThread { vm.soon = false }
+        compose.runOnUiThread { vm.openMovie(upcoming) }
+        compose.waitUntil(30_000) { !vm.detailLoading }
+        Assert.assertEquals("", vm.detailError)
+        compose.onNodeWithText("Chi tiết phim").assertIsDisplayed()
+        compose.onNodeWithText(upcoming.name).assertExists()
+        if (vm.scheduleSlots.isEmpty()) compose.onNodeWithText("Phim khởi chiếu $upcomingRelease — lịch chiếu sẽ được cập nhật.").performScrollTo().assertIsDisplayed()
+        screenshot("catalog-live-upcoming-detail")
+        compose.runOnUiThread { vm.openSchedule() }
+        compose.waitUntil(30_000) { !vm.detailLoading && vm.screen == Screen.SHOWTIMES }
+        if (vm.scheduleSlots.isEmpty()) compose.onNodeWithText("Phim khởi chiếu $upcomingRelease — lịch chiếu sẽ được cập nhật.").assertIsDisplayed()
+        screenshot("catalog-live-upcoming-schedule")
+        compose.runOnUiThread { vm.back(); vm.back(); vm.soon = false }
         compose.onNode(hasScrollToIndexAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).performScrollToNode(hasText("Đang chiếu"))
         screenshot("catalog-live-home")
         val dates = api.dates()
