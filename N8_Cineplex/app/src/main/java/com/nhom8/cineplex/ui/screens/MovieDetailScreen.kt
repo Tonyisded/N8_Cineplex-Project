@@ -56,11 +56,10 @@ private fun DetailBody(vm: CineplexViewModel, movie: Movie, modifier: Modifier) 
             if(movie.cast.isNotBlank()) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Muted("Diễn viên"); Text(movie.cast) }
             movie.language?.let { Muted("Ngôn ngữ: $it") }
         }
-        Text("Lịch chiếu ${displayCalendarDate(vm.catalogDate.ifBlank { vm.todayDate })} · CGV Landmark 81", style = MaterialTheme.typography.headlineMedium)
+        Text("Lịch chiếu ${displayCalendarDate(vm.catalogDate.ifBlank { vm.todayDate })} · N8 Cineplex", style = MaterialTheme.typography.headlineMedium)
         if(vm.detailLoading) { CircularProgressIndicator(); Muted("Đang tải lịch chiếu…") }
         else if(vm.detailError.isNotBlank()) { Muted(vm.detailError); ActionButton("Thử lại", vm::refreshMovie) }
         else if(vm.visibleShowtimes.isEmpty()) Muted("Không còn suất phù hợp cho phim này ngày ${displayCalendarDate(vm.catalogDate.ifBlank { vm.todayDate })}.")
         else ShowtimeGroups(vm.visibleShowtimes,vm::showSlot)
-        Muted("Giờ Việt Nam. Giá và phòng/ghế là mô phỏng N8, không phải giá hay sơ đồ ghế CGV.")
     }
 }

@@ -43,6 +43,9 @@ class SeatMapUiTest {
             checkNotNull(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()).compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)
         }
     }
+    private fun visibleSeatWidth()=compose.onAllNodes(
+        hasContentDescription("Còn trống",substring=true) or hasContentDescription("Đang chọn",substring=true),useUnmergedTree=true
+    ).fetchSemanticsNodes().maxOf { it.boundsInRoot.width }
     @Test fun standardCoupleStartsCountdownOnlyAfterServerConfirmation() {
         open("STANDARD");compose.onNodeWithTag("seat-countdown").assertDoesNotExist()
         compose.onNodeWithTag("seat-L1").performSemanticsAction(SemanticsActions.OnClick) {it()};assertEquals(setOf("L1","L2"),seats.selected)
@@ -54,15 +57,24 @@ class SeatMapUiTest {
         compose.waitUntil(5000) {vm.screen==Screen.SEAT_SUMMARY};assertEquals(deadline,seats.deadlineMillis)
         compose.onNodeWithText("Hủy giữ chỗ để đổi ghế").performClick();compose.waitUntil(5000) {!seats.held}
     }
-    @Test fun pinchPanAndDoubleTapNeverSelectOrResetSeats() {
+    @Test fun pinchPanNeverSelectOrResetSeatsAndHasNoZoomButtons() {
         open("STANDARD");compose.onNodeWithTag("seat-A1").performSemanticsAction(SemanticsActions.OnClick) {it()};val before=seats.selected
+        compose.onNodeWithTag("seat-zoom-in").assertDoesNotExist()
+        compose.onNodeWithTag("seat-zoom-out").assertDoesNotExist()
+        val overviewSeatWidth=visibleSeatWidth()
         compose.onNodeWithTag("seat-map").performTouchInput {
-            pinch(center-Offset(30f,0f),center+Offset(30f,0f),center-Offset(120f,0f),center+Offset(120f,0f),400)
+            pinch(start0=center-Offset(30f,0f),end0=center-Offset(120f,0f),start1=center+Offset(30f,0f),end1=center+Offset(120f,0f),durationMillis=400)
         }
+        assertTrue("Pinch outward must visibly enlarge the seats",visibleSeatWidth()>overviewSeatWidth)
         compose.onNodeWithTag("seat-minimap").assertExists();assertEquals(before,seats.selected)
         screenshot("zoom")
         compose.onNodeWithTag("seat-map").performTouchInput {swipeLeft()};assertEquals(before,seats.selected)
-        compose.onNodeWithTag("seat-map").performTouchInput {doubleClick(center)};assertEquals(before,seats.selected)
+        val zoomedSeatWidth=visibleSeatWidth()
+        compose.onNodeWithTag("seat-map").performTouchInput {
+            pinch(start0=center-Offset(120f,0f),end0=center-Offset(30f,0f),start1=center+Offset(120f,0f),end1=center+Offset(30f,0f),durationMillis=400)
+        }
+        assertTrue("Pinch inward must visibly shrink the seats",visibleSeatWidth()<zoomedSeatWidth)
+        assertEquals(before,seats.selected)
         compose.onNodeWithTag("seat-fit").performClick();compose.onNodeWithTag("seat-minimap").assertDoesNotExist()
         assertNull(seats.deadlineMillis)
     }
@@ -70,14 +82,26 @@ class SeatMapUiTest {
         open("IMAX");assertEquals(496,seats.seats.size);assertTrue(seats.seats.all {it.seatType=="VIP"})
         compose.onNodeWithText("VIP",useUnmergedTree=true).assertExists();screenshot("imax")
     }
-    @Test fun physicalTapZoomsOverviewThenSelectsOnlyAfterASeparateTap() {
-        open("STANDARD")
-        compose.onNodeWithTag("seat-A1").performTouchInput {click()}
-        compose.waitUntil(3000) {compose.onAllNodesWithTag("seat-minimap").fetchSemanticsNodes().isNotEmpty()}
-        assertTrue(seats.selected.isEmpty())
+    private fun assertFirstTapSelectsWithoutZoom() {
+        val bounds=compose.onNodeWithTag("seat-A1").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("seat-minimap").assertDoesNotExist()
         compose.onNodeWithTag("seat-A1").performTouchInput {click()}
         compose.waitUntil(3000) {"A1" in seats.selected}
         assertEquals(setOf("A1"),seats.selected)
+        assertEquals(bounds,compose.onNodeWithTag("seat-A1").fetchSemanticsNode().boundsInRoot)
+        compose.onNodeWithTag("seat-minimap").assertDoesNotExist()
+        compose.onNodeWithTag("seat-A1").performTouchInput {click()}
+        compose.waitUntil(3000) {seats.selected.isEmpty()}
+        compose.onNodeWithTag("seat-minimap").assertDoesNotExist()
+        assertNull(seats.deadlineMillis)
+    }
+    @Test fun physicalTapSelectsOverviewImmediatelyWithoutZoom() {
+        open("STANDARD")
+        assertFirstTapSelectsWithoutZoom()
+    }
+    @Test fun denseImaxOverviewCanSelectWithoutAutomaticZoom() {
+        open("IMAX")
+        assertFirstTapSelectsWithoutZoom()
     }
     @Test fun screenxHas180SeatsAndThreeScreenSegments() {
         open("SCREENX");assertEquals(180,seats.seats.size);assertEquals(listOf("FRONT","LEFT","RIGHT"),seats.layout?.screens)
