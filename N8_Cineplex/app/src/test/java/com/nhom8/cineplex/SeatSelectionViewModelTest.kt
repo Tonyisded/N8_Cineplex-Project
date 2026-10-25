@@ -76,4 +76,18 @@ class SeatSelectionViewModelTest {
         assertEquals(Screen.HOME,vm.screen);vm.resumeHold(slot.id);runCurrent()
         assertEquals(Screen.SEAT_HANDOFF,vm.screen);assertEquals(0,vm.selectedShowtime?.availableSeats)
     }
+    @Test fun socketRefetchFinishingCancelBeforeHttpResponseDoesNotLoseSuccess()=runTest(dispatcher) {
+        lateinit var vm: SeatSelectionViewModel
+        val events=object: SeatRepository by repo {
+            override suspend fun cancel(id: String): HoldResponse {
+                val result=repo.cancel(id)
+                vm.refresh();yield()
+                return result
+            }
+        }
+        vm=SeatSelectionViewModel(events) {now};vm.bind("user","showtime");runCurrent()
+        vm.select("A1");vm.continueToSummary {};runCurrent();assertTrue(vm.held)
+        var completed=false;vm.cancelHold {completed=true};runCurrent()
+        assertTrue(completed);assertFalse(vm.held);assertTrue(vm.online);assertEquals("Đã hủy giữ chỗ.",vm.message)
+    }
 }

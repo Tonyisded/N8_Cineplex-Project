@@ -9,7 +9,8 @@ import java.io.Closeable
 import java.util.UUID
 
 class SeatSelectionViewModel(private val repository: SeatRepository? = null,
-    private val monotonicMillis: () -> Long = { System.nanoTime()/1_000_000 }) : ViewModel() {
+    // Includes deep sleep, without letting wall-clock changes extend a hold.
+    private val monotonicMillis: () -> Long = { android.os.SystemClock.elapsedRealtime() }) : ViewModel() {
     var userId = ""; private set
     var showtimeId by mutableStateOf(""); private set
     var seats by mutableStateOf<List<SeatDto>>(emptyList()); private set
@@ -61,7 +62,7 @@ class SeatSelectionViewModel(private val repository: SeatRepository? = null,
                 if(version!=epoch) return@launch
                 seats=snapshot.items; layout=snapshot.layout; online=true; request=saved
                 if(saved!=null) {
-                    try { accept(repo.order(saved.key)) }
+                    try { accept(repo.order(saved.key),saved) }
                     catch(e: ApiFailure) { if(e.code!="ORDER_NOT_FOUND") throw e else { selected=saved.seatIds.toSet(); message="Yêu cầu giữ chỗ chưa được xác nhận. Nhấn Đặt vé để thử lại." } }
                 }
             } catch(e: CancellationException) { throw e }
@@ -94,7 +95,7 @@ class SeatSelectionViewModel(private val repository: SeatRepository? = null,
                 repo.remember(user,id,sent)
                 val response=repo.hold(sent)
                 if(version!=epoch) return@launch
-                accept(response)
+                accept(response,sent)
                 if(held && secondsLeft>0) onSuccess()
                 refresh()
             } catch(e: CancellationException) { throw e }
@@ -107,12 +108,13 @@ class SeatSelectionViewModel(private val repository: SeatRepository? = null,
             finally { if(version==epoch) confirming=false }
         }
     }
-    private suspend fun accept(response: HoldResponse) {
+    private suspend fun accept(response: HoldResponse,expected: HoldRequest) {
         val current=response.item
-        check(current.showtimeId==showtimeId && current.id==request?.key)
+        check(current.showtimeId==expected.showtimeId && current.id==expected.key)
         check(current.status in setOf("PENDING_PAYMENT","EXPIRED","CANCELED","PAID","REFUNDED"))
-        check(current.seats.map { it.id }.sorted()==request!!.seatIds.sorted())
+        check(current.seats.map { it.id }.sorted()==expected.seatIds.sorted())
         isoMillis(response.serverTime); isoMillis(current.expiresAt); check(current.totalAmount.toLong()>=0)
+        if(request?.key!=expected.key || current.showtimeId!=showtimeId) return
         order=current
         if(held) {
             selected=current.seats.map { it.id }.toSet()
@@ -140,8 +142,9 @@ class SeatSelectionViewModel(private val repository: SeatRepository? = null,
                 val snapshot=checkNotNull(repository).seats(id)
                 if(version!=epoch || dirty) return@launch
                 seats=snapshot.items; layout=snapshot.layout; online=true
-                if(request!=null) {
-                    try { accept(repository.order(request!!.key)) }
+                val saved=request
+                if(saved!=null) {
+                    try { accept(repository.order(saved.key),saved) }
                     catch(e: ApiFailure) { if(e.code!="ORDER_NOT_FOUND") throw e }
                 } else {
                     val invalid=selected.filter { seatId -> pair(seatId).isEmpty() || pair(seatId).any { it.status!="AVAILABLE" } }.toSet()
@@ -162,7 +165,7 @@ class SeatSelectionViewModel(private val repository: SeatRepository? = null,
                 if(order==null) repo.hold(sent)
                 val response=repo.cancel(sent.key)
                 if(version!=epoch) return@launch
-                accept(response)
+                accept(response,sent)
                 if(!held) { message="Đã hủy giữ chỗ."; leaveDialog=false; onSuccess(); refresh() }
             } catch(e: CancellationException) { throw e }
               catch(e: Exception) { if(version==epoch) {
