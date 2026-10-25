@@ -518,6 +518,8 @@ SEAT_RELEASED
 ORDER_EXPIRED
 ```
 
+Booking cutoff (chốt 2026-10-25): chỉ tạo hold mới khi DB `clock_timestamp() < showtimes.start_at`, suất/phòng ACTIVE; kiểm tra lại thời gian DB sau khi chờ khóa/kiểm tra ghế. Tới hoặc qua giờ bắt đầu trả `409 SHOWTIME_UNAVAILABLE`, không tạo đơn/giữ một phần ghế/phát sự kiện. Không tự thêm mốc dừng trước 10/15 phút, không cắt ngắn hạn600s của hold hợp lệ. Đọc/retry cùng Idempotency-Key/payload sau cutoff giữ trạng thái/deadline cũ; retry tới hạn chỉ expire/nhả một lần, không hồi sinh/gia hạn. Giữ ownership, transaction, thứ tự khóa và phạm vi payment/combo/credit hiện tại.
+
 ---
 
 ## 12. Double booking
@@ -1731,3 +1733,18 @@ Cùng4role được mở rộng bằng seatGesture patch/mode rollback, giữ l�
 #### Đã lược đường dẫn artifact theo yêu cầu ? 2026-10-26
 
 Trạng thái: **Hoàn thành**. Theo yêu cầu người dùng, đã bỏ đường dẫn tuyệt đối và metadata nhận diện bản mới khỏi Plan và AGENTS; các mốc kiểm thử/kết quả vẫn được giữ. Artifact ngoài repo không bị xóa. Source không đổi. Đã mở lại hai file và xác nhận không còn tên/path/hash bản mới; commit/push lại trên nhánh riêng.
+
+### Chốt Seat hold, booking cutoff và chống double booking tuần 7 — 2026-10-25
+
+Trạng thái: **Hoàn thành bổ sung kiểm thử biên, tài liệu và xác nhận VPS chỉ đọc**. Cutoff giữ tại đúng start_at theo quyết định người dùng. Chỉ bổ sung sáu bài regression thời gian DB cố định và assert HTTP409 trong bài hiện có; fixture clock mặc định không đổi. Giữ nguyên43file source/config/schema backend đã ghi hash; không sửa runtime/API/database/Android hoặc ghi DB chung. Quy tắc chi tiết ở mục9.2 và nhật ký tương ứng trong Plan.
+
+- Local: build/typecheck/format:check và76/76 backend tests đạt exit0, gồm15/15 booking tests. Cùng lệnh booking: BASELINE9/9 → MODIFIED15/15 → ROLLBACK9/9, cả ba exit0; rollback --week7-cutoff trên bản sao đạt3/3hash gốc, workspace giữ bản mới. Các bài service dùng DB giả, không nhận là kiểm thử PostgreSQL cạnh tranh thật. Giữ cùng bốn role/ledger ngoài repo và các baseline/mode cũ.
+- VPS: kiểm tra chỉ đọc qua key người dùng chỉ định/host fingerprint đã ghim lúc2026-10-25T09:09:55Z đạt exit0: API/PostgreSQL healthy, Nginx running, health database up/Swagger200, OpenAPI đủ3route Orders, startup-success và0dòng ERROR/FATAL lúc startup. Chín file JavaScript/package runtime khớp local theo hash byte hoặc LF chuẩn hóa; WebSocket HTTPS upgrade đạt và JWT sai bị AUTH_REQUIRED. API StartedAt không đổi, restart unless-stopped,5000không public/5432chỉlocalhost. Không rebuild/deploy/restart API, migrate hoặc tạo fixture vì runtime không đổi. Checker đầu exit1 do tìm source TypeScript không có trong image production; đã sửa sang dist JavaScript và giữ lỗi/exit trong ledger.
+
+Giữ bằng chứng E2E600.113s trước đó, không gọi là lượt chạy mới hoặc76tests trên VPS. Chưa kiểm tra Android vật lý/deep sleep, không sửa Excel hoặc mở rộng payment/combo/credit. Bước tiếp theo: bàn giao kết quả, chỉ sửa runtime nếu có lỗi tái hiện được hoặc requirement mới; cả hai tài liệu thống nhất kết quả local/VPS.
+
+### Công bố phần chốt booking tuần 7 trên branch mới — 2026-10-25
+
+Trạng thái: **Hoàn thành tạo branch, commit và push phần kiểm thử**. Branch feat/nguyen-week7-seat-hold-cutoff đã push commit93a9e953cc71d1de8e1e6d09c24e53d032800a6a gồm booking.test.mjs và cả hai MD; push exit0/ls-remote đúng SHA. GitHub API xác nhận Author/Committer đều thnguyen290106, tên Trần Thanh Nguyên <thnguyen290106@gmail.com>, không co-author/bot. Không sửa contributor lịch sử; main remote vẫn6f717a611509aa5945a5726c723387255af6ac57, không push/merge main.
+
+Chạy lại76/76 backend tests exit0 trước xuất bản; diff/index whitespace check và quét credential trong nội dung thêm mới đạt. Giữ15/15 booking, BASELINE9/9 → MODIFIED15/15 → ROLLBACK9/9 và hash rollback gốc. Runtime/API/DB không đổi, không rebuild/deploy VPS; giữ kết quả VPS chỉ đọc trước đó, không nhận là lượt nghiệm thu runtime mới. Hai tài liệu đồng bộ kết quả thực tế; SHA commit tài liệu cuối/remote/attribution lưu ledger ngoài repo sau thực thi, không tự tham chiếu trước. Bước tiếp theo: nhóm trưởng review và tạo/merge PR; không tự tạo/merge PR trong lượt này. Chưa kiểm tra Android vật lý hoặc chạy lại E2E600s.

@@ -621,6 +621,13 @@ emit ORDER_EXPIRED tới user
 
 Không reset 10 phút khi đổi màn hình.
 
+## 9.2. Booking cutoff — chốt ngày 2026-10-25
+
+- Không nhận **đơn giữ ghế mới** khi thời gian database `clock_timestamp() >= showtimes.start_at`; không áp dụng mốc dừng trước giờ chiếu 10 hoặc 15 phút.
+- Suất và phòng phải ACTIVE. Kiểm tra thời gian trong transaction và kiểm tra lại bằng thời gian DB mới sau khi chờ khóa/kiểm tra ghế, ngay trước tạo đơn; nếu đã tới cutoff thì trả `409 SHOWTIME_UNAVAILABLE`, không tạo đơn/giữ một phần ghế/phát sự kiện.
+- Hold hợp lệ trước cutoff có đủ 600 giây từ mốc DB sau khi chờ khóa; không cắt ngắn deadline theo giờ bắt đầu suất. Đọc đơn hoặc retry đúng Idempotency-Key/payload sau cutoff vẫn trả trạng thái/deadline của chính đơn đó, không tạo đơn mới hoặc gia hạn.
+- Retry khi đơn tới hạn chuyển EXPIRED và nhả ghế theo state guard; không hồi sinh đơn cũ. UUID mới vẫn phải qua cutoff. Không đổi quyền ownership, hợp đồng API, schema hoặc phạm vi chưa triển khai payment/combo/credit.
+
 ---
 
 # 10. Double booking và concurrency
@@ -2877,3 +2884,21 @@ Cùng4role được mở rộng bằng seatGesture patch/mode rollback, giữ l�
 #### Đã lược đường dẫn artifact theo yêu cầu ? 2026-10-26
 
 Trạng thái: **Hoàn thành**. Theo yêu cầu người dùng, đã bỏ đường dẫn tuyệt đối và metadata nhận diện bản mới khỏi Plan và AGENTS; các mốc kiểm thử/kết quả vẫn được giữ. Artifact ngoài repo không bị xóa. Source không đổi. Đã mở lại hai file và xác nhận không còn tên/path/hash bản mới; commit/push lại trên nhánh riêng.
+
+### Chốt Seat hold, booking cutoff và chống double booking tuần 7 — 2026-10-25
+
+Trạng thái: **Hoàn thành bổ sung kiểm thử biên, tài liệu và xác nhận VPS chỉ đọc**. Người dùng đã chốt cutoff tại đúng giờ bắt đầu suất chiếu; không thay runtime/API/database/Android hiện có. Bổ sung sáu bài regression với thời gian DB cố định: trước giờ chiếu 1 ms được giữ đủ600s; đúng/sau giờ chiếu bị từ chối; chờ khóa tới đúng cutoff bị từ chối; đọc/retry sau cutoff giữ nguyên đơn/deadline; retry tại expiry không hồi sinh đơn; phòng INACTIVE bị từ chối. Bài HTTP hiện có bổ sung kiểm tra409 SHOWTIME_UNAVAILABLE sau cutoff. Fixture hiện có nhận clock tùy chọn, mặc định giữ hành vi cũ; các bài service dùng DB giả, không phải phép thử cạnh tranh PostgreSQL thật.
+
+- Local: build, typecheck, toàn bộ76/76 backend tests và format:check đạt exit0; trong đó15/15 booking tests đạt. Cùng lệnh node --test tests/booking.test.mjs: BASELINE9/9 → MODIFIED15/15 → ROLLBACK9/9, cả ba exit0. ROLLBACK.sh --week7-cutoff chạy thật trên bản sao riêng, cả3file khớp hash gốc; workspace vẫn giữ test/quy tắc mới. Giữ nguyên43file source/config/schema backend được ghi hash trước sửa; chỉ thay booking.test.mjs và hai tài liệu. Cùng bốn role ngoài repo được mở rộng, không thay baseline/mode rollback cũ.
+- VPS: SSH bằng key người dùng chỉ định và host fingerprint đã ghim; kiểm tra chỉ đọc lúc2026-10-25T09:09:55Z đạt exit0. API/PostgreSQL healthy, reverse-proxy running; API StartedAt vẫn2026-10-25T07:20:42.139035548Z và restart unless-stopped. Health HTTPS trả status ok/database up, Swagger200, OpenAPI đủ3route Orders. Có startup-success,0dòng ERROR/FATAL trước/khi startup hoàn tất. Chín file JavaScript/package runtime khớp local theo hash byte hoặc LF chuẩn hóa. Socket.IO HTTPS WebSocket upgrade đạt, JWT sai bị AUTH_REQUIRED; không bỏ kiểm traTLS. Port API5000 không public, PostgreSQL chỉ127.0.0.1:5432. Không restart/rebuild/deploy API, migrate hoặc tạo fixture/ghi DB chung vì runtime không đổi.
+- Kiểm tra VPS đầu exit1 tại bước đọc src/booking/booking.service.ts do image production không chứa source TypeScript; health/Swagger đã đạt ở lượt đó. Đã sửa checker đọc dist JavaScript thực chạy, giữ nguyên stdout/stderr/exit của lượt lỗi trong ledger ngoài repo. Không coi lỗi đường dẫn checker là lỗi runtime.
+
+Giữ kết quả E2E600.113s đã nghiệm thu ở mục trước, không nhận là lượt E2E mới hoặc76tests chạy trên VPS. Chưa kiểm tra Android vật lý/deep sleep trong lượt này; không sửa Excel, không mở rộng payment/combo/credit. Bước tiếp theo: bàn giao kết quả kiểm thử; chỉ mở lại runtime nếu có lỗi tái hiện được hoặc requirement mới. Hai tài liệu đã được đối chiếu theo cùng kết quả local/VPS.
+
+### Công bố phần chốt booking tuần 7 trên branch mới — 2026-10-25
+
+Trạng thái: **Hoàn thành tạo branch, commit và push phần kiểm thử**. Đã tạo branch feat/nguyen-week7-seat-hold-cutoff và push commit93a9e953cc71d1de8e1e6d09c24e53d032800a6a, subject test(booking): cover week 7 booking cutoff boundaries. Commit chỉ gồm backend/tests/booking.test.mjs và cả hai tài liệu. Push exit0, ls-remote xác nhận branch đúng SHA; GitHub API xác nhận Author/Committer đều thnguyen290106, tên Trần Thanh Nguyên <thnguyen290106@gmail.com>, không co-author/bot attribution.
+
+Kiểm tra trước xuất bản: chạy lại76/76 backend tests đạt exit0, diff/index whitespace check và quét credential trong nội dung thêm mới đạt. Giữ kết quả15/15 booking, BASELINE9/9 → MODIFIED15/15 → ROLLBACK9/9 và hash rollback gốc. Main remote vẫn6f717a611509aa5945a5726c723387255af6ac57; không push/merge main hoặc rewrite contributor lịch sử. Runtime/API/DB không đổi nên không rebuild/deploy VPS trong lượt công bố này; giữ kết quả VPS chỉ đọc đã ghi ở mục trước.
+
+Bản ghi kết quả thực tế này được cập nhật đồng thời ở Plan và AGENTS trên cùng branch riêng; SHA cuối của commit tài liệu và xác nhận remote/attribution được lưu trong ledger ngoài repo sau thực thi, không điền trước SHA tự tham chiếu. Bước tiếp theo: nhóm trưởng review branch và tạo/merge PR theo quy trình nhóm; lượt này không tự tạo hoặc merge PR. Chưa kiểm tra thiết bị Android vật lý hoặc chạy lại E2E600s.
