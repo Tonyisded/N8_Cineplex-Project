@@ -42,9 +42,9 @@ fun DetailShowtimesScreen(vm: CineplexViewModel, movie: Movie) {
             HorizontalDivider(color = C.Line)
             Column(Modifier.fillMaxWidth().background(C.Background).padding(20.dp)) { DateSelector(vm) }
             HorizontalDivider(color = C.Line)
-            Row(Modifier.fillMaxWidth().padding(20.dp),horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f),verticalArrangement = Arrangement.spacedBy(7.dp)) { Text("Khu vực",fontSize = 13.sp,fontWeight = FontWeight.Medium); Text("TP. Hồ Chí Minh",fontSize = 14.sp) }
-                Column(Modifier.weight(1f),verticalArrangement = Arrangement.spacedBy(7.dp)) { Text("Rạp chiếu",fontSize = 13.sp,fontWeight = FontWeight.Medium); Text("Landmark 81",fontSize = 14.sp) }
+            Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("Rạp chiếu",fontSize = 13.sp,fontWeight = FontWeight.Medium)
+                Text("N8 Cineplex",fontSize = 14.sp)
             }
             HorizontalDivider(color = C.Line)
             when {

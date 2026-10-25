@@ -39,7 +39,8 @@ class Week6CatalogServerUiTest {
         assertEquals(detail.movieId, film.id)
         assertEquals(detail.format, vm.selectedShowtime?.format)
         assertEquals(detail.auditorium.id, vm.selectedShowtime?.auditorium?.id)
-        compose.onNodeWithText("Landmark 81 · ${detail.auditorium.name}").assertExists()
+        compose.onNodeWithText("N8 Cineplex · ${detail.auditorium.name}").assertExists()
+        compose.onNodeWithText("Landmark 81",substring = true).assertDoesNotExist()
         val file = File(compose.activity.getExternalFilesDir(null), "week6-live-vps-summary.png")
         file.outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         println("WEEK6_LIVE_VPS_OK movie=${film.id} showtime=${detail.id} format=${detail.format} room=${detail.auditorium.name}")

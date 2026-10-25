@@ -53,8 +53,12 @@ class DetailScheduleUiTest {
         val file = File(compose.activity.getExternalFilesDir(null), "$name.png")
         file.outputStream().use { checkNotNull(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()).compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
-    @Test fun landmarkRealSlotsAgeBranchesAndSummaryKeepTheSelectedRoom() {
-        compose.onNodeWithText("Landmark 81").assertExists()
+    @Test fun n8RealSlotsAgeBranchesAndSummaryKeepTheSelectedRoom() {
+        compose.onNodeWithText("N8 Cineplex").assertExists()
+        compose.onNodeWithText("Landmark 81",substring = true).assertDoesNotExist()
+        compose.onNodeWithText("CGV",substring = true).assertDoesNotExist()
+        compose.onNodeWithText("TP. Hồ Chí Minh").assertDoesNotExist()
+        compose.onNodeWithText("Khu vực").assertDoesNotExist()
         compose.onNodeWithText("Cineplex Đồng Khởi").assertDoesNotExist()
         compose.onNodeWithTag("continue-showtime").assertIsNotEnabled()
         compose.onNodeWithTag("schedule-slot-sold").performScrollTo().assertIsNotEnabled()
@@ -68,7 +72,8 @@ class DetailScheduleUiTest {
         compose.onNodeWithTag("continue-showtime").performClick()
         compose.onNodeWithText("Tôi từ đủ 16 tuổi — Tiếp tục").performScrollTo().performClick()
         compose.waitUntil(10_000) { vm.screen == Screen.SEAT_SUMMARY }
-        compose.onNodeWithText("Landmark 81 · Cinema 1").assertExists()
+        compose.onNodeWithText("N8 Cineplex · Cinema 1").assertExists()
+        compose.onNodeWithText("Landmark 81",substring = true).assertDoesNotExist()
         assertEquals(slot.id, vm.selectedShowtime?.id)
         screenshot("week6-summary")
         compose.onNodeWithTag("seat-A2").performSemanticsAction(SemanticsActions.OnClick) {it()}

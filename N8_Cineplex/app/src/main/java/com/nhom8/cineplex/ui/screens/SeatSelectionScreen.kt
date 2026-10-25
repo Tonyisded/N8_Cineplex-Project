@@ -8,10 +8,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -112,7 +108,6 @@ private fun SeatMap(state: SeatSelectionViewModel,layout: SeatLayout) {
     val fitted=if(width>0 && height>0) SeatViewport.fit(width,height,layout.width,layout.height) else SeatViewport(1f,0f,0f)
     val minimum=fitted.scale
     val maximum=with(density) { 64.dp.toPx() }/.9f
-    val readable=with(density) { 48.dp.toPx() }/.9f
     fun apply(v: SeatViewport) { scale=v.scale; x=v.x; y=v.y }
     fun current()=if(scale>0) SeatViewport(scale,x,y) else fitted
     fun zoom(cx: Float,cy: Float,factor: Float,panX: Float=0f,panY: Float=0f) {
@@ -123,8 +118,6 @@ private fun SeatMap(state: SeatSelectionViewModel,layout: SeatLayout) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically) {
             Text("MÀN HÌNH",Modifier.weight(1f),color=Color.LightGray,fontSize=11.sp)
-            TextButton({ zoom(width/2,height/2,.8f) },Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp).testTag("seat-zoom-out")) { Text("−",color=Color.White,fontSize=22.sp) }
-            TextButton({ zoom(width/2,height/2,1.25f) },Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp).testTag("seat-zoom-in")) { Text("+",color=Color.White,fontSize=22.sp) }
             TextButton({ apply(fitted) },Modifier.testTag("seat-fit")) { Text("Vừa màn hình",color=Color.White,fontSize=12.sp) }
         }
         Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().background(MapBlack).testTag("seat-map")
@@ -135,22 +128,14 @@ private fun SeatMap(state: SeatSelectionViewModel,layout: SeatLayout) {
                 if(scale==0f || oldW==0f || oldH==0f) apply(fit)
                 else apply(SeatViewport(old.scale.coerceAtLeast(fit.scale),width/2-(oldW/2-old.x)/old.scale*old.scale,height/2-(oldH/2-old.y)/old.scale*old.scale).bounded(width,height,layout.width,layout.height))
             }
-            .pointerInput(layout.key,width,height) { coroutineScope {
+            .pointerInput(layout.key,width,height) {
                 fun tap(point: Offset) {
                     val view=current(); val wx=(point.x-view.x)/view.scale; val wy=(point.y-view.y)/view.scale
                     val hit=layout.seats.firstOrNull { wx>=it.x && wx<=it.x+.9f && wy>=it.y && wy<=it.y+.9f }
-                    if(hit!=null) {
-                        if(view.scale<readable*.98f) zoom(point.x,point.y,readable/view.scale)
-                        else state.select(hit.seatId)
-                    }
+                    if(hit!=null) state.select(hit.seatId)
                 }
-                var tapJob: Job?=null
-                var lastTap=0L
-                var lastPoint=Offset.Zero
                 awaitEachGesture {
                     val down=awaitFirstDown(requireUnconsumed=true)
-                    val second=lastTap!=0L && down.uptimeMillis-lastTap<=viewConfiguration.doubleTapTimeoutMillis && (down.position-lastPoint).getDistance()<viewConfiguration.touchSlop*4
-                    if(second) tapJob?.cancel()
                     var moved=false; var multi=false; var accumulated=Offset.Zero
                     var released=down
                     do {
@@ -161,7 +146,6 @@ private fun SeatMap(state: SeatSelectionViewModel,layout: SeatLayout) {
                         val pan=event.calculatePan()
                         accumulated+=pan
                         if(multi || accumulated.getDistance()>viewConfiguration.touchSlop || moved) {
-                            tapJob?.cancel(); lastTap=0L
                             val center=event.calculateCentroid(useCurrent=false)
                             if(center.x.isFinite() && center.y.isFinite()) {
                                 val delta=if(!moved && !multi) accumulated else pan
@@ -171,18 +155,9 @@ private fun SeatMap(state: SeatSelectionViewModel,layout: SeatLayout) {
                             event.changes.forEach { it.consume() }
                         }
                     } while(event.changes.any { it.pressed })
-                    if(!moved && !multi) {
-                        val point=released.position
-                        if(second) {
-                            lastTap=0L
-                            if(current().scale>minimum*1.1f) apply(fitted) else zoom(point.x,point.y,readable/current().scale)
-                        } else {
-                            tapJob?.cancel(); lastTap=released.uptimeMillis; lastPoint=point
-                            tapJob=launch { delay(viewConfiguration.doubleTapTimeoutMillis); lastTap=0L; tap(point) }
-                        }
-                    }
+                    if(!moved && !multi) tap(released.position)
                 }
-            } }) {
+            }) {
             val view=current()
             Canvas(Modifier.fillMaxSize()) {
                 fun point(wx: Float,wy: Float)=Offset(view.x+wx*view.scale,view.y+wy*view.scale)
@@ -262,7 +237,7 @@ private fun BookingContext(movie: Movie,slot: ShowtimeDto,dark: Boolean=false) {
     Column(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
         Text("Thông tin suất chiếu",color=if(dark) Color.LightGray else C.Muted,fontSize=11.sp)
         Text(movie.name,color=ink,fontWeight=FontWeight.Bold,fontSize=16.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-        Text("Landmark 81 · ${slot.auditorium.name}",color=ink,fontSize=12.sp)
+        Text("N8 Cineplex · ${slot.auditorium.name}",color=ink,fontSize=12.sp)
         Text("${displayCalendarDate(vietnamDate(java.util.Date(isoMillis(slot.startAt))))} · ${vietnamTime(slot.startAt)} · ${slot.format.replace('_',' ')} · ${movie.age}",color=ink,fontSize=12.sp)
     }
 }
