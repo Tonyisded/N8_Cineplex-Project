@@ -77,7 +77,7 @@ test("all seven layouts preserve capacities, pair boundaries, geometry and Gold 
   assert.equal(seatLayout("IMAX", 496, []).seats.length, 0);
 });
 
-function fixture() {
+function fixture(now = () => new Date()) {
   const userId = randomUUID(),
     otherId = randomUUID(),
     showtimeId = randomUUID();
@@ -125,7 +125,7 @@ function fixture() {
   const db = {
     $queryRaw: async (q, ...values) => {
       const text = Array.isArray(q) ? q.join("?") : q.sql;
-      if (text.includes("clock_timestamp")) return [{ now: new Date() }];
+      if (text.includes("clock_timestamp")) return [{ now: now() }];
       if (text.includes("FROM showtimes"))
         return values[0] === showtimeId ? [{ id: showtimeId }] : [];
       return [];
@@ -310,6 +310,122 @@ test("deadline uses fresh database time after locks, not time spent waiting", as
   assert.equal(g.events.length, 0);
 });
 
+test("cutoff allows a hold 1 ms before start and preserves the full 600 seconds", async () => {
+  const start = Date.parse("2030-01-01T12:00:00.000Z");
+  const f = fixture(() => new Date(start - 1));
+  f.slot.startAt = new Date(start);
+  const result = await f.service.create(f.userId, randomUUID(), body(f));
+  assert.equal(result.item.status, "PENDING_PAYMENT");
+  assert.equal(new Date(result.item.expiresAt).getTime(), start - 1 + 600000);
+  assert.ok(f.seats.slice(0, 2).every((s) => s.status === "HELD"));
+  assert.equal(f.orders.size, 1);
+  assert.equal(f.events.length, 1);
+});
+
+test("cutoff rejects new holds exactly at start and 1 ms after without side effects", async () => {
+  const start = Date.parse("2030-01-01T12:00:00.000Z");
+  for (const offset of [0, 1]) {
+    const f = fixture(() => new Date(start + offset));
+    f.slot.startAt = new Date(start);
+    const before = f.seats.map((s) => ({ ...s }));
+    await assert.rejects(
+      f.service.create(f.userId, randomUUID(), body(f)),
+      (e) =>
+        e.getStatus() === 409 &&
+        e.getResponse().code === "SHOWTIME_UNAVAILABLE",
+    );
+    assert.deepEqual(f.seats, before);
+    assert.equal(f.orders.size, 0);
+    assert.equal(f.events.length, 0);
+    assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
+  }
+});
+
+test("cutoff reached while waiting for seat locks rolls back the whole hold", async () => {
+  const start = Date.parse("2030-01-01T12:00:00.000Z");
+  let reads = 0;
+  const f = fixture(() => new Date(start + (reads++ === 0 ? -1 : 0)));
+  f.slot.startAt = new Date(start);
+  const before = f.seats.map((s) => ({ ...s }));
+  await assert.rejects(
+    f.service.create(f.userId, randomUUID(), body(f)),
+    (e) => e.getResponse().code === "SHOWTIME_UNAVAILABLE",
+  );
+  assert.equal(reads, 2);
+  assert.deepEqual(f.seats, before);
+  assert.equal(f.orders.size, 0);
+  assert.equal(f.events.length, 0);
+});
+
+test("retry and reading an existing hold after cutoff preserve its order and deadline", async () => {
+  const start = Date.parse("2030-01-01T12:00:00.000Z");
+  let now = start - 1;
+  const f = fixture(() => new Date(now));
+  f.slot.startAt = new Date(start);
+  const key = randomUUID();
+  const original = await f.service.create(f.userId, key, body(f));
+  now = start + 1;
+  assert.deepEqual((await f.service.get(key, f.userId)).item, original.item);
+  assert.deepEqual(
+    (await f.service.create(f.userId, key, body(f))).item,
+    original.item,
+  );
+  assert.equal(f.orders.size, 1);
+  assert.equal(f.events.length, 1);
+  assert.ok(f.seats.slice(0, 2).every((s) => s.status === "HELD"));
+});
+
+test("retry at expiry after cutoff releases once without reviving or extending the hold", async () => {
+  const start = Date.parse("2030-01-01T12:00:00.000Z");
+  let now = start - 1;
+  const f = fixture(() => new Date(now));
+  f.slot.startAt = new Date(start);
+  const key = randomUUID();
+  const original = await f.service.create(f.userId, key, body(f));
+  now = Date.parse(original.item.expiresAt);
+  const expired = await f.service.create(f.userId, key, body(f));
+  assert.equal(expired.item.status, "EXPIRED");
+  assert.equal(expired.item.expiresAt, original.item.expiresAt);
+  assert.ok(
+    f.seats.every(
+      (s) =>
+        s.status === "AVAILABLE" &&
+        s.heldByUserId === null &&
+        s.holdExpiresAt === null,
+    ),
+  );
+  assert.ok(f.orders.get(key).seats.every((s) => s.status === "CANCELED"));
+  assert.deepEqual(
+    f.events.map((e) => e.name),
+    ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"],
+  );
+  now++;
+  assert.deepEqual(
+    (await f.service.create(f.userId, key, body(f))).item,
+    expired.item,
+  );
+  await assert.rejects(
+    f.service.create(f.userId, randomUUID(), body(f)),
+    (e) => e.getResponse().code === "SHOWTIME_UNAVAILABLE",
+  );
+  assert.equal(f.orders.size, 1);
+  assert.equal(f.events.length, 3);
+  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
+});
+
+test("an inactive auditorium rejects the entire hold without changing inventory", async () => {
+  const f = fixture();
+  f.slot.auditorium.status = "INACTIVE";
+  const before = f.seats.map((s) => ({ ...s }));
+  await assert.rejects(
+    f.service.create(f.userId, randomUUID(), body(f)),
+    (e) => e.getResponse().code === "SHOWTIME_UNAVAILABLE",
+  );
+  assert.deepEqual(f.seats, before);
+  assert.equal(f.orders.size, 0);
+  assert.equal(f.events.length, 0);
+});
+
 test("Couple incomplete and mixed-seat conflicts never partially hold or emit", async () => {
   const f = fixture();
   await assert.rejects(
@@ -466,6 +582,12 @@ test("real HTTP booking validates JWT/UUID/DTO/key, refuses status/price injecti
   });
   assert.equal(c.status, 201);
   assert.equal((await c.json()).item.status, "CANCELED");
+  f.slot.startAt = new Date(0);
+  const closed = await post(body(f));
+  assert.equal(closed.status, 409);
+  assert.equal((await closed.json()).code, "SHOWTIME_UNAVAILABLE");
+  assert.equal(f.orders.size, 1);
+  assert.ok(f.seats.every((s) => s.status === "AVAILABLE"));
 });
 
 test("real Socket.IO handshake rejects invalid/staff tokens, isolates user rooms and allows only showtime UUID joins", async (t) => {
