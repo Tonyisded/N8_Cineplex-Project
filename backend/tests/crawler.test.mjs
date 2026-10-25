@@ -221,6 +221,9 @@ test("registered six-hour cron is disabled by config and prevents overlap", asyn
       });
       return { status: 200 };
     },
+    runComingSoon: async () => {
+      calls++;
+    },
   };
   class TestModule {}
   Module({
@@ -249,6 +252,7 @@ test("registered six-hour cron is disabled by config and prevents overlap", asyn
   assert.equal(calls, 1);
   release();
   await first;
+  assert.equal(calls, 2);
 });
 
 test("cron errors are logged, not propagated to the backend", async (t) => {
@@ -258,9 +262,15 @@ test("cron errors are logged, not propagated to the backend", async (t) => {
     runUpcoming: async () => {
       throw new Error("CGV unavailable");
     },
+    runComingSoon: async () => {
+      throw new Error("CGV coming-soon unavailable");
+    },
   });
   await job.run();
-  assert.deepEqual(errors, ["CGV unavailable"]);
+  assert.deepEqual(errors, [
+    "CGV unavailable",
+    "CGV coming-soon crawler failed: CGV coming-soon unavailable",
+  ]);
 });
 
 test("CLI needs no database and reports missing Chromium with exit 1", () => {
@@ -330,6 +340,109 @@ test("collect recognizes explicit published empty day and rejects unpublished da
   const s = await new CrawlerService().collect("2026-10-10");
   assert.equal(s.sourceMovies, 0);
   assert.equal(s.sourceShowtimes, 0);
+});
+
+const comingSoonItem = (
+  slug,
+  title,
+  release,
+  duration,
+) => `<li class="film-lists item">
+  <span class="nmovie-rating nmovie-rating-no">NO</span>
+  <div class="product-images"><a class="product-image" href="https://www.cgv.vn/default/${slug}"><img src="https://static-cgv.vncdn.vn/${slug}.jpg"></a></div>
+  <div class="product-info"><h2 class="product-name"><a href="https://www.cgv.vn/default/${slug}">${title}</a></h2>
+  <div class="cgv-movie-info"><span class="cgv-info-bold">Thể loại: </span><span class="cgv-info-normal">Hài</span></div>
+  <div class="cgv-movie-info"><span class="cgv-info-bold">Thời lượng: </span><span class="cgv-info-normal">${duration}</span></div>
+  <div class="cgv-movie-info"><span class="cgv-info-bold">Khởi chiếu: </span><span class="cgv-info-normal">${release}</span></div>
+  </div></li>`;
+const comingSoonListing = (
+  items,
+) => `<!doctype html><html><head><title>Phim Sắp Chiếu</title></head>
+<body class="catalog-category-view categorypath-coming-soon category-coming-soon">
+<div class="category-products cgv-movies"><ul class="products-grid">${items}</ul></div>
+</body></html>`;
+const comingSoonDetail = (title, rows) => `<html><body>
+<div class="product-view"><h1>${title}</h1><iframe src="//www.youtube.com/embed/xGiimAKN0TM?rel=0"></iframe></div>
+${rows.map((row) => `<div class="movie-info">${row}</div>`).join("")}
+<div class="movie-rating-detail t18">Rated: T18</div>
+<div class="product-collateral"><div class="std">Nội dung</div></div>
+<div class="product-img-box"><img src="https://static-cgv.vncdn.vn/detail.jpg"></div>
+</body></html>`;
+const comingSoonPages = (req) => {
+  const target = new URL(req.url, "http://127.0.0.1").searchParams.get("url");
+  if (target?.endsWith("soon-one.html"))
+    return comingSoonDetail("Phim Một", [
+      "Thể loại: Hài",
+      "Thời lượng: 95 phút",
+      "Khởi chiếu: 30/10/2026",
+      "Đạo diễn: Người thử",
+    ]);
+  if (target?.endsWith("soon-two.html"))
+    return comingSoonDetail("Phim Hai", ["Thể loại: Hài"]);
+  if (target?.endsWith("soon-broken.html"))
+    return { status: 404, html: "missing" };
+  return comingSoonListing(
+    [
+      comingSoonItem("soon-one.html", "Phim Một", "30-10-2026", "95 phút"),
+      comingSoonItem("soon-two.html", "Phim Hai", "", ""),
+      comingSoonItem("soon-broken.html", "Phim Lỗi", "01-11-2026", ""),
+    ].join(""),
+  );
+};
+test("coming-soon collector parses movies, omits missing dates and isolates detail failures", async (t) => {
+  const f = await fixture(t, comingSoonPages);
+  const s = await new CrawlerService().collectComingSoon();
+  assert.equal(s.sourceMovies, 3);
+  assert.equal(s.movies.length, 1);
+  assert.equal(s.omitted.length, 1);
+  assert.equal(s.omitted[0].source, "https://www.cgv.vn/default/soon-two.html");
+  assert.equal(s.skipped.length, 1);
+  assert.equal(
+    s.skipped[0].source,
+    "https://www.cgv.vn/default/soon-broken.html",
+  );
+  const movie = s.movies[0];
+  assert.equal(movie.title, "Phim Một");
+  assert.equal(movie.durationMinutes, 95);
+  assert.equal(movie.ageRating, "T18");
+  assert.equal(movie.genre, "Hài");
+  assert.equal(movie.director, "Người thử");
+  assert.equal(movie.trailerYoutubeId, "xGiimAKN0TM");
+  assert.equal(movie.releaseDate.toISOString(), "2026-10-30T00:00:00.000Z");
+  assert.equal(f.browser.isConnected(), false);
+});
+test("coming-soon rejects a page that is not the coming-soon source", async (t) => {
+  await fixture(
+    t,
+    comingSoonListing(
+      comingSoonItem("soon-one.html", "Phim Một", "30-10-2026", "95 phút"),
+    ).replace('category-coming-soon"', 'category-now-showing"'),
+  );
+  await assert.rejects(
+    new CrawlerService().collectComingSoon(),
+    /missing or does not match/,
+  );
+});
+test("coming-soon rejects an empty listing instead of importing nothing", async (t) => {
+  await fixture(t, comingSoonListing(""));
+  await assert.rejects(
+    new CrawlerService().collectComingSoon(),
+    /listing is empty/,
+  );
+});
+test("coming-soon still runs when the schedule crawl fails", async (t) => {
+  let comingSoon = 0;
+  t.mock.method(Logger.prototype, "error", () => {});
+  const job = new CrawlerJob(new ConfigService({ CRAWLER_ENABLED: true }), {
+    runUpcoming: async () => {
+      throw new Error("schedule down");
+    },
+    runComingSoon: async () => {
+      comingSoon++;
+    },
+  });
+  await job.run();
+  assert.equal(comingSoon, 1);
 });
 
 async function scheduleFixture(t, daily, ids = Object.keys(daily)) {

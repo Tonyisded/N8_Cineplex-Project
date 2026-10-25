@@ -120,6 +120,44 @@ export class CatalogController {
     };
   }
 
+  @Get("coming-soon")
+  @ApiOkResponse({
+    description:
+      "businessDate/items and serverTime; CGV coming-soon movies with releaseDate after today (Vietnam) that are not already screening before release, no showtimes. durationMinutes 0 means unpublished; ageRating NO means unclassified.",
+  })
+  @ApiOperation({
+    summary: "Coming-soon movies whose Vietnamese release date is after today",
+  })
+  async comingSoon() {
+    const now = new Date();
+    const today = businessDate(now);
+    const movies = await this.prisma.movie.findMany({
+      where: { releaseDate: { gt: new Date(`${today}T00:00:00.000Z`) } },
+      orderBy: [{ releaseDate: "asc" }, { title: "asc" }, { id: "asc" }],
+      include: {
+        showtimes: {
+          where: { status: "ACTIVE" },
+          orderBy: [{ startAt: "asc" }],
+          take: 1,
+          select: { startAt: true },
+        },
+      },
+    });
+    return {
+      businessDate: today,
+      serverTime: now.toISOString(),
+      // A presale movie stays here; a movie already screening before its
+      // release date is now-showing, not coming soon.
+      items: movies
+        .filter(
+          (movie) =>
+            !movie.showtimes.length ||
+            movie.showtimes[0].startAt >= movie.releaseDate!,
+        )
+        .map(({ showtimes: _showtimes, ...movie }) => movieJson(movie)),
+    };
+  }
+
   @Get(":id")
   @ApiOkResponse({
     description:

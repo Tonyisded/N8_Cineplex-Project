@@ -21,7 +21,10 @@ import {
   seatTemplate,
   PRICES,
 } from "../dist/crawler/normalize.js";
-import { parseMovie } from "../dist/crawler/parse-movie.js";
+import {
+  parseMovie,
+  parseComingSoonMovie,
+} from "../dist/crawler/parse-movie.js";
 
 const url = "https://www.cgv.vn/default/fixture.html";
 const raw = {
@@ -107,6 +110,56 @@ test("movie metadata uses labels (duration and cast share source classes), nulla
   assert.equal(
     movieJson({ ...m, id: randomUUID(), updatedAt: new Date() }).releaseDate,
     "2026-10-09",
+  );
+});
+test("coming-soon parser keeps unknown metadata as sentinels and requires a release date", () => {
+  const listing = {
+    title: "Phim sắp",
+    age: "nmovie-rating nmovie-rating-no NO",
+    duration: "",
+    release: "30-10-2026",
+    poster: "https://static-cgv.vncdn.vn/list.jpg",
+  };
+  const unknown = {
+    title: "",
+    rows: ["Thể loại: Hài"],
+    poster: "",
+    age: "",
+    synopsis: "",
+  };
+  const m = parseComingSoonMovie(url, unknown, listing);
+  assert.equal(m.title, "Phim sắp");
+  assert.equal(m.durationMinutes, 0);
+  assert.equal(m.ageRating, "NO");
+  assert.equal(m.genre, "Hài");
+  assert.equal(m.releaseDate.toISOString(), "2026-10-30T00:00:00.000Z");
+  assert.equal(m.posterUrl, "https://static-cgv.vncdn.vn/list.jpg");
+  const detail = parseComingSoonMovie(
+    url,
+    {
+      title: "Phim đủ",
+      rows: ["Thời lượng: 95 phút", "Khởi chiếu: 09/10/2026"],
+      poster: "https://static-cgv.vncdn.vn/p.jpg",
+      age: "movie-rating-detail t18 Rated: T18",
+      synopsis: "Nội dung",
+    },
+    listing,
+  );
+  assert.equal(detail.durationMinutes, 95);
+  assert.equal(detail.ageRating, "T18");
+  assert.equal(detail.releaseDate.toISOString(), "2026-10-09T00:00:00.000Z");
+  assert.equal(
+    parseComingSoonMovie(url, unknown, { ...listing, release: "" }),
+    null,
+  );
+  assert.throws(
+    () => parseComingSoonMovie(url, unknown, { ...listing, title: "" }),
+    /title/,
+  );
+  assert.throws(
+    () =>
+      parseComingSoonMovie(url, { ...unknown, age: "Rated: T16 T18" }, listing),
+    /Conflicting/,
   );
 });
 test("showtime identities refuse other hosts/sites/dates and malformed time", () => {
@@ -210,6 +263,17 @@ function fakeDb() {
       locks++;
     },
     movie: {
+      findUnique: async ({ where }) => movies.get(where.sourceUrl) ?? null,
+      create: async ({ data }) => {
+        const movie = { ...data, id: randomUUID() };
+        movies.set(data.sourceUrl, movie);
+        return movie;
+      },
+      update: async ({ where, data }) => {
+        const movie = [...movies.values()].find((m) => m.id === where.id);
+        Object.assign(movie, data);
+        return movie;
+      },
       upsert: async ({ create }) => {
         let m = movies.get(create.sourceUrl);
         m = { ...create, id: m?.id ?? randomUUID() };
@@ -327,6 +391,56 @@ test("import is idempotent, allocates extras only on overlap and preserves occup
   );
   assert.equal(db.locks(), 3);
 });
+test("coming-soon import never degrades known movie fields and creates no showtimes", async () => {
+  const db = fakeDb(),
+    importer = new CrawlerImportService(null, db);
+  const snapshot = {
+    capturedAt: new Date().toISOString(),
+    sourceMovies: 1,
+    movies: [
+      {
+        ...parseMovie(url, raw),
+        durationMinutes: 0,
+        ageRating: "NO",
+        releaseDate: new Date("2026-10-30T00:00:00Z"),
+        synopsis: null,
+        trailerYoutubeId: null,
+      },
+    ],
+    skipped: [],
+    omitted: [],
+  };
+  const created = await importer.importComingSoon(snapshot);
+  assert.deepEqual(created, {
+    moviesCreated: 1,
+    moviesUpdated: 0,
+    moviesUnchanged: 0,
+  });
+  assert.equal(db.slots.size, 0);
+  assert.equal(db.seats.length, 0);
+  const known = {
+    ...snapshot,
+    movies: [
+      {
+        ...snapshot.movies[0],
+        durationMinutes: 120,
+        ageRating: "T16",
+        synopsis: "Nội dung thật",
+      },
+    ],
+  };
+  assert.equal((await importer.importComingSoon(known)).moviesUpdated, 1);
+  const row = db.movies.get(url);
+  assert.equal(row.durationMinutes, 120);
+  assert.equal(row.ageRating, "T16");
+  assert.equal(row.synopsis, "Nội dung thật");
+  const again = await importer.importComingSoon(snapshot);
+  assert.equal(again.moviesUnchanged, 1);
+  assert.equal(row.durationMinutes, 120);
+  assert.equal(row.ageRating, "T16");
+  assert.equal(row.synopsis, "Nội dung thật");
+  assert.equal(db.locks(), 3);
+});
 test("real catalog HTTP returns envelopes, validates UUID/date, 404 and decimal strings", async (t) => {
   t.mock.timers.enable({
     apis: ["Date"],
@@ -392,6 +506,68 @@ test("real catalog HTTP returns envelopes, validates UUID/date, 404 and decimal 
   assert.equal((await r.json()).items[0].basePrice, "100000");
   prisma.movie.findMany = async () => [];
   assert.deepEqual((await (await get("?date=2026-10-11")).json()).items, []);
+});
+test("coming-soon HTTP route uses the Vietnam today boundary and is not UUID-parsed", async (t) => {
+  t.mock.timers.enable({
+    apis: ["Date"],
+    now: new Date("2026-10-25T10:00:00Z"),
+  });
+  let query;
+  const id = randomUUID(),
+    movie = {
+      ...parseMovie(url, {
+        ...raw,
+        rows: raw.rows.map((row) =>
+          row.startsWith("Khởi") ? "Khởi chiếu: 30/10/2026" : row,
+        ),
+      }),
+      id,
+      updatedAt: new Date("2026-10-01T00:00:00Z"),
+      showtimes: [{ startAt: new Date("2026-10-30T03:00:00Z") }],
+    },
+    alreadyShowing = {
+      ...movie,
+      id: randomUUID(),
+      title: "Đang chiếu sớm",
+      showtimes: [{ startAt: new Date("2026-10-24T03:00:00Z") }],
+    };
+  const prisma = {
+    movie: {
+      findMany: async (q) => {
+        query = q;
+        return [movie, alreadyShowing];
+      },
+    },
+  };
+  const module = await Test.createTestingModule({
+    controllers: [CatalogController],
+    providers: [{ provide: PrismaService, useValue: prisma }],
+  }).compile();
+  const app = module.createNestApplication();
+  app.setGlobalPrefix("api/v1");
+  await app.listen(0, "127.0.0.1");
+  t.after(() => app.close());
+  const response = await fetch(
+    `${await app.getUrl()}/api/v1/movies/coming-soon`,
+  );
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.businessDate, "2026-10-25");
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].title, "Phim thử");
+  assert.equal(body.items[0].releaseDate, "2026-10-30");
+  assert.equal("showtimes" in body.items[0], false);
+  assert.equal(
+    query.where.releaseDate.gt.toISOString(),
+    "2026-10-25T00:00:00.000Z",
+  );
+  assert.deepEqual(query.orderBy, [
+    { releaseDate: "asc" },
+    { title: "asc" },
+    { id: "asc" },
+  ]);
+  assert.equal(query.include.showtimes.where.status, "ACTIVE");
+  assert.equal(query.include.showtimes.take, 1);
 });
 
 test("multi-day importer logs per date and batch, preserves completed days on failure and rejects past dates", async (t) => {

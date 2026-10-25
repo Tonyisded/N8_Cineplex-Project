@@ -199,3 +199,10 @@ export type CrawlSnapshot = {
   showtimes: CrawledSlot[];
   skipped: { source: string; reason: string }[];
 };
+export type ComingSoonSnapshot = {
+  capturedAt: string;
+  sourceMovies: number;
+  movies: CrawledMovie[];
+  skipped: { source: string; reason: string }[];
+  omitted: { source: string; reason: string }[];
+};

@@ -7,10 +7,11 @@ import { businessDate, dateWindow } from "./normalize.js";
 let app:
   Awaited<ReturnType<typeof NestFactory.createApplicationContext>> | undefined;
 try {
-  const date = process.argv[2];
-  if (date !== undefined) {
-    dateWindow(date);
-    if (date < businessDate())
+  const argument = process.argv[2];
+  const comingSoon = argument === "--coming-soon";
+  if (!comingSoon && argument !== undefined) {
+    dateWindow(argument);
+    if (argument < businessDate())
       throw new Error("Cannot crawl a past business date");
   }
   // CLI is one-shot, never a second enabled scheduler.
@@ -19,8 +20,11 @@ try {
     abortOnError: false,
   });
   const crawler = app.get(CrawlerImportService);
-  const result =
-    date === undefined ? await crawler.runUpcoming() : await crawler.run(date);
+  const result = comingSoon
+    ? await crawler.runComingSoon()
+    : argument === undefined
+      ? await crawler.runUpcoming()
+      : await crawler.run(argument);
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (result.event.status !== "SUCCESS") process.exitCode = 2;
 } catch (error) {
