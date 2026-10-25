@@ -10,6 +10,7 @@ import {
 import { Server, Socket } from "socket.io";
 import { AuthService } from "../auth/auth.service.js";
 import { PrismaService } from "../prisma.service.js";
+import { ShowtimeSubscriptions } from "./showtime-subscriptions.js";
 
 export type BookingEvent = {
   room: string;
@@ -19,6 +20,7 @@ export type BookingEvent = {
 @Injectable()
 @WebSocketGateway({ path: "/socket.io/", maxHttpBufferSize: 4096 })
 export class BookingGateway implements OnGatewayInit {
+  private readonly subscriptions = new ShowtimeSubscriptions();
   @WebSocketServer() server!: Server;
   constructor(
     private readonly auth: AuthService,
@@ -49,25 +51,15 @@ export class BookingGateway implements OnGatewayInit {
     });
   }
   @SubscribeMessage("JOIN_SHOWTIME")
-  async join(@ConnectedSocket() socket: Socket, @MessageBody() id: unknown) {
-    if (
-      typeof id !== "string" ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        id,
-      )
-    )
-      return { ok: false };
-    if (
-      !(await this.prisma.showtime.findUnique({
-        where: { id },
-        select: { id: true },
-      }))
-    )
-      return { ok: false };
-    for (const room of socket.rooms)
-      if (room.startsWith("showtime:")) await socket.leave(room);
-    await socket.join(`showtime:${id}`);
-    return { ok: true };
+  join(@ConnectedSocket() socket: Socket, @MessageBody() id: unknown) {
+    return this.subscriptions.join(socket, id, async (canonicalId) =>
+      Boolean(
+        await this.prisma.showtime.findUnique({
+          where: { id: canonicalId },
+          select: { id: true },
+        }),
+      ),
+    );
   }
   publish(events: BookingEvent[]) {
     for (const event of events)
