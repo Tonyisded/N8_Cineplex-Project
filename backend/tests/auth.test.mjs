@@ -15,7 +15,6 @@ import { normalizeAvatar } from "../dist/auth/avatar.service.js";
 import { VerifiedEmailGuard, RoleGuard } from "../dist/auth/guards.js";
 import { PrismaService } from "../dist/prisma.service.js";
 import { MailService } from "../dist/auth/mail.service.js";
-import { AppModule } from "../dist/app.module.js";
 import { validateEnvironment } from "../dist/config.js";
 import { emailPage } from "../dist/auth/email-page.js";
 
@@ -366,7 +365,14 @@ test("config validates secrets and HTTPS without exposing input", () => {
 test("real HTTP controllers normalize email and reject privilege injection and unauthenticated profile", async (t) => {
   const f = fixture();
   const envBefore = { ...process.env };
+  t.after(() => {
+    for (const k of Object.keys(configValues))
+      if (envBefore[k] === undefined) delete process.env[k];
+      else process.env[k] = envBefore[k];
+  });
   Object.assign(process.env, configValues);
+  // ConfigModule validates during module evaluation, before Nest overrides run.
+  const { AppModule } = await import("../dist/app.module.js");
   const module = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService)
     .useValue(f.db)
@@ -384,12 +390,7 @@ test("real HTTP controllers normalize email and reject privilege injection and u
     }),
   );
   await app.listen(0, "127.0.0.1");
-  t.after(async () => {
-    await app.close();
-    for (const k of Object.keys(configValues))
-      if (envBefore[k] === undefined) delete process.env[k];
-      else process.env[k] = envBefore[k];
-  });
+  t.after(() => app.close());
   const base = await app.getUrl();
   const post = (route, body) =>
     fetch(base + "/api/v1/" + route, {
