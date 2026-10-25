@@ -15,6 +15,7 @@ import {
 } from "@nestjs/swagger";
 import { PrismaService } from "../prisma.service.js";
 import { slotJson, slotSelect } from "./showtime-json.js";
+import { seatLayout } from "../seats/layout.js";
 
 @ApiTags("Showtimes")
 @ApiParam({ name: "id", format: "uuid" })
@@ -57,11 +58,11 @@ export class ShowtimesController {
   })
   @ApiOkResponse({
     description:
-      "{serverTime,showtimeId,items}; items contain id, seatCode, rowName, seatNumber, seatType, price (VND string), status. Ordered by row and seat number; missing inventory is an empty list, not generated capacity.",
+      "{serverTime,showtimeId,items,layout}; items contain id, seatCode, rowName, seatNumber, seatType, price (VND string), status. Layout contains dimensions, screen segments and positions/pair keys for exactly the existing inventory. Missing inventory is empty, never generated from capacity. No holder identity or private hold deadline is exposed.",
   })
   async seats(@Param("id", new ParseUUIDPipe()) id: string) {
     const serverTime = new Date().toISOString();
-    await this.find(id);
+    const slot = await this.find(id);
     const items = await this.prisma.showtimeSeat.findMany({
       where: { showtimeId: id },
       select: {
@@ -78,6 +79,7 @@ export class ShowtimesController {
     return {
       serverTime,
       showtimeId: id,
+      layout: seatLayout(slot.auditorium.type, slot.auditorium.capacity, items),
       items: items.map((seat) => ({ ...seat, price: seat.price.toString() })),
     };
   }

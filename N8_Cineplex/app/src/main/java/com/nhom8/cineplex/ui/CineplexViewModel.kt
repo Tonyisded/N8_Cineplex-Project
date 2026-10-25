@@ -94,7 +94,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     private var clockRecordedAt = 0L
     fun tickCatalogClock() {
         nowMillis = if (serverMillis == 0L) System.currentTimeMillis() else serverMillis + (monotonicMillis() - clockRecordedAt).coerceAtLeast(0)
-        if (!scheduleChecking && selectedShowtime?.let { !canContinue(it) } == true) { clearScheduleSelection() }
+        if (screen !in listOf(Screen.SEAT_SUMMARY, Screen.SEAT_HANDOFF) && !scheduleChecking && selectedShowtime?.let { !canContinue(it) } == true) { clearScheduleSelection() }
     }
     private fun recordClock(value: String) { serverMillis = isoMillis(value); clockRecordedAt = monotonicMillis(); tickCatalogClock() }
     fun selectTimeWindow(value: Int) { require(value in timeWindows.indices); timeWindow = value }
@@ -238,6 +238,20 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     }
     fun openMovie(value: Movie) { if (session?.role == Role.CUSTOMER) { movie = value; clearScheduleSelection(); screen = Screen.DETAIL; refreshMovie() } }
     fun seatHandoff() { if (screen == Screen.SEAT_SUMMARY && selectedShowtime != null) screen = Screen.SEAT_HANDOFF }
+    fun resumeHold(showtimeId: String) {
+        val api=catalog ?: return
+        if(session?.role!=Role.CUSTOMER || screen!=Screen.HOME || scheduleChecking) return
+        val epoch=++selectionEpoch; scheduleChecking=true
+        selectionRequest=viewModelScope.launch {
+            try {
+                val slot=api.showtime(showtimeId).item; val film=api.movie(slot.movieId)
+                if(epoch!=selectionEpoch || session?.role!=Role.CUSTOMER || screen!=Screen.HOME) return@launch
+                movie=film; selectedShowtime=slot; seatReturnScreen=Screen.HOME; screen=Screen.SEAT_HANDOFF
+            } catch(e: CancellationException) { throw e }
+              catch(_: Exception) { if(epoch==selectionEpoch) notice=Notice("Chưa mở được giữ chỗ","Kiểm tra kết nối và thử lại.") }
+            finally { if(epoch==selectionEpoch) {scheduleChecking=false;selectionRequest=null} }
+        }
+    }
     fun back() {
         if (ageSheet) { closeAgeSheet(); return }
         if (trailer != null) { closeTrailer(); return }

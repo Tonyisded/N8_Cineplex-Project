@@ -1,85 +1,79 @@
 package com.nhom8.cineplex
 
-import com.nhom8.cineplex.data.SeatAvailability
-import com.nhom8.cineplex.data.SeatDemo
 import com.nhom8.cineplex.ui.SeatSelectionViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import kotlinx.coroutines.test.resetMain
-import org.junit.After
+import com.nhom8.cineplex.ui.SeatViewport
+import com.nhom8.cineplex.ui.CineplexViewModel
+import com.nhom8.cineplex.data.*
+import com.nhom8.cineplex.model.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.test.*
+import org.junit.*
 import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SeatSelectionViewModelTest {
-    private val dispatcher = StandardTestDispatcher()
-    private var now = 1_000_000L
-    @Before fun setup() { Dispatchers.setMain(dispatcher) }
-    @After fun teardown() { Dispatchers.resetMain() }
-
-    @Test fun untouchedDemoShowtimeStartsWithEveryPlaceAvailable() {
-        val seats = SeatDemo.initial()
-        assertEquals(54, seats.size)
-        assertEquals(60, seats.sumOf { it.places })
-        assertTrue(seats.all { it.availability == SeatAvailability.AVAILABLE })
+    private val dispatcher=StandardTestDispatcher()
+    private var now=0L
+    private val repo=FakeSeatRepository(clock={now})
+    private fun vm()=SeatSelectionViewModel(repo) {now}.also {it.bind("user","showtime")}
+    @Before fun setup() {Dispatchers.setMain(dispatcher)}
+    @After fun teardown() {Dispatchers.resetMain()}
+    @Test fun untouchedShowtimeLoadsInventoryWithoutStartingTime()=runTest(dispatcher) {
+        val vm=vm();runCurrent();assertEquals(160,vm.seats.size);assertTrue(vm.selected.isEmpty());assertNull(vm.deadlineMillis)
+        now+=100000;vm.refreshClock();assertEquals(0,vm.secondsLeft);assertFalse(vm.canContinue)
     }
-
-    @Test fun coupleIsAtomicAndDeadlineDoesNotResetAfterChangingSeats() = runTest(dispatcher) {
-        val state = SeatSelectionViewModel { now }
-        state.bind("showtime-1")
-        val pair = SeatDemo.initial().first { it.id == "J1-J2" }
-        assertEquals(listOf("J1", "J2"), pair.codes)
-        assertEquals(240_000L, pair.price)
-        state.select(pair.id)
-        assertEquals("J1-J2", state.pending)
-        assertEquals(2, state.places)
-        assertEquals(240_000L, state.total)
-        assertNull(state.deadlineMillis)
-        advanceTimeBy(650); runCurrent()
-        assertEquals(setOf(pair.id), state.selected)
-        assertEquals(now + 600_000, state.deadlineMillis)
-        val deadline = state.deadlineMillis
-        state.select(pair.id)
-        assertTrue(state.selected.isEmpty())
-        state.select("B1")
-        advanceTimeBy(650); runCurrent()
-        assertEquals(deadline, state.deadlineMillis)
-        assertEquals(1, state.places)
-        assertEquals(90_000L, state.total)
-        now += 600_001
-        state.refreshClock()
-        assertTrue(state.expiredDialog)
-        assertTrue(state.selected.isEmpty())
-        assertEquals(0L, state.total)
-        assertFalse(state.canContinue)
+    @Test fun coupleIsAtomicAndCountdownStartsOnlyAfterConfirming()=runTest(dispatcher) {
+        val vm=vm();runCurrent();vm.select("L1");assertEquals(setOf("L1","L2"),vm.selected);assertEquals(200000L,vm.total)
+        now+=20000;vm.select("B1");assertNull(vm.deadlineMillis);assertEquals(3,vm.places)
+        vm.continueToSummary {};runCurrent();assertTrue(vm.held);assertEquals(600,vm.secondsLeft);assertEquals(1,repo.holds)
+        val deadline=vm.deadlineMillis;now+=120000;vm.refreshClock();assertEquals(480,vm.secondsLeft)
+        vm.bind("user","showtime");vm.refresh();runCurrent();assertEquals(deadline,vm.deadlineMillis);assertEquals(480,vm.secondsLeft)
+        vm.select("B2");assertEquals(3,vm.places)
+        now+=480001;vm.refreshClock();runCurrent();assertTrue(vm.expiredDialog);assertFalse(vm.held);assertFalse(vm.canContinue);assertEquals(0L,vm.total)
     }
-
-    @Test fun conflictAndReconnectRemoveWholePairAndLockOffline() = runTest(dispatcher) {
-        val state = SeatSelectionViewModel { now }
-        state.bind("showtime-2")
-        state.debugFailNext("J1-J2")
-        state.select("J1-J2")
-        advanceTimeBy(650); runCurrent()
-        assertTrue(state.selected.isEmpty())
-        assertNull(state.deadlineMillis)
-        assertEquals(SeatAvailability.HELD, state.seats.first { it.id == "J1-J2" }.availability)
-        state.select("J3-J4")
-        advanceTimeBy(650); runCurrent()
-        assertEquals(2, state.places)
-        state.debugOffline()
-        assertFalse(state.canContinue)
-        state.debugChangeCode("J3", SeatAvailability.SOLD)
-        assertEquals(2, state.places)
-        state.debugReconnect()
-        advanceTimeBy(900); runCurrent()
-        assertTrue(state.selected.isEmpty())
-        assertEquals(0L, state.total)
-        assertEquals(SeatAvailability.SOLD, state.seats.first { it.id == "J3-J4" }.availability)
+    @Test fun conflictAndReconnectRemoveWholePairAndOfflineNeverFakesRelease()=runTest(dispatcher) {
+        val vm=vm();runCurrent();vm.select("L1");repo.items=repo.items.map {if(it.id=="L2") it.copy(status="HELD") else it}
+        vm.refresh();runCurrent();assertTrue(vm.selected.isEmpty());vm.select("L1");assertTrue(vm.selected.isEmpty())
+        vm.select("B1");repo.offline=true;vm.refresh();runCurrent();assertFalse(vm.online);assertFalse(vm.canContinue)
+        repo.offline=false;vm.refresh();runCurrent();vm.continueToSummary {};runCurrent();assertTrue(vm.held)
+        repo.offline=true;vm.cancelHold();runCurrent();assertTrue(vm.held);assertTrue(vm.message.contains("Chưa xác nhận"))
+        repo.offline=false;vm.cancelHold();runCurrent();assertFalse(vm.held);assertEquals(0,vm.places)
+    }
+    @Test fun lostResponseRecoversSameOrderAndProcessRestartPreservesDeadline()=runTest(dispatcher) {
+        val first=vm();runCurrent();first.select("A1");repo.loseResponse=true;first.continueToSummary {};runCurrent();assertEquals(1,repo.holds)
+        now+=30000;val restored=vm();runCurrent();assertTrue(restored.held);assertEquals(570,restored.secondsLeft);assertEquals(1,repo.holds)
+        restored.cancelHold();runCurrent();assertFalse(restored.held)
+    }
+    @Test fun goldIsNotCoupleAndNewUserNeverInheritsAnotherSelection()=runTest(dispatcher) {
+        val gold=SeatSelectionViewModel(FakeSeatRepository("GOLD")) {now};gold.bind("one","gold");runCurrent();gold.select("A1");assertEquals(1,gold.places)
+        gold.bind("two","gold");runCurrent();assertTrue(gold.selected.isEmpty());assertNull(gold.deadlineMillis)
+    }
+    @Test fun homeCanRecoverOwnedHoldWithoutDependingOnCatalogAvailability()=runTest(dispatcher) {
+        val first=vm();runCurrent();first.select("A1");first.continueToSummary {};runCurrent()
+        val fresh=SeatSelectionViewModel(repo) {now};fresh.findResume("user");runCurrent()
+        assertNotNull(fresh.resumeOrder);assertEquals("showtime",fresh.resumeOrder?.showtimeId)
+        fresh.clearSession();assertNull(fresh.resumeOrder)
+        fresh.findResume("different-user");runCurrent();assertNull(fresh.resumeOrder)
+    }
+    @Test fun zoomKeepsFocalPointClampsBoundsAndFitsLargeImax() {
+        val fit=SeatViewport.fit(360f,400f,41f,22f)
+        val zoom=fit.zoom(180f,200f,4f,0f,0f,fit.scale,72f,360f,400f,41f,22f)
+        assertEquals((180-fit.x)/fit.scale,(180-zoom.x)/zoom.scale,.001f)
+        val panned=zoom.zoom(180f,200f,1f,99999f,-99999f,fit.scale,72f,360f,400f,41f,22f)
+        assertEquals(0f,panned.x,.001f);assertEquals(400-22*panned.scale,panned.y,.001f)
+        val back=zoom.zoom(180f,200f,.0001f,0f,0f,fit.scale,72f,360f,400f,41f,22f)
+        assertEquals(fit.scale,back.scale,.001f);assertEquals(fit.x,back.x,.001f)
+    }
+    @Test fun resumeNavigationDoesNotRejectAnOwnedHoldWhenCatalogIsSoldOut()=runTest(dispatcher) {
+        val today="2026-10-25";val film=MockMovies.all.first()
+        val slot=ShowtimeDto("owned-hold",film.id,"fixture","2026-10-25T12:00:00.000Z","2026-10-25T14:00:00.000Z","STANDARD_2D","100000","ACTIVE",AuditoriumDto("room","Cinema 3","STANDARD",160,false),null,0,160)
+        val api=object: CatalogRepository by MockCatalogRepository {
+            override suspend fun showtime(id: String)=ShowtimeResponse("2026-10-25T00:00:00.000Z",slot)
+            override suspend fun movie(id: String)=film
+        }
+        val vm=CineplexViewModel(MockAccountAdapter(MockAccountRepository()),api,{today},{0L})
+        vm.update(AuthForm(email="user@cineplex.test",password="123456"));vm.submit();advanceTimeBy(1000);runCurrent()
+        assertEquals(Screen.HOME,vm.screen);vm.resumeHold(slot.id);runCurrent()
+        assertEquals(Screen.SEAT_HANDOFF,vm.screen);assertEquals(0,vm.selectedShowtime?.availableSeats)
     }
 }

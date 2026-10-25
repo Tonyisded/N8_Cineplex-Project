@@ -9,6 +9,7 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { APP_GUARD } from "@nestjs/core";
 import { CrawlerModule } from "./crawler/crawler.module.js";
 import { CatalogModule } from "./catalog/catalog.module.js";
+import { BookingModule } from "./booking/booking.module.js";
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { CatalogModule } from "./catalog/catalog.module.js";
     CatalogModule,
     PrismaModule,
     AuthModule,
+    BookingModule,
     ThrottlerModule.forRoot([{ name: "default", ttl: 60000, limit: 120 }]),
   ],
   controllers: [HealthController],
