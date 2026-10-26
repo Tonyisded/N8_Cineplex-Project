@@ -1,5 +1,24 @@
 # N8 Cineplex — Master Plan
 
+## Công bố tài liệu triển khai PR #18 — 2026-10-26
+
+Trạng thái: **Hoàn thành công bố hai tài liệu theo yêu cầu người dùng**. Nội dung nghiệm thu deploy đã commit/push tại `8eb718bd89552320e316ee015131a0851f162950` trên nhánh `docs/manh-nhan-pr18-vps-deployment`; push exit 0 và ls-remote khớp SHA. Chỉ thay `N8_Cineplex_Plan.md` và `AGENTS.md`, danh tính commit Đào Mạnh Nhân <24521227@gm.uit.edu.vn>; không push main/force push/tự tạo hoặc merge PR. Hai tài liệu đã đọc lại, đồng bộ tiến độ và kiểm tra diff whitespace. Không build/deploy/API hoặc ghi DB thêm vì chỉ thay tài liệu; giữ nguyên bằng chứng runtime phía dưới. Commit chốt trạng thái này được kiểm tra SHA/remote và ghi trong ledger ngoài repo sau thực thi, không tự tham chiếu SHA trước. Bước tiếp theo: người dùng/nhóm review nhánh và quyết định tạo/merge PR.
+
+
+## Triển khai PR #18 lên VPS — 2026-10-26
+
+Trạng thái: **Hoàn thành triển khai backend PR #18 và các kiểm tra trong phạm vi deploy**. Mốc này thay trạng thái chưa build/test/deploy phần realtime/expiry trong các nhật ký cũ phía dưới; giữ lịch sử, không nhận toàn bộ nghiệp vụ tương lai đã hoàn thành. PR #18 đã merge; source chốt tại `f4d5c3b49c220a735f2f4d05c1ba5faa96bde42a`. Không tạo commit backend mới hoặc push main trong lượt này.
+
+- Phạm vi: triển khai source đã merge, giữ ShowtimeSubscriptions và expiry dùng clock PostgreSQL; không sửa code nghiệp vụ/Android/schema/dependency. Source local vẫn mặc định localhost. VPS checkout `/opt/n8-cineplex` đúng SHA; release cùng SHA có đúng 4 file proxy overlay hiện hành ngoài source public (config, crawler service, smoke, crawler tests). Không thay secrets hoặc TLS/allowlist/fail-closed.
+- Local: build/typecheck/format:check đạt; public **99/99 tests**, candidate proxy **102/102 tests**, exit 0. VPS Linux tools cùng candidate, network-none và theme Android mount readonly: **102/102 tests**, exit 0. Lượt Linux trước 101/102 do thiếu theme ngoài image đã sửa bằng mount fixture, không sửa test/source để né lỗi. Lượt bị ngắt không tính đạt; đã chạy lại gate và quan sát exit 0.
+- VPS thực thi `compose up --no-deps --no-build --wait api` đạt. API image `n8-cineplex-api:f4d5c3b49c220a735f2f4d05c1ba5faa96bde42a`, image ID `sha256:7356a36745b0ee1582b00456d68d873d8466ef43e93b0fdff4af2ab768324642`, StartedAt `2026-10-26T03:30:13.815253302Z`; healthy, restart unless-stopped, RestartCount 0. Startup thành công, không có ERROR/FATAL trong khoảng kiểm tra. Hash 5 file dist gateway/service/subscriptions/config/crawler khớp tools đã test.
+- PostgreSQL/Nginx giữ container ID/StartedAt, private env không đổi; 5000 không public, PostgreSQL chỉ localhost. Prisma xác nhận **4 migrations, schema up to date**; không migrate/seed/reset/restore hoặc tạo fixture booking. Giữ image cũ để rollback, không prune volume/network/cache; còn khoảng 15 GB trống lúc kiểm tra.
+- HTTPS: health 200 `{"status":"ok","database":"up"}`, Swagger/OpenAPI 200 và đủ route Orders/seats; coming-soon 25 item tại snapshot. Catalog → detail → seats thật đạt với inventory GOLD 32, không lộ holder/deadline; order thiếu JWT trả 401. Socket.IO qua HTTPS WebSocket kiểm tra TLS bình thường, JWT sai trả AUTH_REQUIRED. Crawler smoke trong runtime qua proxy trả CGV HTTP200 lúc `2026-10-26T03:31:32.012Z`; không import ghi DB.
+- Transaction cấu hình: chỉ đổi services.api.image/build.context và services.tools.image/build.context. Cùng lệnh `compose config --images`: BASELINE 2f2547b → MODIFIED f4d5c3b → ROLLBACK bản sao 2f2547b, cả ba exit 0; pristine hash khớp, patch tái tạo bytes đạt, active/modified vẫn f4d5c3b. Đây là rollback bản sao cấu hình, không hạ API production/restore DB. Đã mở lại bốn role ngoài repo. Có supplemental live-image rollback vì compose cũ tham chiếu 2f2547b nhưng API thực trước deploy chạy f6af43b.
+
+Giới hạn: chưa chạy lại concurrency PostgreSQL/E2E600s trên DB chung hoặc Android vật lý; tests service dùng fixture không chứng minh concurrent commit PostgreSQL thật. Không tái dùng chấp thuận fixture run cũ. Hai MD cập nhật đồng bộ local, chưa commit/push tài liệu. Bước tiếp: review/công bố tiến độ trên branch riêng khi người dùng yêu cầu; nghiệm thu fixture live mới cần chấp thuận riêng. Không còn bước bắt buộc đang treo trong phạm vi deploy PR #18.
+
+
 ## Đối chiếu GitHub và gói backend còn thiếu — 2026-10-26
 
 Đã đọc log CI head cab9895, run40216825084: npm ci/Prisma validate/build/typecheck/format đạt, npm test82/83. Bài Auth HTTP thất bại với JWT_ACCESS_SECRET vì AppModule static import chạy trước khi test gán fixture env. Nhánh remote hiện vẫn dùng backend cũ; auth.test.mjs dynamic import và các bổ sung còn local. CI này không kiểm chứng bản sửa mới. Bước tiếp theo phải upload9file còn thiếu rồi xem kết quả CI mới trước khi review merge; chưa ghi bản sửa đã build/test/VPS thành công.

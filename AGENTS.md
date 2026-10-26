@@ -2,6 +2,23 @@
 
 Source of truth: `N8_Cineplex_Plan.md`.
 
+## Công bố tài liệu triển khai PR #18 — 2026-10-26
+
+Trạng thái: **Hoàn thành công bố hai tài liệu theo yêu cầu người dùng**. Nội dung nghiệm thu deploy đã commit/push tại `8eb718bd89552320e316ee015131a0851f162950` trên nhánh `docs/manh-nhan-pr18-vps-deployment`; push exit 0 và ls-remote khớp SHA. Chỉ thay `N8_Cineplex_Plan.md` và `AGENTS.md`, danh tính commit Đào Mạnh Nhân <24521227@gm.uit.edu.vn>; không push main/force push/tự tạo hoặc merge PR. Hai tài liệu đã đọc lại, đồng bộ tiến độ và kiểm tra diff whitespace. Không build/deploy/API hoặc ghi DB thêm vì chỉ thay tài liệu; giữ nguyên bằng chứng runtime phía dưới. Commit chốt trạng thái này được kiểm tra SHA/remote và ghi trong ledger ngoài repo sau thực thi, không tự tham chiếu SHA trước. Bước tiếp theo: người dùng/nhóm review nhánh và quyết định tạo/merge PR.
+
+
+## Triển khai PR #18 lên VPS — 2026-10-26
+
+Trạng thái: **Hoàn thành triển khai backend PR #18 và các kiểm tra trong phạm vi deploy**. Thay các trạng thái chưa build/test/deploy realtime/expiry ở nhật ký cũ phía dưới; giữ lịch sử, không coi toàn bộ nghiệp vụ tương lai đã hoàn thành. Source merge `f4d5c3b49c220a735f2f4d05c1ba5faa96bde42a`; không sửa thêm code nghiệp vụ/Android/schema/dependency, không commit/push main.
+
+- Local public build/typecheck/format và 99/99 tests đạt; candidate giữ 4-file proxy overlay ngoài source public đạt 102/102. VPS Linux tools cùng candidate/network-none/theme readonly đạt 102/102 exit 0. Lỗi 101/102 trước do thiếu theme đã sửa bằng mount readonly, không sửa test/source để né lỗi; lượt bị ngắt không tính đạt và đã chạy lại gate thành công.
+- API đã recreate đúng image f4d5c3b, ID `sha256:7356a36745b0ee1582b00456d68d873d8466ef43e93b0fdff4af2ab768324642`, StartedAt `2026-10-26T03:30:13.815253302Z`; healthy, restart unless-stopped, RestartCount 0, startup thành công, 0 ERROR/FATAL lúc kiểm tra. Checkout VPS đúng SHA; 5 hash dist runtime khớp tools đã test. PostgreSQL/Nginx/private env không đổi; chỉ recreate API, không public 5000/5432.
+- Health/Swagger/OpenAPI HTTPS 200, đủ Orders/seats; coming-soon 25 item tại snapshot. Catalog/detail/seats thật 32 ghế đạt; order không JWT 401; WebSocket HTTPS/TLS và AUTH_REQUIRED cho JWT sai đạt. Crawler runtime qua proxy CGV HTTP200 lúc 03:31:32.012Z. Không import/fixture ghi DB; Prisma 4 migrations/schema up to date nên không migrate/reset/seed/restore. Giữ image cũ để rollback, không prune volume/network/cache.
+- Giữ bốn role ngoài repo và supplemental records; chỉ đổi image/build.context của api/tools trong compose. BASELINE 2f2547b → MODIFIED f4d5c3b → ROLLBACK bản sao 2f2547b, config --images đều exit0; pristine hash và patch tái tạo bytes đạt; active/modified vẫn f4d5c3b. Đây là rollback bản sao cấu hình, không rollback API thật/DB. API trước deploy là f6af43b dù compose cũ tham chiếu 2f2547b; dùng supplemental live-image rollback nếu cần, không giả định hai trạng thái giống nhau.
+
+Chưa chạy lại concurrency PostgreSQL/E2E600s trên DB chung hoặc Android vật lý; không gọi tests fixture là PostgreSQL concurrency thật, không tái dùng chấp thuận fixture run cũ. Hai MD cập nhật đồng bộ local, chưa commit/push tài liệu. Bước tiếp: review/công bố tiến độ trên branch riêng khi người dùng yêu cầu; fixture live mới cần chấp thuận riêng. Không còn bước bắt buộc đang treo trong phạm vi deploy PR #18.
+
+
 ## Đối chiếu GitHub và gói backend còn thiếu — 2026-10-26
 
 CI của head cab9895 (run40216825084) đã đọc log: build/typecheck/format đạt, npm test82/83 và bài Auth HTTP thất bại vì JWT_ACCESS_SECRET được kiểm tra trước fixture env. Đây là suite backend cũ trên remote, chưa chứa7file bổ sung; file auth.test.mjs sửa thứ tự import vẫn còn local. Không dùng CI này làm bằng chứng bản sửa mới đã build/test đạt. Cần upload phần còn thiếu rồi xem CI mới trước khi review merge.
