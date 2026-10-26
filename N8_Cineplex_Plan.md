@@ -2,7 +2,7 @@
 
 ## Công bố tài liệu triển khai PR #18 — 2026-10-26
 
-Trạng thái: **Đang làm phần commit/push tài liệu theo yêu cầu người dùng**. Chỉ công bố `N8_Cineplex_Plan.md` và `AGENTS.md` trên nhánh `docs/manh-nhan-pr18-vps-deployment`; không push main, force push hoặc tự tạo/merge PR. Danh tính commit phần này: Đào Mạnh Nhân <24521227@gm.uit.edu.vn>. Đã đọc lại hai tài liệu, kiểm tra nội dung đồng bộ và diff whitespace; kết quả deploy PR #18 bên dưới giữ nguyên, không chạy lại build/deploy/API hoặc ghi DB vì chỉ thay tài liệu. Kết quả commit/SHA/push chỉ bổ sung sau khi quan sát thực tế; bước tiếp theo là commit cả hai file và kiểm tra remote khớp.
+Trạng thái: **Hoàn thành công bố hai tài liệu theo yêu cầu người dùng**. Nội dung nghiệm thu deploy đã commit/push tại `8eb718bd89552320e316ee015131a0851f162950` trên nhánh `docs/manh-nhan-pr18-vps-deployment`; push exit 0 và ls-remote khớp SHA. Chỉ thay `N8_Cineplex_Plan.md` và `AGENTS.md`, danh tính commit Đào Mạnh Nhân <24521227@gm.uit.edu.vn>; không push main/force push/tự tạo hoặc merge PR. Hai tài liệu đã đọc lại, đồng bộ tiến độ và kiểm tra diff whitespace. Không build/deploy/API hoặc ghi DB thêm vì chỉ thay tài liệu; giữ nguyên bằng chứng runtime phía dưới. Commit chốt trạng thái này được kiểm tra SHA/remote và ghi trong ledger ngoài repo sau thực thi, không tự tham chiếu SHA trước. Bước tiếp theo: người dùng/nhóm review nhánh và quyết định tạo/merge PR.
 
 
 ## Triển khai PR #18 lên VPS — 2026-10-26
