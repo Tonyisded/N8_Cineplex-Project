@@ -1,5 +1,12 @@
 # AGENTS.md — N8 Cineplex
 
+## Công bố Combo API tuần 8 của Đào Mạnh Nhân — 2026-11-01
+
+<!-- MANH_NHAN_WEEK8_COMBO_PUBLICATION_20261101 -->
+Trạng thái: **Hoàn thành công bố source Combo API/test tuần 8** trên nhánh `feat/manh-nhan-week8-combo-api`. Commit source `92066df1ddbc52d7e8baae349cd58aef569a02a5` đã push thành công (exit0), ls-remote khớp SHA; GitHub xác nhận Author/Committer đều thuộc `Manh-Nhan299`. Tên Đào Mạnh Nhân dùng noreply của chính tài khoản; không thêm đồng tác giả. Chỉ gồm hai file metadata API, ba test files và hai tài liệu tiến độ; giữ lịch sử nền của nhóm. Không ghi lên main, force push, tự tạo hoặc merge PR.
+
+Gate công bố mới: local build/typecheck/format và **108/108 tests** đạt. Chỉ sửa encoding phần thông báo nhiệm vụ và cập nhật hai MD; không thay thêm source nghiệp vụ hoặc Android. Kế hoạch payOS có sẵn và ghi chú tương ứng được giữ local, không đưa vào nội dung công bố. Không đưa key/env/log/verification vào Git. Không chạy lại VPS/native/fixture DB hoặc giao dịch thanh toán trong đợt công bố này; kết quả Linux111, Android64/3 và E2E600 ở mục nghiệm thu bên dưới là bằng chứng của lượt trước, không phải lượt chạy mới. Chưa xác nhận CI remote. Commit xác nhận tài liệu không tự ghi trước SHA của chính nó; SHA cuối nhánh được đối chiếu sau push và lưu trong verification ngoài repo. Bước tiếp: nhóm trưởng review nhánh và quyết định tích hợp.
+
 ## Combo API tuần 8 của Đào Mạnh Nhân — 2026-11-01
 
 <!-- MANH_NHAN_WEEK8_COMBO_20261101 -->
