@@ -49,4 +49,74 @@ class LiveCommerceStateTest {
   vm.quantity(2);assertNull(vm.quote);assertEquals(440000L,vm.estimatedSubtotal)
   vm.clear();assertEquals(LiveCommerceStep.COMBOS,vm.step);assertEquals(0L,vm.estimatedSubtotal)
  }
+
+ private fun integrationOrder() = HoldOrder("integration-order", "slot", "PENDING_PAYMENT", "350000", "20000", "150000", "330000", "180000", "2030-01-01T00:00:00Z", listOf(OrderSeatDto("A1", "A1", "240000")), "combo", 1)
+ private fun integrationQuote(o: HoldOrder) = ServerQuote(o.subtotal, o.discount, o.creditUsed, o.totalAmount, o.bankAmount, "150000", "CINE20", o.expiresAt, "integration-token")
+ private fun integrationRepo(o: HoldOrder) = object : CommerceBackend {
+  override suspend fun combos() = listOf(ServerCombo("combo", "Combo", "", "100000", status = "AVAILABLE"))
+  override suspend fun balance() = 150000L
+  override suspend fun quote(id: String, body: QuoteBody) = integrationQuote(o)
+  override suspend fun checkout(id: String, token: String) = HoldResponse("2026-11-01T00:00:00Z", o)
+ }
+
+ @Test fun quoteCannotChangeOriginalHoldDeadline() = runTest {
+  val order = integrationOrder()
+  val repo = object : CommerceBackend by integrationRepo(order) {
+   override suspend fun quote(id: String, body: QuoteBody) = integrationQuote(order.copy(expiresAt = "2030-01-01T00:00:01Z"))
+  }
+  val vm = LiveCommerceState(repo); vm.bind(order); advanceUntilIdle()
+  vm.continueToCheckout(); advanceUntilIdle()
+  assertNull(vm.quote); assertFalse(vm.confirmed); assertTrue(vm.message.isNotBlank())
+ }
+
+ @Test fun checkoutCannotAcceptChangedDeadlineOrDifferentServerTotals() = runTest {
+  val order = integrationOrder()
+  for (response in listOf(order.copy(expiresAt = "2030-01-01T00:00:01Z"), order.copy(bankAmount = "1"))) {
+   val repo = object : CommerceBackend by integrationRepo(order) {
+    override suspend fun checkout(id: String, token: String) = HoldResponse("2026-11-01T00:00:00Z", response)
+   }
+   val vm = LiveCommerceState(repo); vm.bind(order); advanceUntilIdle(); vm.price(); advanceUntilIdle()
+   vm.confirm(SeatSelectionViewModel()); advanceUntilIdle()
+   assertFalse(vm.confirmed); assertTrue(vm.unknown); assertEquals("integration-token", vm.quote?.quoteToken)
+   vm.clear()
+  }
+ }
+
+ @Test fun zeroBankKeepsPendingOrderAndRetriesTheSameQuote() = runTest {
+  val order = integrationOrder().copy(creditUsed = "330000", bankAmount = "0")
+  val tokens = mutableListOf<String>(); var applied = false
+  val repo = object : CommerceBackend by integrationRepo(order) {
+   override suspend fun balance() = if (applied) 170000L else 500000L
+   override suspend fun checkout(id: String, token: String): HoldResponse {
+    assertEquals(order.id, id); tokens += token
+    if (!applied) { applied = true; throw ApiFailure("NETWORK_ERROR", "lost response") }
+    return HoldResponse("2026-11-01T00:00:00Z", order)
+   }
+  }
+  val vm = LiveCommerceState(repo); vm.bind(order); advanceUntilIdle(); vm.price(); advanceUntilIdle()
+  vm.confirm(SeatSelectionViewModel()); advanceUntilIdle(); assertTrue(vm.unknown)
+  vm.price(); vm.select(null); assertEquals("integration-token", vm.quote?.quoteToken)
+  vm.confirm(SeatSelectionViewModel()); advanceUntilIdle()
+  assertTrue(vm.confirmed); assertFalse(vm.unknown); assertEquals("0", vm.quote?.bankAmount)
+  assertEquals(listOf("integration-token", "integration-token"), tokens); assertEquals(170000L, vm.balance)
+ }
+
+ @Test fun checkoutUsesServerTotalsWithoutRestartingSeatCountdown() = runTest {
+  var now = 0L
+  val seatRepo = FakeSeatRepository(clock = { now }); seatRepo.items = seatRepo.items.map { it.copy(price = "240000") }
+  val seats = SeatSelectionViewModel(seatRepo) { now }; seats.bind("user", "slot"); advanceUntilIdle()
+  seats.select("A1"); seats.continueToSummary {}; advanceUntilIdle()
+  val hold = seats.order!!; val deadline = seats.deadlineMillis
+  val priced = integrationOrder().copy(id = hold.id, expiresAt = hold.expiresAt)
+  val vm = LiveCommerceState(integrationRepo(priced)); vm.bind(hold); advanceUntilIdle(); vm.select("combo"); vm.promotion("CINE20")
+  assertEquals(340000L, vm.estimatedSubtotal)
+  now = 120000L; seats.refreshClock(); assertEquals(480, seats.secondsLeft)
+  vm.continueToCheckout(); advanceUntilIdle()
+  assertEquals("350000", vm.quote?.subtotal); assertEquals("180000", vm.quote?.bankAmount)
+  assertTrue(vm.backToCombos()); vm.continueToCheckout(); advanceUntilIdle()
+  vm.confirm(seats); advanceUntilIdle()
+  assertTrue(vm.confirmed); assertEquals(deadline, seats.deadlineMillis); assertEquals(480, seats.secondsLeft); assertEquals(1, seatRepo.holds)
+  now = 600000L; seats.refreshClock(); advanceUntilIdle()
+  assertFalse(seats.held); assertEquals(0, seats.secondsLeft); assertTrue(seats.expiredDialog)
+ }
 }
