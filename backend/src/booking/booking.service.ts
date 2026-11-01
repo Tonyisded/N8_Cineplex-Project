@@ -1,3 +1,4 @@
+import { VOUCHERS, voucherPrice } from "./vouchers.js";
 import {
   BadRequestException,
   ConflictException,
@@ -293,6 +294,24 @@ export class BookingService implements OnApplicationBootstrap {
     return { serverTime: new Date().toISOString(), item: publicOrder(order) };
   }
 
+  async vouchers(userId: string) {
+    const used = await this.prisma.order.count({
+      where: { userId, status: { in: ["PAID", "REFUNDED"] } },
+    });
+    const reserved = await this.prisma.order.count({
+      where: {
+        userId,
+        voucherCode: "FIRST50",
+        status: "PENDING_PAYMENT",
+        expiresAt: { gt: new Date() },
+      },
+    });
+    return {
+      items: VOUCHERS.filter(
+        (v) => v.code !== "FIRST50" || (!used && !reserved),
+      ),
+    };
+  }
   private economic(order: Order) {
     return [
       order.comboId,
@@ -301,6 +320,7 @@ export class BookingService implements OnApplicationBootstrap {
       order.discount.toString(),
       order.totalAmount.toString(),
       order.creditUsed.toString(),
+      order.voucherCode ?? null,
     ];
   }
   private async pricing(tx: Tx, order: Order, body: QuoteDto) {
@@ -328,18 +348,48 @@ export class BookingService implements OnApplicationBootstrap {
     const seats = order.seats
       .reduce((sum, s) => sum + BigInt(s.price.toString()), 0n)
       .toString();
-    const price = calculatePrice(
-      seats,
-      combo?.price.toString() ?? "0",
-      body.combo_quantity,
-      body.promotion_code ?? "",
-      user.creditBalance.plus(order.creditUsed).toString(),
-    );
+    const voucherMode = body.voucher_code !== undefined;
+    if (voucherMode && body.promotion_code)
+      throw new BadRequestException("Không cộng dồn ưu đãi.");
+    if (body.voucher_code === "FIRST50") {
+      const used = await tx.order.count({
+        where: { userId: order.userId, status: { in: ["PAID", "REFUNDED"] } },
+      });
+      const reserved = await tx.order.count({
+        where: {
+          userId: order.userId,
+          id: { not: order.id },
+          voucherCode: "FIRST50",
+          status: "PENDING_PAYMENT",
+          expiresAt: { gt: await this.now(tx) },
+        },
+      });
+      if (used || reserved)
+        throw conflict(
+          "VOUCHER_UNAVAILABLE",
+          "Voucher lần đầu đã dùng hoặc đang giữ cho đơn khác.",
+        );
+    }
+    const price = voucherMode
+      ? voucherPrice(
+          seats,
+          combo?.price.toString() ?? "0",
+          body.combo_quantity,
+          body.voucher_code!,
+        )
+      : calculatePrice(
+          seats,
+          combo?.price.toString() ?? "0",
+          body.combo_quantity,
+          body.promotion_code ?? "",
+          user.creditBalance.plus(order.creditUsed).toString(),
+        );
     return {
       ...price,
       comboId,
       comboQuantity: body.combo_quantity,
       creditBalance: user.creditBalance.toString(),
+      voucherCode: voucherMode ? body.voucher_code || null : null,
     };
   }
   private async checkoutLock(tx: Tx, id: string, userId: string) {
@@ -375,6 +425,7 @@ export class BookingService implements OnApplicationBootstrap {
           price.discount,
           price.totalAmount,
           price.creditUsed,
+          price.voucherCode,
         ];
         const quoteToken = signQuote(
           {
@@ -434,6 +485,7 @@ export class BookingService implements OnApplicationBootstrap {
           price.discount,
           price.totalAmount,
           price.creditUsed,
+          price.voucherCode,
         ];
         if (fingerprint(target) !== fingerprint(quote.target))
           throw conflict(
@@ -472,6 +524,7 @@ export class BookingService implements OnApplicationBootstrap {
             discount: price.discount,
             totalAmount: price.totalAmount,
             creditUsed: price.creditUsed,
+            voucherCode: price.voucherCode,
           },
           include: { seats: true },
         });

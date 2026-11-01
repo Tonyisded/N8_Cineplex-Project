@@ -34,7 +34,7 @@ import com.nhom8.cineplex.ui.theme.CineplexColors as C
 fun DetailExperienceScreen(vm: CineplexViewModel, movie: Movie) {
     val meta = DetailSchedule.filmMeta(movie)
     var expanded by rememberSaveable(movie.id) { mutableStateOf(false) }
-    var castCredit by remember { mutableStateOf<CastCredit?>(null) }
+    var castMember by remember { mutableStateOf<CastMember?>(null) }
     Scaffold(containerColor = C.Surface, topBar = { DetailHeader("Chi tiết phim", vm::back) }, bottomBar = {
         DetailActionBar { ActionButton("Chọn suất chiếu", vm::openSchedule, Modifier.fillMaxWidth(), icon = "arrow") }
     }) { inset ->
@@ -84,7 +84,7 @@ fun DetailExperienceScreen(vm: CineplexViewModel, movie: Movie) {
             Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("Diễn viên",Modifier.padding(horizontal = 20.dp),style = MaterialTheme.typography.headlineMedium)
                 if (DetailSchedule.isDune(movie)) LazyRow(contentPadding = PaddingValues(horizontal = 20.dp),horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    items(DetailSchedule.duneCast) { person -> Column(Modifier.width(96.dp).clickable { castCredit = person },horizontalAlignment = Alignment.CenterHorizontally) {
+                    items(DetailSchedule.duneCast) { person -> Column(Modifier.width(96.dp).clickable { castMember = person },horizontalAlignment = Alignment.CenterHorizontally) {
                         Image(painterResource(person.portrait),person.name,Modifier.size(72.dp).clip(CircleShape),contentScale = ContentScale.Crop)
                         Text(person.name,maxLines = 2,overflow = TextOverflow.Ellipsis,fontSize = 13.sp,fontWeight = FontWeight.Medium)
                         Text(person.role,color = C.Muted,fontSize = 12.sp,maxLines = 1)
@@ -93,7 +93,7 @@ fun DetailExperienceScreen(vm: CineplexViewModel, movie: Movie) {
             }
         }
     }
-    castCredit?.let { person -> AlertDialog(onDismissRequest = { castCredit = null },confirmButton = { TextButton({ castCredit = null }) { Text("Đóng") } },title = { Text(person.name) },text = { Column { Image(painterResource(person.portrait),null,Modifier.size(110.dp).clip(CircleShape),contentScale = ContentScale.Crop); Spacer(Modifier.height(12.dp)); Text("Vai ${person.role}") } }) }
+    castMember?.let { person -> AlertDialog(onDismissRequest = { castMember = null },confirmButton = { TextButton({ castMember = null }) { Text("Đóng") } },title = { Text(person.name) },text = { Column { Image(painterResource(person.portrait),null,Modifier.size(110.dp).clip(CircleShape),contentScale = ContentScale.Crop); Spacer(Modifier.height(12.dp)); Text("Vai ${person.role}") } }) }
 }
 
 @Composable internal fun DetailHeader(title: String, back: () -> Unit) {

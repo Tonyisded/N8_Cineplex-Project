@@ -21,7 +21,7 @@ fun CustomerNavigation(selectedIndex: Int, onHome: () -> Unit, onAccount: () -> 
     Column(Modifier.background(C.Surface)) {
         HorizontalDivider(color = C.Line)
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Trang chủ" to "home", "Phim" to "film", "Vé của tôi" to "ticket", "Tài khoản" to "user").forEachIndexed { index, (label, icon) ->
+            listOf("Trang chủ" to "home", "Khám phá" to "film", "Vé của tôi" to "ticket", "Tài khoản" to "user").forEachIndexed { index, (label, icon) ->
                 val active = index == selectedIndex
                 val color = if (active) C.Primary else C.Muted
                 Column(

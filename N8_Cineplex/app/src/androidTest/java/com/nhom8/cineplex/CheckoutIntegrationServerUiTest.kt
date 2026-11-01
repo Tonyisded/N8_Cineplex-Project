@@ -23,9 +23,9 @@ class CheckoutIntegrationServerUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun positiveBankCheckoutDisplaysHttpsQuote() = checkout(false)
-    @Test fun zeroBankCheckoutStillHoldsSeatsWithoutClaimingTicket() = checkout(true)
+    @Test fun firstPurchaseCheckoutStillHoldsSeatsWithoutClaimingTicket() = checkout(true)
 
-    private fun checkout(zeroBank: Boolean) {
+    private fun checkout(firstPurchase: Boolean) {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue("A newly approved disposable fixture is required", args.containsKey("commerceZeroSlot"))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -39,8 +39,8 @@ class CheckoutIntegrationServerUiTest {
         val seats = SeatSelectionViewModel(repository)
         val state = LiveCommerceState(commerce)
         val vm = CineplexViewModel()
-        val slot = args.getString(if (zeroBank) "commerceZeroSlot" else "commerceSlot")!!
-        val seat = args.getString(if (zeroBank) "commerceZeroSeat" else "commerceSeat")!!
+        val slot = args.getString(if (firstPurchase) "commerceZeroSlot" else "commerceSlot")!!
+        val seat = args.getString(if (firstPurchase) "commerceZeroSeat" else "commerceSeat")!!
         var id: String? = null
         try {
             val session = runBlocking {
@@ -57,25 +57,22 @@ class CheckoutIntegrationServerUiTest {
             val duration = isoMillis(hold.item.expiresAt) - isoMillis(hold.serverTime)
             assertTrue("Original hold must be 600 seconds, not a fresh checkout lease: $duration", duration in 590000L..600000L)
             val deadline = seats.deadlineMillis
-            if (!zeroBank) {
+            if (!firstPurchase) {
                 val combo = state.items.first { it.name.startsWith("Combo 2 người") && it.status == "AVAILABLE" }
                 compose.onNodeWithTag("combo-plus-${combo.id}").performScrollTo().performClick()
             }
             compose.onNodeWithTag("commerce-next").performClick()
             compose.waitUntil(15000) { state.quote != null }
-            if (!zeroBank) {
-                compose.onNodeWithTag("commerce-promo").performScrollTo().performTextInput("CINE20")
-                compose.onNodeWithText("Áp dụng").performClick()
-                compose.waitUntil(15000) { state.quote?.promotionCode == "CINE20" }
-            }
+            compose.onNodeWithTag("commerce-promo").performScrollTo().performClick()
+            compose.onNodeWithText(if (firstPurchase) "Chọn FIRST50" else "Chọn CINE20").performClick()
+            compose.waitUntil(15000) { state.quote?.promotionCode == (if (firstPurchase) "FIRST50" else "CINE20") }
             val quote = checkNotNull(state.quote)
-            assertEquals(if (zeroBank) "100000" else "340000", quote.subtotal)
-            assertEquals(if (zeroBank) "0" else "20000", quote.discount)
-            assertEquals(if (zeroBank) "100000" else "320000", quote.totalAmount)
-            assertEquals(if (zeroBank) "100000" else "150000", quote.creditUsed)
-            assertEquals(if (zeroBank) "0" else "170000", quote.bankAmount)
+            assertEquals(if (firstPurchase) "100000" else "340000", quote.subtotal)
+            assertEquals(if (firstPurchase) "50000" else "20000", quote.discount)
+            assertEquals(if (firstPurchase) "50000" else "320000", quote.totalAmount)
+            assertEquals(if (firstPurchase) "50000" else "320000", quote.bankAmount)
             assertEquals(hold.item.expiresAt, quote.expiresAt)
-            compose.onNodeWithTag("commerce-total").assertTextEquals(if (zeroBank) "0đ" else "170.000đ")
+            compose.onNodeWithTag("commerce-total").assertTextEquals(if (firstPurchase) "0đ" else "320.000đ")
             compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
             compose.waitUntil(5000) { state.step == LiveCommerceStep.COMBOS }
             assertEquals(deadline, seats.deadlineMillis)
@@ -85,11 +82,11 @@ class CheckoutIntegrationServerUiTest {
             compose.onNodeWithTag("commerce-next").performClick()
             compose.waitUntil(15000) { state.confirmed && !state.busy }
             compose.onNodeWithTag("commerce-confirmation").performScrollTo()
-                .assertTextContains(if (zeroBank) "ngân hàng 0đ" else "chờ thanh toán", substring = true)
+                .assertTextContains(if (firstPurchase) "ngân hàng 0đ" else "chờ thanh toán", substring = true)
             compose.onNodeWithTag("commerce-next").assertIsNotEnabled()
             compose.onNodeWithText("Thanh toán thành công", substring = true).assertDoesNotExist()
             compose.onNodeWithText("Mô phỏng thành công", substring = true).assertDoesNotExist()
-            val image = File(context.getExternalFilesDir(null), "visual_checks/group-checkout-live-${if (zeroBank) "zero" else "positive"}.png")
+            val image = File(context.getExternalFilesDir(null), "visual_checks/group-checkout-live-${if (firstPurchase) "zero" else "positive"}.png")
             image.parentFile!!.mkdirs()
             image.outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
             runBlocking {
@@ -100,7 +97,6 @@ class CheckoutIntegrationServerUiTest {
                 assertEquals(hold.item.expiresAt, current.item.expiresAt)
                 assertEquals("PENDING_PAYMENT", current.item.status)
                 assertEquals(quote.bankAmount, current.item.bankAmount)
-                assertEquals(if (zeroBank) 50000L else 0L, commerce.balance())
                 assertEquals("HELD", apiSeats.seats(slot).items.first { it.id == seat }.status)
             }
             compose.runOnUiThread { seats.refreshClock() }
@@ -108,7 +104,6 @@ class CheckoutIntegrationServerUiTest {
             assertTrue(seats.secondsLeft in 1..600)
             compose.onNodeWithText("Hủy giữ ghế").performScrollTo().performClick()
             compose.waitUntil(15000) { !seats.held && !seats.confirming }
-            assertEquals(150000L, runBlocking { commerce.balance() })
         } finally {
             runBlocking { id?.let { apiSeats.cancel(it) } }
             compose.runOnUiThread { state.clear(); seats.clearSession() }

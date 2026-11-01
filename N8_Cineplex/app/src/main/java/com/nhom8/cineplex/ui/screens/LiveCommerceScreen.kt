@@ -143,12 +143,12 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                     TextButton({ state.backToCombos() }, enabled = !state.busy && !state.unknown) { Text("Đổi bắp nước") }
                 }
                 CheckoutCard {
-                    Text("Mã ưu đãi", fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(state.promo, state::promotion, Modifier.weight(1f).testTag("commerce-promo"), placeholder = { Text("Nhập mã ưu đãi") }, singleLine = true, enabled = active && !state.busy && !state.unknown && !state.confirmed)
-                        TextButton({ keyboard?.hide(); state.price() }, enabled = active && !state.busy && !state.unknown && !state.confirmed) { Text("Áp dụng") }
+                    Text("Voucher của bạn", fontWeight = FontWeight.Bold)
+                    VoucherPicker(state.vouchers, state.promo, state.quote?.subtotal?.toLong() ?: state.estimatedSubtotal,
+                        active && !state.busy && !state.unknown && !state.confirmed) { code ->
+                        state.promotion(code); state.price()
                     }
-                    Text("Credit tự áp dụng theo số dư và tổng sau giảm. Số dư khả dụng: ${vnd(state.balance)}.", color = commerceMuted, fontSize = 13.sp)
+
                 }
                 CheckoutCard {
                     Text("Chi tiết thanh toán", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -157,7 +157,6 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                         CommerceAmount("Tạm tính", vnd(q.subtotal.toLong()))
                         CommerceAmount("Ưu đãi${if (q.promotionCode.isBlank()) "" else " · ${q.promotionCode}"}", vnd(-q.discount.toLong()))
                         CommerceAmount("Tổng sau giảm", vnd(q.totalAmount.toLong()))
-                        CommerceAmount("Credit dùng cho đơn", vnd(-q.creditUsed.toLong()))
                         HorizontalDivider(color = Color(0xFFE9E4E6))
                         CommerceAmount("Còn thanh toán", vnd(q.bankAmount.toLong()), emphasized = true)
                     } ?: Text("Đang chờ giá được kiểm tra. Chưa thể xác nhận đơn.", color = commerceMuted)
@@ -165,10 +164,10 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                 if (state.confirmed && active) Text(
                     if (state.quote?.bankAmount?.toLong() == 0L)
                         "Đã xác nhận đơn — ngân hàng 0đ. Đơn vẫn chờ xử lý, chưa có vé; không cần chuyển khoản ở bước này."
-                    else "Đã xác nhận đơn — chờ thanh toán. Chưa có vé; Credit được hoàn khi hủy hoặc hết hạn.",
+                    else "Đã xác nhận đơn — chờ thanh toán. Chưa có vé.",
                     color = commerceAccent, modifier = Modifier.testTag("commerce-confirmation")
                 )
-                Text("Bước này chỉ xác nhận đơn và giữ Credit, chưa thực hiện thanh toán hoặc phát vé.", color = commerceMuted, fontSize = 12.sp)
+                Text("Bước này chỉ xác nhận đơn, chưa thực hiện thanh toán hoặc phát vé.", color = commerceMuted, fontSize = 12.sp)
                 if (state.unknown) TextButton({ seats.refresh(); state.wallet() }) { Text("Đọc lại trạng thái đơn") }
             }
             TextButton({ seats.cancelHold { state.wallet(); vm.back() } }, enabled = active && !state.busy) { Text("Hủy giữ ghế", color = commerceMuted) }
@@ -234,14 +233,4 @@ private fun CommerceAmount(label: String, value: String, emphasized: Boolean = f
         Text(label, Modifier.weight(1f), color = if (emphasized) commerceAccent else commerceMuted, fontSize = if (emphasized) 16.sp else 14.sp)
         Text(value, fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Medium, color = if (emphasized) commerceAccent else Color(0xFF20222A), fontSize = if (emphasized) 20.sp else 15.sp)
     }
-}
-
-@Composable fun LiveCreditWallet(state:LiveCommerceState,back:()->Unit){
- LaunchedEffect(Unit){state.wallet()}
- Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
- TextButton(back){Text("‹ Số dư Credit")};Text("Số dư khả dụng: ${state.balance}đ",style=MaterialTheme.typography.headlineSmall)
- Text("Credit nội bộ, không rút tiền mặt. Lịch sử giao dịch chưa được hỗ trợ.")
- if(state.message.isNotBlank())Text(state.message)
- TextButton(state::wallet){Text("Tải lại số dư")}
- }
 }

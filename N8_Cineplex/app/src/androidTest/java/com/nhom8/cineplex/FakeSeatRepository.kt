@@ -31,7 +31,7 @@ class FakeSeatRepository(val type: String="STANDARD",private val clock: ()->Long
         val chosen=items.filter { it.id in request.seatIds }
         if(chosen.size!=request.seatIds.size || chosen.any { it.status!="AVAILABLE" }) throw ApiFailure("SEAT_UNAVAILABLE","Ghế không còn khả dụng")
         val total=chosen.sumOf { it.price.toLong() }.toString(); holds++
-        val o=HoldOrder(request.key,request.showtimeId,"PENDING_PAYMENT",total,"0","0",total,total,iso(now()+600000),chosen.map { OrderSeatDto(it.id,it.seatCode,it.price) })
+        val o=HoldOrder(request.key,request.showtimeId,"PENDING_PAYMENT",total,"0",total,total,iso(now()+600000),chosen.map { OrderSeatDto(it.id,it.seatCode,it.price) })
         orders[o.id]=o; items=items.map { if(it.id in request.seatIds) it.copy(status="HELD") else it }
         if(loseResponse) { loseResponse=false; throw ApiFailure("NETWORK_ERROR","Mất phản hồi") }
         return HoldResponse(iso(now()),o)

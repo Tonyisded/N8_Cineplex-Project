@@ -10,6 +10,7 @@ import {
   Min,
   Max,
   MaxLength,
+  ValidateIf,
 } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
@@ -47,6 +48,15 @@ export class QuoteDto {
   @IsString()
   @MaxLength(32)
   promotion_code?: string;
+  @ApiProperty({
+    required: false,
+    description:
+      "Voucher selection; empty string means no voucher and no stored balance.",
+  })
+  @ValidateIf((_, value) => value !== undefined)
+  @IsString()
+  @MaxLength(32)
+  voucher_code?: string;
 }
 export class CheckoutDto {
   @ApiProperty() @IsString() @MaxLength(8192) quoteToken!: string;

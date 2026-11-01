@@ -10,7 +10,7 @@ enum class LiveCommerceStep { COMBOS, CHECKOUT }
 
 class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
     var items by mutableStateOf<List<ServerCombo>>(emptyList()); private set
-    var balance by mutableStateOf(0L); private set
+    var vouchers by mutableStateOf<List<ServerVoucher>>(emptyList()); private set
     var selected by mutableStateOf<String?>(null); private set
     var quantity by mutableStateOf(0); private set
     var promo by mutableStateOf(""); private set
@@ -31,7 +31,7 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
 
     fun clear() {
         generation++; job?.cancel(); orderId = ""; expiresAt = ""; quote = null
-        items = emptyList(); balance = 0; selected = null; quantity = 0
+        items = emptyList(); vouchers = emptyList(); selected = null; quantity = 0
         promo = ""; confirmed = false; unknown = false; busy = false; message = ""
         step = LiveCommerceStep.COMBOS; seatSubtotal = 0
     }
@@ -49,8 +49,8 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
         busy = true; message = ""
         job = viewModelScope.launch {
             try {
-                val rows = repo.combos(); val b = repo.balance()
-                if (version == generation) { items = rows; balance = b }
+                val rows = repo.combos(); val b = repo.vouchers()
+                if (version == generation) { items = rows; vouchers = b }
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
                 if (version == generation) message = e.message ?: "Không tải được danh mục. Vui lòng thử lại."
@@ -70,6 +70,7 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
     }
     fun promotion(value: String) {
         if (busy || unknown) return
+        if (value.isNotEmpty() && vouchers.none { it.code == value }) return
         promo = value; changed()
     }
     fun continueToCheckout() {
@@ -93,9 +94,9 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
                 val q = repo.quote(orderId, input)
                 if (version == generation) {
                     check(q.expiresAt == expiresAt) { "Báo giá không khớp thời hạn giữ ghế. Vui lòng kiểm tra lại đơn." }
-                    quote = q; balance = q.creditBalance.toLong()
+                    quote = q
                     if (promo.isNotBlank() && q.promotionCode.isBlank()) {
-                        promo = ""; message = "CINE20 chưa đủ điều kiện; đơn chưa được giảm giá."
+                        promo = ""; message = "Voucher chưa đủ điều kiện; đơn chưa được giảm giá."
                     }
                 }
             } catch (e: CancellationException) { throw e
@@ -117,7 +118,7 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
                     val order = result.item
                     check(order.expiresAt == expiresAt && order.subtotal == q.subtotal &&
                         order.discount == q.discount && order.totalAmount == q.totalAmount &&
-                        order.creditUsed == q.creditUsed && order.bankAmount == q.bankAmount)
+                        order.bankAmount == q.bankAmount)
                     confirmed = true; unknown = false; seats.refresh(); wallet()
                 }
             } catch (e: CancellationException) { throw e
@@ -137,11 +138,11 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
         val version = generation
         viewModelScope.launch {
             try {
-                val b = repo.balance()
-                if (version == generation) balance = b
+                val b = repo.vouchers()
+                if (version == generation) vouchers = b
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
-                if (version == generation) message = "Chưa tải được số dư. Giá cuối sẽ được kiểm tra lại khi xác nhận."
+                if (version == generation) message = "Chưa tải được voucher. Vui lòng thử lại."
             }
         }
     }

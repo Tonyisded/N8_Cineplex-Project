@@ -136,7 +136,7 @@ private fun ProfileContent(vm: CineplexViewModel, session: Session, role: String
         Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
             ProfileHeading("Bảo mật & hỗ trợ")
             Column {
-                if (session.role == Role.CUSTOMER) ProfileOption("ticket", "Số dư hoàn vé", "Xem Credit và lịch sử giao dịch mẫu", vm::credit)
+                if (session.role == Role.CUSTOMER) ProfileOption("ticket", "Voucher của tôi", "Xem ưu đãi và điều kiện sử dụng", vm::vouchers)
                 ProfileOption("lock", "Đổi mật khẩu", "Bảo vệ tài khoản của bạn") { vm.profileAction("password") }
                 ProfileOption("lock", "Chính sách bảo mật", "Cách dữ liệu được sử dụng") { vm.terms(true) }
                 ProfileOption("user", "Trợ giúp & hỗ trợ", "Giải đáp khi bạn cần") { vm.profileAction("help") }
