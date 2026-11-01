@@ -32,7 +32,12 @@ export class QuoteDto {
   @IsOptional()
   @IsUUID()
   combo_id?: string | null;
-  @ApiProperty({ minimum: 0, maximum: 9 })
+  @ApiProperty({
+    minimum: 0,
+    maximum: 9,
+    description:
+      "No combo: omit/null combo_id and quantity 0. One complete combo: UUID and integer quantity 1-9. Prices are server-calculated.",
+  })
   @IsInt()
   @Min(0)
   @Max(9)

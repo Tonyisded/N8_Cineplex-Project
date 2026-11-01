@@ -1,5 +1,18 @@
 # N8 Cineplex — Master Plan
 
+## Combo API tuần 8 của Đào Mạnh Nhân — 2026-11-01
+
+<!-- MANH_NHAN_WEEK8_COMBO_20261101 -->
+Trạng thái: **Hoàn thành phạm vi Combo API và kiểm thử tuần 8 trên local/VPS**. Kế thừa GET /combos, quote/checkout và transaction pricing/Credit đã có của Nguyên; không nhận phần nghiệp vụ kế thừa là phần viết mới. Bổ sung schema response danh mục trong Swagger và mô tả cặp combo_id/quantity. Thêm test HTTP danh mục public/read-only/rỗng/status/giá chuỗi/field projection/module wiring/OpenAPI; mở rộng HTTP quote cho quantity sai/biên 1,9/UUID uppercase/unknown/field injection; ma trận pricing/CINE20/Credit/giới hạn tiền; đổi quantity 1→9→1→0 chỉ điều chỉnh reservation delta trên cùng order/deadline. Không sửa thuật toán production, schema/migration/dependency, UI hoặc danh mục demo.
+
+Bằng chứng mới: local build/typecheck/format/Prisma validate đạt; **108/108 tests**, không fail/error/skip. Linux tools candidate giữ proxy overlay, network-none và theme readonly: **111/111** (108 public +3 proxy) đạt. Lượt đầu 110/111 do TRUST_PROXY được nạp theo cách Docker env-file khác dotenv; sửa tham số TRUST_PROXY=false riêng gate fixture, không sửa test/source hoặc cấu hình API để né lỗi. Android assembleDebug/assembleDebugAndroidTest/testDebugUnitTest/lintDebug đạt; **64/64 unit**, native **3/3** gồm LiveCommerceUiTest, đọc combos HTTPS và checkout xác thực bằng fixture mới; runner đều OK, không dùng riêng exit của adb làm bằng chứng. Chưa chạy lại toàn bộ native suite hoặc máy vật lý.
+
+VPS image `n8-cineplex-api:manh-nhan-week8-combo-20261101`, healthy/restart0/startup-success/0 ERROR-FATAL; health, Swagger và OpenAPI HTTPS 200, schema combo mới đã kiểm tra. **4/4 hash dist runtime** khớp local theo byte. So với release trước chỉ hai file production thay metadata; source nghiệp vụ và proxy overlay giữ nguyên. Đã kiểm tra archive backup hợp lệ, giữ image trước; chỉ recreate API, không thay PostgreSQL/Nginx/secrets/volume hoặc migrate/reset/restore. Key gốc không đổi, dùng bản sao ACL riêng ngoài source. Lỗi ACL key, encoding stdout, JAVA_HOME, interpreter rollback và cờ compose runner trước đó được giữ trong verification; lượt cuối đã sửa lệnh và kiểm chứng thực tế.
+
+E2E PostgreSQL/HTTPS mới: 340000−20000−150000=170000; checkout lặp không trừ thêm, hủy đồng thời/lặp chỉ hoàn một lần; hai đơn khác suất tranh cùng Credit có một thành công/một 409, số dư không âm. Cron tự EXPIRED và hoàn Credit sau 600 giây thật, quan sát 2026-11-01T14:37:45.755Z; không sửa clock/expires_at hoặc GET order kích lazy expiry lúc chờ. Ca bank_amount=0 vẫn PENDING_PAYMENT, không thanh toán/phát vé thật. Fixture chỉ UUID/run ID riêng được chấp thuận cho đợt này, không nạp lại danh mục cố định; cleanup Node và Android đạt, số dư Android 150000 trước cleanup. Đối chiếu sau cleanup không còn user/movie/room/slot/seat/order/combo của lượt Node, vẫn **10 bảng/109 cột và 9 combo**.
+
+Rollback bản sao: **BASELINE105 → MODIFIED108 → ROLLBACK105**, cùng npm test, exit0; script đã thực thi, sáu hash pristine khớp. Candidate mới vẫn giữ nguyên; patch tái tạo bảy file và ZIP đúng byte. Bốn role MODIFIED_FILE.zip/DIFF_FILE.patch/VERIFICATION.txt/ROLLBACK.sh được mở lại trong `D:\NT118\verification\manh-nhan-week8-combo-20261101`. Hai tài liệu đồng bộ, không tự đánh dấu Excel. Giới hạn: chưa kiểm tra máy vật lý/so pixel đa viewport; payment/finalization/vé/self-refund PAID và chuyển provider không thuộc đợt này. Bước tiếp: nhóm trưởng review phần Combo API/test; tiếp tục payment/finalization ở tuần 9 theo Plan.
+
 ## Công bố phần tuần 8 của Trần Thanh Nguyên — 2026-11-01
 
 <!-- NGUYEN_WEEK8_PUBLICATION_20261101 -->
