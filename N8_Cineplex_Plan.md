@@ -1,5 +1,12 @@
 # N8 Cineplex — Master Plan
 
+## Công bố checkout tích hợp tuần 8 — 2026-11-01
+
+<!-- GROUP_WEEK8_CHECKOUT_PUBLICATION_20261101 -->
+Trạng thái: **Hoàn thành công bố source checkout tích hợp tuần 8** trên nhánh `feat/manh-nhan-week8-checkout-integration`. Commit source `f0b0363a82842c927347997bd42982c2795ab377` đã push thành công (exit0), ls-remote khớp SHA; tài khoản xác thực và GitHub Author/Committer đều là Manh-Nhan299. Tên Đào Mạnh Nhân dùng noreply của chính tài khoản, không thêm đồng tác giả. Trạng thái này thay phần “chưa push” của mục bàn giao local bên dưới; giữ mục cũ làm lịch sử. Phạm vi source chỉ gồm hai file Android production, ba test files và hai MD; giữ lịch sử nền, không ghi main/force push/tự tạo hoặc merge PR.
+
+Đợt push chỉ đối chiếu hash/source đã nghiệm thu và cập nhật hai MD; không sửa thêm logic, không chạy lại build/native/VPS/fixture DB hoặc giao dịch thanh toán. Kết quả68unit,15native regression +2native UI live và rollback64→68→64 là bằng chứng của đợt tích hợp bên dưới, không coi là lượt kiểm thử mới. Ghi chú payOS ngoài phạm vi vẫn giữ local; không đưa key/env/log/verification vào Git. Chưa xác nhận CI remote. SHA cuối nhánh sau commit xác nhận tài liệu được đối chiếu sau push và lưu ngoài repo, không tự ghi trước SHA của chính nó. Bước tiếp: nhóm trưởng review nhánh và quyết định tích hợp.
+
 ## Bàn giao source checkout tuần 8 trên nhánh riêng — 2026-11-01
 
 <!-- GROUP_WEEK8_CHECKOUT_LOCAL_COMMIT_20261101 -->
