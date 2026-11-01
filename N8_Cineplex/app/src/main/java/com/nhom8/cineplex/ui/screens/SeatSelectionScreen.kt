@@ -32,6 +32,8 @@ import com.nhom8.cineplex.data.*
 import com.nhom8.cineplex.model.Movie
 import com.nhom8.cineplex.ui.CineplexViewModel
 import com.nhom8.cineplex.ui.SeatSelectionViewModel
+import com.nhom8.cineplex.ui.CommerceState
+import com.nhom8.cineplex.ui.CommercePage
 import com.nhom8.cineplex.ui.SeatViewport
 import com.nhom8.cineplex.ui.theme.CineplexColors as C
 import java.text.NumberFormat
@@ -260,24 +262,8 @@ private fun SeatDialogs(vm: CineplexViewModel,state: SeatSelectionViewModel) {
         dismissButton={TextButton({state.dismissExpired(); if(vm.screen==com.nhom8.cineplex.model.Screen.SEAT_HANDOFF) vm.back(); vm.back()}) {Text("Về lịch chiếu")} })
 }
 @Composable
-fun SeatHandoffScreen(vm: CineplexViewModel,state: SeatSelectionViewModel,movie: Movie) {
+fun SeatHandoffScreen(vm: CineplexViewModel,state: SeatSelectionViewModel,movie: Movie,commerce: CommerceState = remember { CommerceState() }) {
     val slot=vm.selectedShowtime ?: return
-    Scaffold(topBar={SeatHeader("Thông tin giữ chỗ",vm::back)},bottomBar={
-        Column(Modifier.fillMaxWidth().padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Button(vm::back,Modifier.fillMaxWidth().heightIn(min=48.dp)) {Text("Quay lại sơ đồ")}
-            TextButton({state.cancelHold(vm::back)},Modifier.fillMaxWidth(),enabled=!state.confirming && state.held) {Text("Hủy giữ chỗ")}
-        }
-    }) { insets ->
-        Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState())) {
-            BookingContext(movie,slot); HoldTime(state)
-            Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                Text(if(state.loading) "Đang tải giữ chỗ…" else if(state.held) "Đang giữ ghế" else "Giữ chỗ đã kết thúc",fontSize=24.sp,fontWeight=FontWeight.Bold)
-                state.order?.seats?.forEach { seat -> Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {Text(seat.seatCode); Text(vnd(seat.price.toLong()))} }
-                HorizontalDivider(); Text("${state.places} chỗ · ${vnd(state.total)}",fontWeight=FontWeight.Bold,color=SelectedRed,fontSize=20.sp)
-                Text("Ghế sẽ tự được giải phóng khi hết thời hạn giữ chỗ.",color=C.Muted)
-                if(state.message.isNotBlank()) Text(state.message,color=C.Error)
-            }
-        }
-    }
-    SeatDialogs(vm,state)
+    CommercePreviewScreen(vm,state,movie,slot,commerce)
+    if (commerce.page !in listOf(CommercePage.PROCESSING, CommercePage.UNKNOWN, CommercePage.SUCCESS, CommercePage.TICKET)) SeatDialogs(vm,state)
 }

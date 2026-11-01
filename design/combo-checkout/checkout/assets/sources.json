@@ -1,0 +1,20 @@
+[
+  {
+    "file": "combo.jpg",
+    "width": 800,
+    "height": 534,
+    "source": "https://images.pexels.com/photos/7234254/pexels-photo-7234254.jpeg?auto=compress&cs=tinysrgb&w=800"
+  },
+  {
+    "file": "popcorn.jpg",
+    "width": 800,
+    "height": 1067,
+    "source": "https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=max&w=800&q=85"
+  },
+  {
+    "file": "drink.jpg",
+    "width": 600,
+    "height": 900,
+    "source": "https://images.pexels.com/photos/8879626/pexels-photo-8879626.jpeg?auto=compress&cs=tinysrgb&w=600"
+  }
+]
