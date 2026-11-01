@@ -39,6 +39,7 @@ import kotlinx.coroutines.CancellationException
 import com.nhom8.cineplex.model.Screen
 import com.nhom8.cineplex.ui.CineplexViewModel
 import com.nhom8.cineplex.ui.SeatSelectionViewModel
+import com.nhom8.cineplex.ui.CommerceState
 import com.nhom8.cineplex.ui.components.CineplexDialog
 import com.nhom8.cineplex.ui.screens.*
 import com.nhom8.cineplex.ui.theme.*
@@ -57,21 +58,22 @@ class MainActivity : ComponentActivity() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = SeatSelectionViewModel(ApiSeatRepository(applicationContext, account)) as T
         })[SeatSelectionViewModel::class.java]
-        setContent { CineplexMockTheme { CineplexApp(vm, seats) } }
+        val commerce = ViewModelProvider(this)[CommerceState::class.java]
+        setContent { CineplexMockTheme { CineplexApp(vm, seats, commerce) } }
     }
 }
 @Composable
-fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember { SeatSelectionViewModel() }) {
+fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember { SeatSelectionViewModel() }, commerce: CommerceState = remember { CommerceState() }) {
     // Keep movie filters/scroll across profile navigation; tokens are handled by the repository.
     val grid = rememberLazyListState()
     val signedIn = vm.session != null
-    LaunchedEffect(signedIn) { if(!signedIn) grid.scrollToItem(0) }
+    LaunchedEffect(vm.session?.id) { if(!signedIn) { grid.scrollToItem(0); commerce.clear() } }
     fun seatBack() {
         if (seats.selected.isNotEmpty() || seats.pending != null || seats.confirming) seats.requestLeave()
         else { seats.release(); vm.back() }
     }
-    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.ageSheet || seats.leaveDialog || seats.expiredDialog || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.SHOWTIMES,Screen.SEAT_SUMMARY,Screen.SEAT_HANDOFF,Screen.PROFILE)) {
-        when { seats.leaveDialog -> seats.stay(); seats.expiredDialog -> seats.dismissExpired(); vm.screen == Screen.SEAT_SUMMARY -> seatBack(); else -> vm.back() }
+    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.ageSheet || seats.leaveDialog || seats.expiredDialog || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.SHOWTIMES,Screen.SEAT_SUMMARY,Screen.SEAT_HANDOFF,Screen.PROFILE,Screen.CREDIT)) {
+        when { seats.leaveDialog -> seats.stay(); seats.expiredDialog -> seats.dismissExpired(); vm.screen == Screen.SEAT_SUMMARY -> seatBack(); vm.screen == Screen.SEAT_HANDOFF && commerce.page in listOf(com.nhom8.cineplex.ui.CommercePage.PROCESSING, com.nhom8.cineplex.ui.CommercePage.UNKNOWN) -> commerce.transactionMessage = "Hãy kiểm tra kết quả giao dịch mẫu trước khi rời luồng."; vm.screen == Screen.SEAT_HANDOFF && commerce.page == com.nhom8.cineplex.ui.CommercePage.CHECKOUT -> commerce.page = com.nhom8.cineplex.ui.CommercePage.COMBOS; else -> vm.back() }
     }
     LaunchedEffect(vm.session?.id, vm.selectedShowtime?.id, vm.screen) {
         if(vm.session==null) seats.clearSession()
@@ -137,10 +139,11 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
                         Screen.DETAIL -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("detail-${selected.id}") { DetailExperienceScreen(vm,selected) } }
                         Screen.SHOWTIMES -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("showtimes-${selected.id}") { DetailShowtimesScreen(vm,selected) } }
                         Screen.SEAT_SUMMARY -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("seat-${vm.selectedShowtime?.id}") { SeatSelectionScreen(vm,seats,selected,::seatBack) } }
-                        Screen.SEAT_HANDOFF -> vm.movie?.let { selected -> SeatHandoffScreen(vm,seats,selected) }
+                        Screen.SEAT_HANDOFF -> vm.movie?.let { selected -> SeatHandoffScreen(vm,seats,selected,commerce) }
                         Screen.ADMIN -> AdminScreen(vm)
                         Screen.STAFF_HOME -> StaffScreen(vm)
                         Screen.PROFILE -> ProfileScreen(vm)
+                        Screen.CREDIT -> CreditWalletScreen(commerce,vm::back)
                     }
                 }
                 vm.notice?.let { CineplexDialog(it,vm::dismissNotice,vm::logout) }
