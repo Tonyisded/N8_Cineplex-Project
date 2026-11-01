@@ -59,6 +59,11 @@ class MainActivity : ComponentActivity() {
             override fun <T : ViewModel> create(modelClass: Class<T>): T = SeatSelectionViewModel(ApiSeatRepository(applicationContext, account)) as T
         })[SeatSelectionViewModel::class.java]
         val commerce = ViewModelProvider(this)[CommerceState::class.java]
+        val live = ViewModelProvider(this, object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = com.nhom8.cineplex.ui.LiveCommerceState(com.nhom8.cineplex.data.ApiCommerceRepository(account)) as T
+        })[com.nhom8.cineplex.ui.LiveCommerceState::class.java]
+        commerce.live = live
         setContent { CineplexMockTheme { CineplexApp(vm, seats, commerce) } }
     }
 }

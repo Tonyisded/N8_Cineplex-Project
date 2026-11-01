@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -26,7 +27,7 @@ import {
   type AuthRequest,
 } from "../auth/guards.js";
 import { BookingService } from "./booking.service.js";
-import { CreateOrderDto } from "./dto.js";
+import { CreateOrderDto, QuoteDto, CheckoutDto } from "./dto.js";
 
 @ApiTags("Orders")
 @ApiBearerAuth()
@@ -65,6 +66,34 @@ export class BookingController {
       showtime_id: body.showtime_id.toLowerCase(),
       seat_ids: body.seat_ids.map((id) => id.toLowerCase()),
     });
+  }
+  @Post(":id/quote")
+  @HttpCode(200)
+  @UseGuards(VerifiedEmailGuard)
+  @ApiOperation({ summary: "Preview server pricing without reserving Credit" })
+  quote(
+    @Req() req: AuthRequest,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: QuoteDto,
+  ) {
+    return this.booking.quote(id.toLowerCase(), req.user.id, body);
+  }
+  @Post(":id/checkout")
+  @HttpCode(200)
+  @UseGuards(VerifiedEmailGuard)
+  @ApiOperation({
+    summary: "Reserve Credit once for this hold; no payment or ticket yet",
+  })
+  checkout(
+    @Req() req: AuthRequest,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: CheckoutDto,
+  ) {
+    return this.booking.checkout(
+      id.toLowerCase(),
+      req.user.id,
+      body.quoteToken,
+    );
   }
   @Get(":id")
   @ApiOperation({ summary: "Read your hold, applying expiry if due" })

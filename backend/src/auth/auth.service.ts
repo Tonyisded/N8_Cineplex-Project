@@ -24,6 +24,7 @@ export const profile = (u: User) => ({
   role: u.role,
   emailVerifiedAt: u.emailVerifiedAt,
   hasPassword: u.passwordHash !== null,
+  creditBalance: u.creditBalance.toString(),
 });
 const failure = (code: string, message: string) => ({ code, message });
 const digest = (s: string) => createHash("sha256").update(s).digest("hex");

@@ -66,6 +66,7 @@ private fun PriceLine(label: String, amount: Long, emphasized: Boolean = false) 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommercePreviewScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, movie: Movie, slot: ShowtimeDto, state: CommerceState) {
+    state.live?.let { LiveCommerceScreen(vm, seats, it); return }
     LaunchedEffect(seats.order?.id) { state.bindHold(seats.order?.id) }
     var options by remember { mutableStateOf<ComboChoice?>(null) }
     var filter by remember { mutableStateOf("all") }
@@ -312,6 +313,7 @@ private fun ResultCard(title: String, detail: String, snapshot: BookingSnapshot?
 
 @Composable
 fun CreditWalletScreen(state: CommerceState, back: () -> Unit) {
+    state.live?.let { LiveCreditWallet(it, back); return }
     var detail by remember { mutableStateOf<CreditEntry?>(null) }
     Scaffold(topBar = { TextButton(back) { Text("‹  Số dư hoàn vé") } }, containerColor = Color(0xFFF6F7F9)) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
