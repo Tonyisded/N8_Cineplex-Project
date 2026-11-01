@@ -77,7 +77,7 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
         if (seats.selected.isNotEmpty() || seats.pending != null || seats.confirming) seats.requestLeave()
         else { seats.release(); vm.back() }
     }
-    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.ageSheet || seats.leaveDialog || seats.expiredDialog || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.SHOWTIMES,Screen.SEAT_SUMMARY,Screen.SEAT_HANDOFF,Screen.PROFILE,Screen.CREDIT)) {
+    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.ageSheet || seats.leaveDialog || seats.expiredDialog || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.SHOWTIMES,Screen.SEAT_SUMMARY,Screen.SEAT_HANDOFF,Screen.PROFILE,Screen.VOUCHERS)) {
         when { seats.leaveDialog -> seats.stay(); seats.expiredDialog -> seats.dismissExpired(); vm.screen == Screen.SEAT_SUMMARY -> seatBack(); vm.screen == Screen.SEAT_HANDOFF && commerce.page in listOf(com.nhom8.cineplex.ui.CommercePage.PROCESSING, com.nhom8.cineplex.ui.CommercePage.UNKNOWN) -> commerce.transactionMessage = "Hãy kiểm tra kết quả giao dịch mẫu trước khi rời luồng."; vm.screen == Screen.SEAT_HANDOFF && commerce.page == com.nhom8.cineplex.ui.CommercePage.CHECKOUT -> commerce.page = com.nhom8.cineplex.ui.CommercePage.COMBOS; else -> vm.back() }
     }
     LaunchedEffect(vm.session?.id, vm.selectedShowtime?.id, vm.screen) {
@@ -148,7 +148,7 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
                         Screen.ADMIN -> AdminScreen(vm)
                         Screen.STAFF_HOME -> StaffScreen(vm)
                         Screen.PROFILE -> ProfileScreen(vm)
-                        Screen.CREDIT -> CreditWalletScreen(commerce,vm::back)
+                        Screen.VOUCHERS -> VoucherWalletScreen(commerce,vm::back)
                     }
                 }
                 vm.notice?.let { CineplexDialog(it,vm::dismissNotice,vm::logout) }

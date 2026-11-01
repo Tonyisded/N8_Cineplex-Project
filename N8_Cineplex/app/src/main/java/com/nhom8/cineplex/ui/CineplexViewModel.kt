@@ -276,7 +276,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
         if (trailer != null) { closeTrailer(); return }
         if (notice != null) { dismissNotice(); return }
         if (dialog != null) { if (!loading) dialog = null; return }
-        when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.CREDIT -> screen = Screen.PROFILE; Screen.SEAT_HANDOFF -> screen = Screen.SEAT_SUMMARY; Screen.SEAT_SUMMARY -> { screen = seatReturnScreen; if (screen == Screen.HOME) { selectedShowtime = null; movie = null } }; Screen.SHOWTIMES -> { cancelShowtimeCheck(); screen = Screen.DETAIL }; Screen.DETAIL -> { clearScheduleSelection(); detailEpoch++; detailRequest?.cancel(); detailLoading = false; movie = null; showtimes = emptyList(); screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }
+        when (screen) { Screen.SIGNUP, Screen.STAFF -> navigate(Screen.LOGIN); Screen.VOUCHERS -> screen = Screen.PROFILE; Screen.SEAT_HANDOFF -> screen = Screen.SEAT_SUMMARY; Screen.SEAT_SUMMARY -> { screen = seatReturnScreen; if (screen == Screen.HOME) { selectedShowtime = null; movie = null } }; Screen.SHOWTIMES -> { cancelShowtimeCheck(); screen = Screen.DETAIL }; Screen.DETAIL -> { clearScheduleSelection(); detailEpoch++; detailRequest?.cancel(); detailLoading = false; movie = null; showtimes = emptyList(); screen = Screen.HOME }; Screen.PROFILE -> screen = home(); else -> Unit }
     }
     fun logout() {
         query = ""; soon = false; movie = null; navigate(Screen.LOGIN)
@@ -285,7 +285,7 @@ class CineplexViewModel(private val repository: AccountRepository? = null, priva
     fun dismissNotice() { notice = null }
     fun closeDialog() { if (!loading) { dialog = null; feedback = ""; errors = emptyMap() } }
     fun account() { if (session != null) { notice = null; screen = Screen.PROFILE; refreshProfile() } }
-    fun credit() { if (session?.role == Role.CUSTOMER && screen == Screen.PROFILE) screen = Screen.CREDIT }
+    fun vouchers() { if (session?.role == Role.CUSTOMER && screen == Screen.PROFILE) screen = Screen.VOUCHERS }
     fun refreshProfile() {
         if (session == null || repository is MockAccountAdapter || loading) return
         run { val oldEmail = session?.email; val current = repo.me(); if (oldEmail != null && current.email != oldEmail) { session = null; clearCatalog(); screen = Screen.LOGIN; repo.logout(); feedback = "Email đã thay đổi. Hãy đăng nhập lại." } else session = current }

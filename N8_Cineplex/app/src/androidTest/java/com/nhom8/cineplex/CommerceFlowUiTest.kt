@@ -48,9 +48,8 @@ class CommerceFlowUiTest {
         assertEquals(deadline, seats.deadlineMillis)
         compose.runOnUiThread {
             commerce.promoInput = "CINE20"; commerce.applyPromo(seats.total)
-            commerce.creditEdited = true; commerce.creditInput = "100000"
         }
-        assertEquals(220_000L, commerce.quote(seats.total)!!.due)
+        assertEquals(320_000L, commerce.quote(seats.total)!!.due)
         compose.onNodeWithText("Còn thanh toán").assertExists()
         compose.runOnUiThread {
             commerce.name = "Nguyễn Minh Anh"; commerce.email = "minh.anh@example.com"; commerce.phone = "0901234567"
@@ -59,20 +58,18 @@ class CommerceFlowUiTest {
         compose.onNodeWithTag("commerce-pay").performClick()
         compose.waitUntil(10000) { commerce.page == CommercePage.UNKNOWN }
         val attempt = commerce.snapshot!!.attemptId
-        assertEquals(150_000L, commerce.repository.balance)
         compose.onNodeWithText("Chưa xác định kết quả").assertIsDisplayed()
         compose.runOnUiThread { commerce.nextOutcome = "success" }
         compose.onNodeWithText("Kiểm tra lại giao dịch mẫu").performClick()
         compose.waitUntil(10000) { commerce.page == CommercePage.SUCCESS }
         assertEquals(attempt, commerce.snapshot!!.attemptId)
         compose.onNodeWithText("Mô phỏng thành công").assertIsDisplayed()
-        assertEquals(50_000L, commerce.repository.balance)
         compose.onNodeWithText("Xem vé mẫu").performClick()
         compose.onNodeWithText("Vé mẫu · không có giá trị soát vé").assertIsDisplayed()
         compose.runOnUiThread { vm.account() }
-        compose.onNodeWithText("Số dư hoàn vé").assertExists()
-        compose.runOnUiThread { vm.credit() }
-        compose.onNodeWithText("Lịch sử Credit mẫu").assertIsDisplayed()
-        compose.onNodeWithText("50.000đ").assertExists()
+        compose.onNodeWithText("Voucher của tôi").assertExists()
+        compose.runOnUiThread { vm.vouchers() }
+        compose.onNodeWithText("Ưu đãi dành cho bạn").assertIsDisplayed()
+        compose.onNodeWithTag("voucher-FIRST50").assertExists()
     }
 }

@@ -141,7 +141,7 @@ fun CommercePreviewScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, 
             Surface(color = if (seats.secondsLeft < 120) C.Primary else Color(0xFF343434), shape = RoundedCornerShape(12.dp)) {
                 Text(if (seats.held) "Thời gian giữ ghế · ${clock(seats.secondsLeft)}" else "Giữ chỗ đã kết thúc", Modifier.fillMaxWidth().padding(14.dp).testTag("seat-countdown"), color = Color.White, fontWeight = FontWeight.Bold)
             }
-            Text("BẢN XEM TRƯỚC · Chưa thanh toán hoặc cộng/trừ Credit thật", color = C.Primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("BẢN XEM TRƯỚC · Chưa thanh toán thật", color = C.Primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             if (page == CommercePage.COMBOS || page == CommercePage.CHECKOUT) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("✓ Chọn ghế", color = C.Success, fontSize = 13.sp)
@@ -211,23 +211,8 @@ fun CommercePreviewScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, 
                     }
                     CommerceCard {
                         Text("Mã ưu đãi", fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(state.promoInput, { state.promoInput = it }, Modifier.weight(1f), label = { Text("Nhập mã") }, singleLine = true)
-                            Button({ state.promoChecking = true }, enabled = !state.promoChecking) { Text(if (state.promoChecking) "…" else "Áp dụng") }
-                        }
-                        if (state.promoChecking) LaunchedEffect(state.promoInput, seatTotal, state.comboTotal) { delay(700); state.applyPromo(seatTotal); state.promoChecking = false }
+                        DemoVoucherPicker { code -> state.promoInput = code; state.applyPromo(seatTotal) }
                         if (state.promoMessage.isNotBlank()) Text(state.promoMessage, color = if (state.promoApplied.isNotBlank()) C.Success else C.Error)
-                    }
-                    CommerceCard {
-                        Text("Số dư hoàn vé", fontWeight = FontWeight.Bold)
-                        PriceLine("Số dư khả dụng mẫu", state.repository.balance)
-                        Row(verticalAlignment = Alignment.CenterVertically) { Text("Dùng Credit", Modifier.weight(1f)); Switch(state.useCredit, { state.useCredit = it }, enabled = state.repository.balance > 0) }
-                        if (state.useCredit) {
-                            OutlinedTextField(if (state.creditEdited) state.creditInput else state.creditCap(seatTotal).toString(), { state.creditEdited = true; state.creditInput = it }, Modifier.fillMaxWidth(), label = { Text("Credit sử dụng (đ)") }, singleLine = true, isError = state.creditError(seatTotal) != null)
-                            state.creditError(seatTotal)?.let { Text(it, color = C.Error, fontSize = 13.sp) }
-                        }
-                        if (state.creditNotice.isNotBlank()) Text(state.creditNotice, color = C.Success, fontSize = 13.sp)
-                        Text("Credit nội bộ dùng cho đơn sau, không rút về ngân hàng.", color = C.Muted, fontSize = 13.sp)
                     }
                     if ((quote?.due ?: 1) > 0) CommerceCard {
                         Text("Phương thức thanh toán mẫu", fontWeight = FontWeight.Bold)
@@ -242,14 +227,14 @@ fun CommercePreviewScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, 
                         PriceLine("Tổng trước giảm", seatTotal + state.comboTotal)
                         PriceLine("Giảm giá", -(quote?.discount ?: state.discount(seatTotal)))
                         PriceLine("Tổng sau giảm", (seatTotal + state.comboTotal - state.discount(seatTotal)).coerceAtLeast(0))
-                        PriceLine("Credit sử dụng", -(quote?.credit ?: 0)); HorizontalDivider()
+                        HorizontalDivider()
                         PriceLine("Còn thanh toán", shownDue, true)
                     }
                 }
                 CommercePage.PROCESSING -> ResultCard("Đang xử lý mô phỏng", "Đang chờ kết quả cho cùng một giao dịch. Không bấm thanh toán lại.", state.snapshot)
-                CommercePage.SUCCESS -> ResultCard("Mô phỏng thành công", "Đã ghi Credit trong dữ liệu mẫu đúng một lần. Không có vé hoặc giao dịch thật.", state.snapshot)
-                CommercePage.FAILED -> ResultCard("Mô phỏng thất bại", "Credit chưa bị trừ. Có thể thử lại khi phiên ghế còn hạn.", state.snapshot)
-                CommercePage.CANCELLED -> ResultCard("Đã hủy mô phỏng", "Credit chưa bị trừ.", state.snapshot)
+                CommercePage.SUCCESS -> ResultCard("Mô phỏng thành công", "Đã xác nhận trong dữ liệu mẫu. Không có vé hoặc giao dịch thật.", state.snapshot)
+                CommercePage.FAILED -> ResultCard("Mô phỏng thất bại", "Chưa thanh toán. Có thể thử lại khi phiên ghế còn hạn.", state.snapshot)
+                CommercePage.CANCELLED -> ResultCard("Đã hủy mô phỏng", "Chưa thanh toán.", state.snapshot)
                 CommercePage.UNKNOWN -> ResultCard("Chưa xác định kết quả", "Không tạo giao dịch mới. Kiểm tra lại cùng mã bên dưới.", state.snapshot)
                 CommercePage.TICKET -> {
                     ResultCard("Vé mẫu · không có giá trị soát vé", "QR chỉ mã hóa mã đơn demo; backend chưa phát hành vé.", state.snapshot)
@@ -277,7 +262,6 @@ fun CommercePreviewScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, 
                         TextButton({ state.nextOutcome = value }) { Text(label, fontSize = 11.sp) }
                     }
                 }
-                if (page != CommercePage.UNKNOWN) TextButton({ state.zeroBalanceDemo() }) { Text("Số dư 0 · lịch sử trống") }
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -309,47 +293,4 @@ private fun ResultCard(title: String, detail: String, snapshot: BookingSnapshot?
         Text(detail)
         snapshot?.let { Text("Mã giao dịch mẫu: ${it.attemptId}", fontSize = 12.sp, color = C.Muted) }
     }
-}
-
-@Composable
-fun CreditWalletScreen(state: CommerceState, back: () -> Unit) {
-    state.live?.let { LiveCreditWallet(it, back); return }
-    var detail by remember { mutableStateOf<CreditEntry?>(null) }
-    Scaffold(topBar = { TextButton(back) { Text("‹  Số dư hoàn vé") } }, containerColor = Color(0xFFF6F7F9)) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Surface(shape = RoundedCornerShape(16.dp), color = C.Primary) { Column(Modifier.fillMaxWidth().padding(24.dp)) {
-                Text("Số dư khả dụng · dữ liệu mẫu", color = Color.White)
-                Text(money(state.repository.balance), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                Text("Credit dùng cho lần đặt vé tiếp theo. Không thể rút tiền.", color = Color.White)
-            } }
-            Text("Lịch sử Credit mẫu", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            if (state.repository.entries.isEmpty()) CommerceCard {
-                Text("Chưa có giao dịch", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("Lịch sử cộng và sử dụng số dư sẽ xuất hiện tại đây.", color = C.Muted)
-            }
-            state.repository.entries.forEach { entry -> Surface(onClick = { detail = entry }, shape = RoundedCornerShape(12.dp), color = Color.White, border = BorderStroke(1.dp, C.Line)) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(Modifier.weight(1f)) {
-                        Text(entry.title, fontWeight = FontWeight.Bold)
-                        Text(entry.time.ifBlank { entry.orderId }, color = C.Muted, fontSize = 13.sp)
-                        Text(when(entry.status) { LedgerStatus.POSTED -> if (entry.amount < 0) "Đã dùng Credit" else "Đã cộng Credit"; LedgerStatus.PENDING -> "Đang xử lý · chưa cộng"; LedgerStatus.FAILED -> "Thất bại · chưa cộng" }, color = C.Muted, fontSize = 13.sp)
-                    }
-                    Text((if (entry.amount > 0) "+" else "") + money(entry.amount), color = if (entry.status == LedgerStatus.POSTED) C.Success else C.Muted)
-                }
-            } }
-            if (BuildConfig.DEBUG) TextButton(state::restoreLedgerDemo) { Text("Nạp ví dụ Credit") }
-            Text("Số dư và lịch sử này là mô phỏng trên thiết bị; backend hiện chưa cung cấp API Credit.", color = C.Muted)
-        }
-    }
-    detail?.let { entry -> AlertDialog(onDismissRequest = { detail = null }, title = { Text("Chi tiết giao dịch") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(entry.title, fontWeight = FontWeight.Bold)
-            Text("Mã giao dịch: ${entry.id}")
-            if (entry.orderId.isNotBlank()) Text("Mã đơn: ${entry.orderId}")
-            if (entry.time.isNotBlank()) Text("Thời gian: ${entry.time}")
-            Text("Số tiền: ${money(entry.amount)}")
-            entry.requested?.let { PriceLine("Đề nghị hoàn", it) }
-            entry.deduction?.let { PriceLine("Khấu trừ mẫu", it) }
-            Text(entry.note, color = C.Muted)
-        } }, confirmButton = { TextButton({ detail = null }) { Text("Đóng") } }) }
 }

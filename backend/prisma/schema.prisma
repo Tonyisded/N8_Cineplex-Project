@@ -213,6 +213,7 @@ model Order {
   showtimeId    String      @map("showtime_id") @db.Uuid
   comboId       String?     @map("combo_id") @db.Uuid
   comboQuantity Int         @default(0) @map("combo_quantity")
+  voucherCode   String?     @map("voucher_code") @db.Text
   subtotal      Decimal     @db.Decimal(14, 0)
   discount      Decimal     @default(0) @db.Decimal(14, 0)
   creditUsed    Decimal     @default(0) @map("credit_used") @db.Decimal(14, 0)
@@ -227,6 +228,7 @@ model Order {
   payments      Payment[]
   ticket        Ticket?
 
+  @@index([userId, voucherCode, status], map: "orders_user_voucher_idx")
   @@map("orders")
 }
 

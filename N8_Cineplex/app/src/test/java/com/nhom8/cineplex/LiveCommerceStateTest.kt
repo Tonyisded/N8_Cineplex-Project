@@ -11,27 +11,27 @@ class LiveCommerceStateTest {
  @After fun cleanup(){Dispatchers.resetMain()}
  @Test fun serverQuoteIsAuthoritativeAndUnknownRetriesSameToken()=runTest {
   var calls=0;val tokens=mutableListOf<String>()
-  val order=HoldOrder("order","slot","PENDING_PAYMENT","340000","20000","150000","320000","170000","2030-01-01T00:00:00Z",emptyList())
+  val order=HoldOrder("order","slot","PENDING_PAYMENT","340000","20000","320000","320000","2030-01-01T00:00:00Z",emptyList())
   val repo=object:CommerceBackend {
    override suspend fun combos()=listOf(ServerCombo("combo","Combo","", "100000",status="AVAILABLE"))
-   override suspend fun balance()=if(calls>1)0L else 150000L
-   override suspend fun quote(id:String,body:QuoteBody)=ServerQuote("340000","20000","150000","320000","170000","150000","CINE20",order.expiresAt,"same-token")
+   override suspend fun vouchers()=listOf(ServerVoucher("CINE20","Voucher","", "300000", "cinema"), ServerVoucher("FIRST50","Chào bạn mới","", "0", "welcome"))
+   override suspend fun quote(id:String,body:QuoteBody)=ServerQuote("340000","20000","320000","320000","CINE20",order.expiresAt,"same-token")
    override suspend fun checkout(id:String,token:String):HoldResponse {tokens+=token;calls++;if(calls==1)throw ApiFailure("NETWORK_ERROR","timeout");return HoldResponse("2026-11-01T00:00:00Z",order)}
   }
   val vm=LiveCommerceState(repo);vm.bind(order);advanceUntilIdle();vm.select("combo");vm.promotion("CINE20");vm.price();advanceUntilIdle()
-  assertEquals("170000",vm.quote!!.bankAmount);assertEquals(150000L,vm.balance)
+  assertEquals("320000",vm.quote!!.bankAmount)
   vm.confirm(SeatSelectionViewModel());advanceUntilIdle();assertTrue(vm.unknown);assertFalse(vm.confirmed)
   vm.confirm(SeatSelectionViewModel());advanceUntilIdle();assertTrue(vm.confirmed);assertFalse(vm.unknown);assertEquals(listOf("same-token","same-token"),tokens)
-  vm.quantity(2);assertNull(vm.quote);vm.clear();assertEquals(0L,vm.balance);assertNull(vm.selected)
+  vm.quantity(2);assertNull(vm.quote);vm.clear();assertTrue(vm.vouchers.isEmpty());assertNull(vm.selected)
  }
 
  @Test fun inlineQuantityUpdatesSubtotalWithoutNetworkAndCheckoutFetchesAutomatically()=runTest {
   var quotes=0;var commits=0;var sent:QuoteBody?=null
-  val order=HoldOrder("order","slot","PENDING_PAYMENT","320000","20000","150000","320000","170000","2030-01-01T00:00:00Z",listOf(OrderSeatDto("A1","A1","240000")))
+  val order=HoldOrder("order","slot","PENDING_PAYMENT","320000","20000","320000","320000","2030-01-01T00:00:00Z",listOf(OrderSeatDto("A1","A1","240000")))
   val repo=object:CommerceBackend {
    override suspend fun combos()=listOf(ServerCombo("a","Combo A","", "100000",status="AVAILABLE"),ServerCombo("b","Combo B","", "79000",status="AVAILABLE"),ServerCombo("sold","Hết hàng","","35000",status="UNAVAILABLE"))
-   override suspend fun balance()=150000L
-   override suspend fun quote(id:String,body:QuoteBody):ServerQuote {quotes++;sent=body;return ServerQuote("340000","0","150000","340000","190000","150000","",order.expiresAt,"token")}
+   override suspend fun vouchers()=listOf(ServerVoucher("CINE20","Voucher","", "300000", "cinema"), ServerVoucher("FIRST50","Chào bạn mới","", "0", "welcome"))
+   override suspend fun quote(id:String,body:QuoteBody):ServerQuote {quotes++;sent=body;return ServerQuote("340000","0","340000","340000","",order.expiresAt,"token")}
    override suspend fun checkout(id:String,token:String):HoldResponse {commits++;return HoldResponse("2026-11-01T00:00:00Z",order)}
   }
   val vm=LiveCommerceState(repo);vm.bind(order);advanceUntilIdle()
@@ -50,11 +50,11 @@ class LiveCommerceStateTest {
   vm.clear();assertEquals(LiveCommerceStep.COMBOS,vm.step);assertEquals(0L,vm.estimatedSubtotal)
  }
 
- private fun integrationOrder() = HoldOrder("integration-order", "slot", "PENDING_PAYMENT", "350000", "20000", "150000", "330000", "180000", "2030-01-01T00:00:00Z", listOf(OrderSeatDto("A1", "A1", "240000")), "combo", 1)
- private fun integrationQuote(o: HoldOrder) = ServerQuote(o.subtotal, o.discount, o.creditUsed, o.totalAmount, o.bankAmount, "150000", "CINE20", o.expiresAt, "integration-token")
+ private fun integrationOrder() = HoldOrder("integration-order", "slot", "PENDING_PAYMENT", "350000", "20000", "330000", "330000", "2030-01-01T00:00:00Z", listOf(OrderSeatDto("A1", "A1", "240000")), "combo", 1)
+ private fun integrationQuote(o: HoldOrder) = ServerQuote(o.subtotal, o.discount, o.totalAmount, o.bankAmount, "CINE20", o.expiresAt, "integration-token")
  private fun integrationRepo(o: HoldOrder) = object : CommerceBackend {
   override suspend fun combos() = listOf(ServerCombo("combo", "Combo", "", "100000", status = "AVAILABLE"))
-  override suspend fun balance() = 150000L
+  override suspend fun vouchers()=listOf(ServerVoucher("CINE20","Voucher","", "300000", "cinema"), ServerVoucher("FIRST50","Chào bạn mới","", "0", "welcome"))
   override suspend fun quote(id: String, body: QuoteBody) = integrationQuote(o)
   override suspend fun checkout(id: String, token: String) = HoldResponse("2026-11-01T00:00:00Z", o)
  }
@@ -83,10 +83,10 @@ class LiveCommerceStateTest {
  }
 
  @Test fun zeroBankKeepsPendingOrderAndRetriesTheSameQuote() = runTest {
-  val order = integrationOrder().copy(creditUsed = "330000", bankAmount = "0")
+  val order = integrationOrder().copy(subtotal = "0", discount = "0", totalAmount = "0", bankAmount = "0")
   val tokens = mutableListOf<String>(); var applied = false
   val repo = object : CommerceBackend by integrationRepo(order) {
-   override suspend fun balance() = if (applied) 170000L else 500000L
+   override suspend fun vouchers()=listOf(ServerVoucher("CINE20","Voucher","", "300000", "cinema"), ServerVoucher("FIRST50","Chào bạn mới","", "0", "welcome"))
    override suspend fun checkout(id: String, token: String): HoldResponse {
     assertEquals(order.id, id); tokens += token
     if (!applied) { applied = true; throw ApiFailure("NETWORK_ERROR", "lost response") }
@@ -98,7 +98,7 @@ class LiveCommerceStateTest {
   vm.price(); vm.select(null); assertEquals("integration-token", vm.quote?.quoteToken)
   vm.confirm(SeatSelectionViewModel()); advanceUntilIdle()
   assertTrue(vm.confirmed); assertFalse(vm.unknown); assertEquals("0", vm.quote?.bankAmount)
-  assertEquals(listOf("integration-token", "integration-token"), tokens); assertEquals(170000L, vm.balance)
+  assertEquals(listOf("integration-token", "integration-token"), tokens)
  }
 
  @Test fun checkoutUsesServerTotalsWithoutRestartingSeatCountdown() = runTest {
@@ -112,7 +112,7 @@ class LiveCommerceStateTest {
   assertEquals(340000L, vm.estimatedSubtotal)
   now = 120000L; seats.refreshClock(); assertEquals(480, seats.secondsLeft)
   vm.continueToCheckout(); advanceUntilIdle()
-  assertEquals("350000", vm.quote?.subtotal); assertEquals("180000", vm.quote?.bankAmount)
+  assertEquals("350000", vm.quote?.subtotal); assertEquals("330000", vm.quote?.bankAmount)
   assertTrue(vm.backToCombos()); vm.continueToCheckout(); advanceUntilIdle()
   vm.confirm(seats); advanceUntilIdle()
   assertTrue(vm.confirmed); assertEquals(deadline, seats.deadlineMillis); assertEquals(480, seats.secondsLeft); assertEquals(1, seatRepo.holds)
