@@ -1,6 +1,40 @@
 # AGENTS.md — N8 Cineplex
 
-Source of truth: `N8_Cineplex_Plan.md`.
+## Công bố phần tuần 8 của Trần Thanh Nguyên — 2026-11-01
+
+<!-- NGUYEN_WEEK8_PUBLICATION_20261101 -->
+Trạng thái: **Hoàn thành công bố source tuần8** trên nhánh `feat/thnguyen-week8-commerce`. Commit source `cb633f5a4be19d6f8207e8837c9c5ca67425a32d` đã push thành công (exit0), ls-remote khớp SHA. GitHub xác thực `thnguyen290106`; Author/Committer Trần Thanh Nguyên dùng noreply cùng tài khoản, không thêm đồng tác giả. Phạm vi chỉ gồm pricing/order/Credit tuần8, Android live và UI combo tách checkout đã kiểm chứng, cùng hai tài liệu tiến độ. Các kế hoạch chuyển đổi chưa thực hiện và ghi chú tương ứng được giữ local, không đưa vào commit. Không ghi lên main, không tự tạo/merge PR.
+
+Gate local mới: backend build/typecheck/format và105/105 tests đạt. Android assembleDebug/lint đạt; testDebugUnitTest đã thực thi lại,64/64 không fail/error/skip. Không chạy lại native/VPS/fixture DB chung hoặc giao dịch thanh toán trong đợt công bố; các kết quả VPS108/native trước đó vẫn là lịch sử có phạm vi riêng. Chưa xác nhận kết quả CI remote. Không đưa key/env/log/verification vào nhánh. Bản ghi xác nhận này chỉ cập nhật tài liệu và sửa encoding của thông báo mới; SHA cuối của nhánh được kiểm tra sau push và lưu ngoài repo. Bước tiếp: nhóm trưởng review nhánh và quyết định tích hợp.
+
+
+## UI chọn combo có ảnh và checkout tách bước — 2026-11-01
+
+Trạng thái: **Hoàn thành chỉnh UI live theo phản hồi người dùng**. Thay danh sách kỹ thuật bằng thẻ full-width có ảnh, tên/vị/cỡ, giá VND có dấu phân cách và nút −/+ ngay từng thẻ; tổng vé + bắp nước cập nhật ngay theo danh mục server. Thanh tạm tính và Tiếp tục cố định dưới màn hình, không lẫn ưu đãi/Credit ở bước chọn món. Giảm số lượng về0 bỏ món, tối đa9; chọn loại khác có xác nhận thay, vẫn đúng giới hạn một loại/đơn. Không copy banner/giá quảng cáo thương hiệu khác; dùng lại ba ảnh minh hoạ đóng gói từ design đã có, ưu tiên imageUrl server nếu có và fallback khi thiếu/lỗi.
+
+LiveCommerceStep.COMBOS → CHECKOUT: Tiếp tục tự lấy báo giá, không cần nút “Lấy báo giá máy chủ”; checkout mới hiển thị mã ưu đãi/Credit/tổng cuối từ server. Bắp nước ở breakdown lấy theo subtotal báo giá trừ giá ghế đã giữ khi có quote, không tin giá cache làm giá cuối. Ẩn bàn phím sau Áp dụng; quay lại giữ giỏ/order/deadline. Giá tạm tính không ghi DB/giữ Credit; chỉ xác nhận checkout mới gọi transaction hiện có. Unknown giữ token để retry, không tạo order/attempt mới. Nút số lượng có nhãn trợ năng; ảnh có mô tả; tiêu đề dài không tràn.
+
+Kiểm chứng: Gradle assembleDebug/assembleDebugAndroidTest/testDebugUnitTest/lintDebug đạt; **64/64 unit**, lint0 errors/51 warnings/6 hints. Native regression **13/13** (LiveCommerceUiTest, demo cũ, SeatMap7, DetailSchedule3 và GET combos HTTPS thật) đạt; lượt chốt riêng LiveCommerceUiTest **1/1** sau tinh chỉnh nhãn trợ năng/format0/breakdown đạt. Đã xem hai ảnh chụp emulator cho chọn món/checkout. Native kiểm tra ảnh, −/+, tổng cập nhật, đổi món có xác nhận, quay lại không đổi deadline, quote tự động/read-only, CINE20 và không tự hủy hold sau xác nhận. Unit thêm cap9/giảm0, số tiền ghế không cộng combo cũ lần hai, không gọi mạng mỗi lần đổi số lượng, không ghi Credit trước xác nhận, giữ retry token cũ.
+
+Rollback trên bản sao: baseline UI63 → modified64 → rollback63 unit; UI cũ native1/1 sau rollback, bảy hash trước sửa khớp. Emulator đã cài lại APK mới và mở MainActivity. Bộ bốn role cũ được mở rộng thêm UI baseline, ảnh và mode ROLLBACK.sh --combo-ui; mode rollback toàn bộ tuần8 và bằng chứng99→105→99 vẫn giữ. Đợt này đổi hai file Android production, hai test files và hai MD; 56 file backend trong candidate trước khớp byte. Không sửa API/backend/schema/dependency/dữ liệu hoặc deploy lại VPS. Kết quả backend105/VPS108, Android38 ở mục trước là lịch sử đã nghiệm thu, không phải lượt chạy mới của đợt UI này.
+
+Giới hạn: ảnh là minh hoạ; chưa thử máy vật lý/so ảnh nhiều viewport. Thanh toán/vé thật vẫn ngoài phạm vi tuần8; xác nhận đơn không có nghĩa đã mua vé. Hai tài liệu đã đồng bộ; bước tiếp là người dùng trải nghiệm UI mới và phần payment tuần9 theo Plan.
+
+## Backend pricing/order/Credit và Android thật tuần 8 — 2026-11-01
+
+Trạng thái: **Hoàn thành phạm vi tuần 8 đã chốt; chưa có thanh toán/phát vé thật**. Giữ POST /orders là bước hold ghế chưa trừ Credit; thêm POST /orders/:id/quote (không ghi dữ liệu) và POST /orders/:id/checkout (xác nhận báo giá ký HMAC, điều chỉnh reservation Credit trong transaction trên cùng order/deadline). Tự dùng tối đa Credit theo số dư cộng phần đã giữ cho chính đơn; balance += creditUsed cũ − mới. Retry báo giá đã áp dụng không trừ thêm; đổi giá/số dư/snapshot trả 409 QUOTE_CHANGED; hủy/expiry hoàn đúng một lần. Giữ DB clock/cutoff, Couple, ownership và 600 giây. Không thêm bảng/cột/migration/dependency.
+
+CINE20: trim/uppercase, giảm cố định 20.000đ khi subtotal >=300.000đ; total_amount là tổng sau promotion trước Credit. Ví dụ ghế 240.000 + combo 100.000 − 20.000 =320.000; số dư 150.000 → creditUsed150.000/bankAmount170.000. Thêm GET /combos và creditBalance ở GET /me. Theo lựa chọn người dùng, nạp 9 combo hoàn chỉnh theo tổ hợp vị/cỡ, UUID riêng cố định, 0–1 loại/đơn và quantity1–9 (không combo null/0); không bảng product/item/option hoặc CRUD Admin. Đây là phần tối thiểu giao nhau với Combo API của Đào Mạnh Nhân. Danh mục demo còn lại trên DB theo chấp thuận, khác fixture test phải cleanup.
+
+Android dùng repository thật, danh mục/báo giá/số dư server, Credit tự áp dụng; demo chỉ còn ở nhánh preview/test, không fallback khi mạng lỗi. Nhánh thật không chạy timer thành công, không hiện QR demo hoặc tự hủy hold sau xác nhận. Timeout giữ token/đơn để kiểm tra lại; giỏ đổi phải báo giá lại. Ví thật chưa cung cấp lịch sử, không lấy số dư từ ledger mẫu.
+
+Bằng chứng cuối: local backend build/typecheck/format và **105/105 tests** đạt. VPS tools Linux, proxy overlay giữ nguyên, network-none/theme readonly: **108/108** đạt (105 public +3 proxy). Android Gradle build/unit/lint đạt, **63/63 unit**, native toàn bộ **38/38** trên Pixel 10 Pro XL, không fail/skip; có repository Android gọi HTTPS thật, checkout/retry/cancel và số dư thật trên fixture. Lint 0 errors/51 warnings/5 hints. Lượt UI lỗi trước (assert nhãn cũ, 502 lúc recreate và lỗi không ổn định ở suite cũ) giữ lịch sử; sửa assertion đúng màn combo, sửa UTF-8 của pipeline, cài lại APK và chạy toàn bộ cuối đạt. Không dùng exit0 của adb thay cho kết quả runner: đã kiểm tra OK (38 tests).
+
+VPS: image candidate `n8-cineplex-api:nguyen-week8-commerce-20261101-utf8`, 7/7 hash dist runtime khớp local theo byte; healthy/unless-stopped/restart0, startup-success, 0 ERROR/FATAL, health/Swagger200, OpenAPI đủ route mới. Backup trước deploy hợp lệ; chỉ recreate API, giữ PostgreSQL/Nginx/secrets/proxy/volume và image cũ, không migrate/reset/restore/prune. Vẫn 10 bảng/109 cột, danh mục9. Truy cập bằng key .pem người dùng chỉ định qua bản sao ACL riêng vì quyền key gốc quá rộng; không sửa key gốc hoặc đưa key/credentials vào source.
+
+E2E HTTPS/PostgreSQL thật: ví dụ340000−20000−150000=170000; checkout lặp không trừ thêm, hủy đồng thời/lặp chỉ hoàn một lần; hai đơn khác suất tranh cùng số dư có một thành công/một409, không âm số dư. Cron tự expire và hoàn sau ít nhất600 giây thật, không sửa expires_at/clock hoặc đọc GET order để kích lazy expiry khi chờ; quan sát lúc09:42:06Z. Ca bank_amount0 vẫn pending, payments/tickets0; cleanup chính xác UUID của cả lượt Node và Android đạt, kiểm tra số dư Android150000 trước xóa. WebSocket HTTPS/TLS thật, JWT hợp lệ JOIN và từ chối room tùy ý đạt. Rollback bản sao: BASELINE99 → MODIFIED105 → ROLLBACK99; pristine hashes và patch tái tạo bytes được kiểm tra ngoài repo. Không rollback API/DB thật.
+
+Giới hạn chủ động: cả bank_amount0 và >0 vẫn PENDING_PAYMENT; chưa bán ghế, payment, vé/QR thật, email/FCM hoặc self-refund vé PAID. Finalization mục13.2 là mục tiêu tuần9 chưa triển khai, không coi mua vé0đ hoàn tất. Chưa thử Android vật lý hoặc so pixel nhiều viewport. Bước tiếp: phần payment/finalization tuần9 theo Plan; không tự đánh dấu Excel.
 
 ## Đối chiếu source Combo / Checkout Android — 2026-11-01
 
@@ -617,7 +651,8 @@ Backend calculates all prices.
 ```text
 subtotal = seats + combo
 final_total = subtotal - discount
-credit_used = min(user.credit_balance, final_total)
+available_credit = user.credit_balance + previous_credit_used_for_this_pending_order
+credit_used = min(available_credit, final_total)
 bank_amount = final_total - credit_used
 ```
 
@@ -635,7 +670,7 @@ Store in:
 users.credit_balance
 ```
 
-At order creation, deduct `credit_used` inside transaction.
+Initial POST /orders only holds seats. At checkout confirmation on that same pending order, reserve automatic Credit inside the transaction: budget = users.credit_balance + this order’s previous credit_used; balance += old credit_used − new credit_used. Never extend expires_at. Signed quote retry is a no-op; changed price/balance/order snapshot requires a new quote.
 
 If order expires/cancels before PAID, restore exactly once.
 
@@ -962,6 +997,8 @@ Important commands:
 
 ```text
 POST /orders
+POST /orders/:id/quote
+POST /orders/:id/checkout
 POST /orders/:id/payment
 POST /webhooks/sepay
 POST /tickets/:id/refund

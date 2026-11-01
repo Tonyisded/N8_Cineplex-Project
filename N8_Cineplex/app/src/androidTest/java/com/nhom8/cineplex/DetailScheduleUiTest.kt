@@ -88,7 +88,7 @@ class DetailScheduleUiTest {
         screenshot("seat-imax")
         compose.onNodeWithTag("seat-continue").assertIsEnabled().performClick()
         compose.waitUntil(5_000) { vm.screen == Screen.SEAT_HANDOFF }
-        compose.onNodeWithText("Thông tin giữ chỗ").assertIsDisplayed()
+        compose.onNodeWithText("Chọn bắp nước").assertIsDisplayed()
         assertNotNull(seatVm.deadlineMillis)
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { vm.screen == Screen.SEAT_SUMMARY }

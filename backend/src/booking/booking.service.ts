@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,6 +11,14 @@ import { Interval } from "@nestjs/schedule";
 import { Prisma } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma.service.js";
 import { BookingGateway, type BookingEvent } from "./booking.gateway.js";
+import { ConfigService } from "@nestjs/config";
+import {
+  calculatePrice,
+  fingerprint,
+  signQuote,
+  readQuote,
+} from "./pricing.js";
+import type { QuoteDto } from "./dto.js";
 import type { CreateOrderDto } from "./dto.js";
 
 type Tx = Prisma.TransactionClient;
@@ -43,6 +52,8 @@ export function publicOrder(order: Order) {
   return {
     id: order.id,
     showtimeId: order.showtimeId,
+    comboId: order.comboId,
+    comboQuantity: order.comboQuantity,
     status: order.status,
     subtotal: order.subtotal.toString(),
     discount: order.discount.toString(),
@@ -65,6 +76,7 @@ export class BookingService implements OnApplicationBootstrap {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: BookingGateway,
+    private readonly config: ConfigService,
   ) {}
 
   private async lockShowtime(tx: Tx, id: string) {
@@ -279,6 +291,204 @@ export class BookingService implements OnApplicationBootstrap {
     );
     this.gateway.publish(events);
     return { serverTime: new Date().toISOString(), item: publicOrder(order) };
+  }
+
+  private economic(order: Order) {
+    return [
+      order.comboId,
+      order.comboQuantity,
+      order.subtotal.toString(),
+      order.discount.toString(),
+      order.totalAmount.toString(),
+      order.creditUsed.toString(),
+    ];
+  }
+  private async pricing(tx: Tx, order: Order, body: QuoteDto) {
+    const comboId = body.combo_id?.toLowerCase() ?? null;
+    if (
+      (!comboId && body.combo_quantity !== 0) ||
+      (comboId && body.combo_quantity < 1)
+    )
+      throw new BadRequestException({
+        code: "COMBO_INVALID",
+        message: "Chọn tối đa một loại combo và số lượng hợp lệ.",
+      });
+    let combo = null;
+    if (comboId) {
+      await tx.$queryRaw`SELECT id FROM combos WHERE id=${comboId}::uuid FOR SHARE`;
+      combo = await tx.combo.findUnique({ where: { id: comboId } });
+      if (!combo || combo.status !== "AVAILABLE")
+        throw conflict("COMBO_UNAVAILABLE", "Combo không còn khả dụng.");
+    }
+    const user = await tx.user.findUniqueOrThrow({
+      where: { id: order.userId },
+    });
+    if (!user.isActive || !user.emailVerifiedAt || user.role !== "CUSTOMER")
+      throw new ForbiddenException();
+    const seats = order.seats
+      .reduce((sum, s) => sum + BigInt(s.price.toString()), 0n)
+      .toString();
+    const price = calculatePrice(
+      seats,
+      combo?.price.toString() ?? "0",
+      body.combo_quantity,
+      body.promotion_code ?? "",
+      user.creditBalance.plus(order.creditUsed).toString(),
+    );
+    return {
+      ...price,
+      comboId,
+      comboQuantity: body.combo_quantity,
+      creditBalance: user.creditBalance.toString(),
+    };
+  }
+  private async checkoutLock(tx: Tx, id: string, userId: string) {
+    const found = await tx.order.findUnique({
+      where: { id },
+      select: { userId: true, showtimeId: true },
+    });
+    if (!found || found.userId !== userId) throw missing();
+    await this.lockShowtime(tx, found.showtimeId);
+    await this.lockUsers(tx, [userId]);
+    await tx.$queryRaw`SELECT id FROM orders WHERE id=${id}::uuid FOR UPDATE`;
+    const order = await tx.order.findUniqueOrThrow({
+      where: { id },
+      include: { seats: true },
+    });
+    await tx.$queryRaw(
+      Prisma.sql`SELECT id FROM showtime_seats WHERE id IN (${Prisma.join(order.seats.map((s) => Prisma.sql`${s.showtimeSeatId}::uuid`))}) ORDER BY id FOR UPDATE`,
+    );
+    return order;
+  }
+  async quote(id: string, userId: string, body: QuoteDto) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const order = await this.checkoutLock(tx, id, userId);
+        const now = await this.now(tx);
+        if (order.status !== "PENDING_PAYMENT" || order.expiresAt <= now)
+          throw conflict("ORDER_CLOSED", "Đơn không còn hiệu lực.");
+        const price = await this.pricing(tx, order, body);
+        const target = [
+          price.comboId,
+          price.comboQuantity,
+          price.subtotal,
+          price.discount,
+          price.totalAmount,
+          price.creditUsed,
+        ];
+        const quoteToken = signQuote(
+          {
+            id,
+            userId,
+            body,
+            from: fingerprint(this.economic(order)),
+            target,
+            expiresAt: order.expiresAt.toISOString(),
+          },
+          this.config.getOrThrow<string>("JWT_ACCESS_SECRET"),
+        );
+        return {
+          serverTime: now.toISOString(),
+          item: {
+            ...price,
+            expiresAt: order.expiresAt.toISOString(),
+            quoteToken,
+          },
+        };
+      },
+      { maxWait: 10000, timeout: 15000 },
+    );
+  }
+  async checkout(id: string, userId: string, token: string) {
+    const quote = readQuote(
+      token,
+      this.config.getOrThrow<string>("JWT_ACCESS_SECRET"),
+    );
+    if (quote.id !== id || quote.userId !== userId) throw missing();
+    const events: BookingEvent[] = [];
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const order = await this.checkoutLock(tx, id, userId);
+        const now = await this.now(tx);
+        if (order.status === "PENDING_PAYMENT" && order.expiresAt <= now)
+          return {
+            closed: true,
+            order: await this.finish(tx, order, "EXPIRED", events),
+          };
+        if (order.status !== "PENDING_PAYMENT") return { closed: true, order };
+        if (quote.expiresAt !== order.expiresAt.toISOString())
+          throw conflict("QUOTE_CHANGED", "Hãy lấy lại báo giá.");
+        const current = fingerprint(this.economic(order));
+        if (current === fingerprint(quote.target))
+          return { closed: false, order };
+        if (current !== quote.from)
+          throw conflict(
+            "QUOTE_CHANGED",
+            "Đơn đã thay đổi. Hãy lấy lại báo giá.",
+          );
+        const price = await this.pricing(tx, order, quote.body);
+        const target = [
+          price.comboId,
+          price.comboQuantity,
+          price.subtotal,
+          price.discount,
+          price.totalAmount,
+          price.creditUsed,
+        ];
+        if (fingerprint(target) !== fingerprint(quote.target))
+          throw conflict(
+            "QUOTE_CHANGED",
+            "Giá hoặc số dư đã thay đổi. Hãy xác nhận báo giá mới.",
+          );
+        const seats = await tx.showtimeSeat.count({
+          where: {
+            id: { in: order.seats.map((s) => s.showtimeSeatId) },
+            status: "HELD",
+            heldByUserId: userId,
+            holdExpiresAt: order.expiresAt,
+          },
+        });
+        if (seats !== order.seats.length)
+          throw conflict("SEAT_UNAVAILABLE", "Ghế không còn thuộc đơn.");
+        if (order.expiresAt <= (await this.now(tx)))
+          return {
+            closed: true,
+            order: await this.finish(tx, order, "EXPIRED", events),
+          };
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            creditBalance: {
+              increment: order.creditUsed.minus(price.creditUsed),
+            },
+          },
+        });
+        const updated = await tx.order.update({
+          where: { id },
+          data: {
+            comboId: price.comboId,
+            comboQuantity: price.comboQuantity,
+            subtotal: price.subtotal,
+            discount: price.discount,
+            totalAmount: price.totalAmount,
+            creditUsed: price.creditUsed,
+          },
+          include: { seats: true },
+        });
+        return { closed: false, order: updated };
+      },
+      { maxWait: 10000, timeout: 15000 },
+    );
+    this.gateway.publish(events);
+    if (result.closed)
+      throw conflict(
+        "ORDER_CLOSED",
+        "Đơn đã hủy hoặc hết hạn; Credit đã được xử lý theo trạng thái đơn.",
+      );
+    return {
+      serverTime: new Date().toISOString(),
+      item: publicOrder(result.order),
+    };
   }
 
   private async transition(id: string, userId?: string, cancel = false) {

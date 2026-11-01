@@ -51,6 +51,7 @@ class DemoCommerceRepository(seed: List<CreditEntry> = listOf(
 }
 
 class CommerceState(initialRepository: CommerceRepository = DemoCommerceRepository()) : ViewModel() {
+    var live: LiveCommerceState? = null
     var repository by mutableStateOf(initialRepository); private set
     private var currentHoldId: String? = null
     var page by mutableStateOf(CommercePage.COMBOS)
@@ -133,6 +134,7 @@ class CommerceState(initialRepository: CommerceRepository = DemoCommerceReposito
         snapshot = null; transactionMessage = ""; nextOutcome = "success"
     }
     fun clear() {
+        live?.clear()
         repository = DemoCommerceRepository(); currentHoldId = null; page = CommercePage.COMBOS; cart = null
         promoInput = ""; promoApplied = ""; promoMessage = ""; promoChecking = false; creditNotice = ""
         useCredit = true; creditInput = ""; creditEdited = false; name = ""; email = ""; phone = ""; emailTouched = false
