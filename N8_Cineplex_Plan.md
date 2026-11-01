@@ -1,11 +1,12 @@
 # N8 Cineplex — Master Plan
 
-## C?ng b? ph?n tu?n 8 c?a Tr?n Thanh Nguy?n ? 2026-11-01
+## Công bố phần tuần 8 của Trần Thanh Nguyên — 2026-11-01
 
 <!-- NGUYEN_WEEK8_PUBLICATION_20261101 -->
-Tr?ng th?i: **?ang c?ng b? theo y?u c?u ng??i d?ng** tr?n nh?nh `feat/thnguyen-week8-commerce`, kh?ng ghi l?n main. GitHub ?ang x?c th?c ??ng `thnguyen290106`; Author/Committer m?i d?ng Tr?n Thanh Nguy?n v?i ??a ch? noreply c?a t?i kho?n n?y, kh?ng th?m ??ng t?c gi?. Ph?m vi ch? g?m pricing/order/Credit tu?n8, Android live v? UI combo t?ch checkout ?? ki?m ch?ng, k?m hai t?i li?u ti?n ?? t??ng ?ng. Kh?ng ??a c?c k? ho?ch chuy?n ??i ch?a th?c hi?n v?o commit.
+Trạng thái: **Hoàn thành công bố source tuần8** trên nhánh `feat/thnguyen-week8-commerce`. Commit source `cb633f5a4be19d6f8207e8837c9c5ca67425a32d` đã push thành công (exit0), ls-remote khớp SHA. GitHub xác thực `thnguyen290106`; Author/Committer Trần Thanh Nguyên dùng noreply cùng tài khoản, không thêm đồng tác giả. Phạm vi chỉ gồm pricing/order/Credit tuần8, Android live và UI combo tách checkout đã kiểm chứng, cùng hai tài liệu tiến độ. Các kế hoạch chuyển đổi chưa thực hiện và ghi chú tương ứng được giữ local, không đưa vào commit. Không ghi lên main, không tự tạo/merge PR.
 
-Gate local m?i: backend build/typecheck/format v?105/105 tests ??t. Android assembleDebug/lint ??t, testDebugUnitTest ?? ch?y l?i th?t (kh?ng UP-TO-DATE) ??t64/64, kh?ng fail/error/skip. Kh?ng ch?y l?i native/VPS/fixture DB chung ho?c giao d?ch thanh to?n trong ??t c?ng b?; c?c k?t qu? VPS108/native tr??c ?? v?n l? l?ch s? c? ph?m vi ri?ng. Ch?a nh?n k?t qu? CI remote. Kh?ng ??a key/env/log/verification ho?c file ngo?i nhi?m v? v?o nh?nh. K?t qu? commit/push v? SHA ch? x?c nh?n sau th?c thi trong b?ng ch?ng ngo?i repo, kh?ng t? ?i?n SHA c?a ch?nh b?n t?i li?u n?y.
+Gate local mới: backend build/typecheck/format và105/105 tests đạt. Android assembleDebug/lint đạt; testDebugUnitTest đã thực thi lại,64/64 không fail/error/skip. Không chạy lại native/VPS/fixture DB chung hoặc giao dịch thanh toán trong đợt công bố; các kết quả VPS108/native trước đó vẫn là lịch sử có phạm vi riêng. Chưa xác nhận kết quả CI remote. Không đưa key/env/log/verification vào nhánh. Bản ghi xác nhận này chỉ cập nhật tài liệu và sửa encoding của thông báo mới; SHA cuối của nhánh được kiểm tra sau push và lưu ngoài repo. Bước tiếp: nhóm trưởng review nhánh và quyết định tích hợp.
+
 
 ## UI chọn combo có ảnh và checkout tách bước — 2026-11-01
 
