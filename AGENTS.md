@@ -1,5 +1,25 @@
 # AGENTS.md — N8 Cineplex
 
+## Bàn giao source checkout tuần 8 trên nhánh riêng — 2026-11-01
+
+<!-- GROUP_WEEK8_CHECKOUT_LOCAL_COMMIT_20261101 -->
+Trạng thái: **Code và nghiệm thu checkout tuần 8 hoàn thành; bàn giao để review trên nhánh local `feat/manh-nhan-week8-checkout-integration`**. Phạm vi chỉ gồm hai file Android production, ba test files và hai tài liệu tiến độ. Danh tính commit Đào Mạnh Nhân dùng noreply của tài khoản Manh-Nhan299; không thêm đồng tác giả, giữ lịch sử nền của nhóm. Chỉ thực hiện commit cục bộ theo yêu cầu lần này, chưa push GitHub, không ghi main hoặc tạo/merge PR. Ghi chú kế hoạch payOS có sẵn vẫn giữ local, không đưa vào commit; key/env/log/verification không nằm trong phạm vi bàn giao. SHA commit được kiểm tra sau thao tác và ghi trong verification ngoài repo, không tự tham chiếu trước SHA của chính nó.
+
+Source/test bytes khớp candidate đã nghiệm thu; không sửa thêm logic hoặc chạy lại fixture DB/VPS/native cho bước bàn giao. Giữ bằng chứng 68 unit, 15 native regression +2 native UI live và rollback64→68→64 ở mục tích hợp bên dưới, không coi là lượt chạy mới. Hai MD được đối chiếu và kiểm tra UTF-8/diff trước commit. Bước tiếp: review source; chỉ công bố remote khi người dùng yêu cầu.
+
+## Cả nhóm tuần 8 — tích hợp checkout và ngân hàng 0đ — 2026-11-01
+
+<!-- GROUP_WEEK8_CHECKOUT_INTEGRATION_20261101 -->
+Trạng thái: **Hoàn thành tích hợp và kiểm chứng phạm vi checkout tuần 8; chưa có thanh toán/phát vé thật**. Giữ luồng live có sẵn: giữ ghế → chọn combo → quote server → checkout trên chính order, không fallback demo. Bổ sung LiveCommerceState lưu expiresAt gốc; từ chối quote đổi deadline, không đánh dấu confirmed khi checkout trả deadline hoặc subtotal/discount/totalAmount/creditUsed/bankAmount lệch quote. Phản hồi checkout không khớp giữ trạng thái unknown và token cũ để kiểm tra lại, không tạo order mới. Checkout chưa có quote hiển thị “—” cho giá bắp nước, không lấy giá cache làm breakdown cuối. Chỉ giá tạm tính bước combo được dùng cache danh mục. Ca bankAmount=0 hiển thị ngân hàng 0đ, đơn vẫn chờ xử lý/chưa có vé; không yêu cầu chuyển khoản hoặc giả báo PAID. Ẩn thông báo xác nhận cũ khi hold không còn active.
+
+Bằng chứng mới local: Gradle assembleDebug/assembleDebugAndroidTest/testDebugUnitTest/lintDebug đạt; **68/68 unit**, không fail/error/skip. Trước sửa, thêm regression tái hiện hai lỗi deadline/tổng tiền (68 tests/2 fail), sau sửa 68/68 đạt; không sửa test để bỏ qua hành vi. Unit bao phủ giá cache 100000 nhưng quote 110000, tổng sau giảm/Credit/bank server, giữ original deadline qua back/quote/confirm và hết hạn đúng mốc600, cùng token khi mất phản hồi ở ca0đ. Native regression **15/15** gồm LiveCommerce3, SeatMap7, DetailSchedule3, commerce demo1 và đọc combos HTTPS1 đạt; hai native mới kiểm chứng server total khác cache, nhánh0đ/unknown retry và không reset countdown sau120giây giả lập. Lượt native đầu lỗi do assertTextContains mặc định so khớp toàn bộ; đã giữ lỗi và đổi đúng substring=true, không sửa production để né assertion.
+
+Theo chấp thuận fixture mới cho riêng đợt này, đã chạy thêm **2/2 native UI HTTPS/PostgreSQL thật**, không chỉ repository: ca vé240000 + combo100000 − CINE20 20000 − Credit150000 = ngân hàng170000; ca vé100000 − Credit100000 = ngân hàng0, còn số dư50000. Cả hai kiểm tra UI từ quote server, back/tiếp tục/confirm/retry giữ nguyên order/expiresAt, TTL ban đầu xấp xỉ600giây theo response server, trạng thái vẫn PENDING_PAYMENT và ghế HELD; cancel hoàn đúng số dư150000. Trước cleanup payments0/tickets0; UUID tài khoản/phim/phòng/hai suất/hai ghế riêng đã dọn sạch ở cả lượt lỗi assertion và lượt cuối. Đã xem ảnh emulator thật cho checkout170000 và0đ; chưa so pixel nhiều viewport hoặc thử máy vật lý.
+
+Rollback trên bản sao: **BASELINE64 → MODIFIED68 → ROLLBACK64 unit**, cùng lệnh/input, exit0; ROLLBACK.sh --group-checkout đã thực thi, bảy hash baseline khớp và file native live mới được bỏ đúng phạm vi. Native UI baseline sau rollback **1/1** đạt; emulator được cài lại APK modified sau kiểm tra rollback. Bốn role hiện có được mở rộng bằng GROUP_CHECKOUT_BASELINE.zip, mode rollback mới, patch, ảnh và literal outputs trong D:\NT118\verification\manh-nhan-week8-combo-20261101; không thay hoặc xóa kết quả/mode commerce trước đó.
+
+Không sửa backend/API/schema/dependency, không deploy/restart VPS; kiểm tra đọc-only xác nhận image manh-nhan-week8-combo-20261101 vẫn healthy/restart0, StartedAt2026-11-01T14:26:39.692082193Z không đổi, health/Swagger/combos HTTPS200, 10 bảng/109 cột và9combo. Backend108/Linux111 và cron600 giây thật ở mục trước là lịch sử, không nhận là lượt chạy mới. Hai MD đồng bộ; không tự đánh dấu Excel hoặc công bố source mới. Giữ ghi chú payOS local ngoài phạm vi. Bước tiếp: nhóm review/trải nghiệm checkout tích hợp; payment/finalization (kể cả mua vé0đ) vẫn thuộc tuần9.
+
 ## Công bố Combo API tuần 8 của Đào Mạnh Nhân — 2026-11-01
 
 <!-- MANH_NHAN_WEEK8_COMBO_PUBLICATION_20261101 -->

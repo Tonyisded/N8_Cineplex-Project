@@ -138,7 +138,7 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                     CommerceAmount("Tiền vé", vnd(state.seatSubtotal))
                     state.chosen?.let { item ->
                         Text("${item.name} × ${state.quantity}", color = commerceMuted)
-                        CommerceAmount("Bắp nước", vnd(state.quote?.subtotal?.toLong()?.minus(state.seatSubtotal) ?: state.comboSubtotal))
+                        CommerceAmount("Bắp nước", state.quote?.subtotal?.toLong()?.minus(state.seatSubtotal)?.let(::vnd) ?: "—")
                     }
                     TextButton({ state.backToCombos() }, enabled = !state.busy && !state.unknown) { Text("Đổi bắp nước") }
                 }
@@ -162,7 +162,12 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                         CommerceAmount("Còn thanh toán", vnd(q.bankAmount.toLong()), emphasized = true)
                     } ?: Text("Đang chờ giá được kiểm tra. Chưa thể xác nhận đơn.", color = commerceMuted)
                 }
-                if (state.confirmed) Text("Đã xác nhận đơn — chờ thanh toán. Chưa có vé; Credit được hoàn khi hủy hoặc hết hạn.", color = commerceAccent)
+                if (state.confirmed && active) Text(
+                    if (state.quote?.bankAmount?.toLong() == 0L)
+                        "Đã xác nhận đơn — ngân hàng 0đ. Đơn vẫn chờ xử lý, chưa có vé; không cần chuyển khoản ở bước này."
+                    else "Đã xác nhận đơn — chờ thanh toán. Chưa có vé; Credit được hoàn khi hủy hoặc hết hạn.",
+                    color = commerceAccent, modifier = Modifier.testTag("commerce-confirmation")
+                )
                 Text("Bước này chỉ xác nhận đơn và giữ Credit, chưa thực hiện thanh toán hoặc phát vé.", color = commerceMuted, fontSize = 12.sp)
                 if (state.unknown) TextButton({ seats.refresh(); state.wallet() }) { Text("Đọc lại trạng thái đơn") }
             }

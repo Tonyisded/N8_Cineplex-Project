@@ -25,18 +25,19 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
     val comboSubtotal get() = (chosen?.price?.toLong() ?: 0L) * quantity
     val estimatedSubtotal get() = seatSubtotal + comboSubtotal
     private var orderId = ""
+    private var expiresAt = ""
     private var generation = 0
     private var job: Job? = null
 
     fun clear() {
-        generation++; job?.cancel(); orderId = ""; quote = null
+        generation++; job?.cancel(); orderId = ""; expiresAt = ""; quote = null
         items = emptyList(); balance = 0; selected = null; quantity = 0
         promo = ""; confirmed = false; unknown = false; busy = false; message = ""
         step = LiveCommerceStep.COMBOS; seatSubtotal = 0
     }
     fun bind(order: HoldOrder?) {
         if (order == null || order.id == orderId) return
-        clear(); orderId = order.id
+        clear(); orderId = order.id; expiresAt = order.expiresAt
         selected = order.comboId; quantity = order.comboQuantity
         // totalAmount may already contain a combo; seat snapshots do not.
         seatSubtotal = order.seats.sumOf { it.price.toLong() }
@@ -91,6 +92,7 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
             try {
                 val q = repo.quote(orderId, input)
                 if (version == generation) {
+                    check(q.expiresAt == expiresAt) { "Báo giá không khớp thời hạn giữ ghế. Vui lòng kiểm tra lại đơn." }
                     quote = q; balance = q.creditBalance.toLong()
                     if (promo.isNotBlank() && q.promotionCode.isBlank()) {
                         promo = ""; message = "CINE20 chưa đủ điều kiện; đơn chưa được giảm giá."
@@ -112,6 +114,10 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
                 val result = repo.checkout(orderId, q.quoteToken)
                 check(result.item.id == orderId && result.item.status == "PENDING_PAYMENT")
                 if (version == generation) {
+                    val order = result.item
+                    check(order.expiresAt == expiresAt && order.subtotal == q.subtotal &&
+                        order.discount == q.discount && order.totalAmount == q.totalAmount &&
+                        order.creditUsed == q.creditUsed && order.bankAmount == q.bankAmount)
                     confirmed = true; unknown = false; seats.refresh(); wallet()
                 }
             } catch (e: CancellationException) { throw e
