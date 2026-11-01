@@ -714,6 +714,60 @@ test("real HTTP booking validates JWT/UUID/DTO/key, refuses status/price injecti
     ).status,
     400,
   );
+  const comboId = randomUUID();
+  f.combos.set(comboId, {
+    id: comboId,
+    status: "AVAILABLE",
+    price: new Prisma.Decimal(100000),
+  });
+  const invalid = [
+    {},
+    { combo_quantity: null },
+    { combo_quantity: -1 },
+    { combo_quantity: 10 },
+    { combo_quantity: 1.5 },
+    { combo_quantity: "1" },
+    { combo_quantity: true },
+    { combo_quantity: 1 },
+    { combo_id: comboId, combo_quantity: 0 },
+    { combo_id: "bad", combo_quantity: 1 },
+    { combo_id: [comboId], combo_quantity: 1 },
+    { combo_quantity: 0, products: [] },
+    { combo_quantity: 0, credit_used: 1 },
+  ];
+  const beforeInvalid = JSON.stringify([...f.orders]);
+  for (const payload of invalid) {
+    const res = await fetch(quoteUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    assert.equal(res.status, 400, JSON.stringify(payload));
+  }
+  assert.equal(JSON.stringify([...f.orders]), beforeInvalid);
+  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
+  for (const quantity of [1, 9]) {
+    const res = await fetch(quoteUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        combo_id: comboId.toUpperCase(),
+        combo_quantity: quantity,
+      }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(
+      (await res.json()).item.subtotal,
+      String(200000 + 100000 * quantity),
+    );
+  }
+  const unknown = await fetch(quoteUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ combo_id: randomUUID(), combo_quantity: 1 }),
+  });
+  assert.equal(unknown.status, 409);
+  assert.equal((await unknown.json()).code, "COMBO_UNAVAILABLE");
   const qr = await fetch(quoteUrl, {
     method: "POST",
     headers,
@@ -967,4 +1021,41 @@ test("quote rejects invalid combo pairs, unavailable combos, wrong ownership and
   );
   assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
   assert.equal(f.orders.get(key).creditUsed.toString(), "0");
+});
+
+test("combo quantity changes and removal reserve only the delta on the same hold", async () => {
+  const f = fixture();
+  const key = randomUUID();
+  const combo = randomUUID();
+  f.seats.slice(0, 2).forEach((s) => (s.price = new Prisma.Decimal(120000)));
+  f.users.get(f.userId).creditBalance = new Prisma.Decimal(400000);
+  f.combos.set(combo, {
+    id: combo,
+    status: "AVAILABLE",
+    price: new Prisma.Decimal(100000),
+  });
+  const hold = await f.service.create(f.userId, key, body(f));
+  for (const [quantity, balance] of [
+    [1, "80000"],
+    [9, "0"],
+    [1, "80000"],
+    [0, "160000"],
+  ]) {
+    const before = JSON.stringify([...f.orders]);
+    const q = await f.service.quote(key, f.userId, {
+      combo_id: quantity ? combo : null,
+      combo_quantity: quantity,
+      promotion_code: "CINE20",
+    });
+    assert.equal(JSON.stringify([...f.orders]), before);
+    const result = await f.service.checkout(key, f.userId, q.item.quoteToken);
+    await f.service.checkout(key, f.userId, q.item.quoteToken);
+    assert.equal(result.item.comboQuantity, quantity);
+    assert.equal(result.item.comboId, quantity ? combo : null);
+    assert.equal(result.item.expiresAt, hold.item.expiresAt);
+    assert.equal(f.users.get(f.userId).creditBalance.toString(), balance);
+  }
+  await f.service.cancel(key, f.userId);
+  await f.service.cancel(key, f.userId);
+  assert.equal(f.users.get(f.userId).creditBalance.toString(), "400000");
 });
