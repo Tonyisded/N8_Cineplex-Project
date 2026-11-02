@@ -8,7 +8,7 @@ import kotlinx.coroutines.*
 
 enum class LiveCommerceStep { COMBOS, CHECKOUT }
 
-class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
+class LiveCommerceState(private val repo: CommerceBackend, val transactions: TicketsState? = null) : ViewModel() {
     var items by mutableStateOf<List<ServerCombo>>(emptyList()); private set
     var vouchers by mutableStateOf<List<ServerVoucher>>(emptyList()); private set
     var selected by mutableStateOf<String?>(null); private set
@@ -80,7 +80,7 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
         price()
     }
     fun backToCombos(): Boolean {
-        if (step != LiveCommerceStep.CHECKOUT || busy || unknown) return false
+        if (step != LiveCommerceStep.CHECKOUT || busy || unknown || (confirmed && transactions != null)) return false
         step = LiveCommerceStep.COMBOS
         return true
     }
@@ -120,6 +120,7 @@ class LiveCommerceState(private val repo: CommerceBackend) : ViewModel() {
                         order.discount == q.discount && order.totalAmount == q.totalAmount &&
                         order.bankAmount == q.bankAmount)
                     confirmed = true; unknown = false; seats.refresh(); wallet()
+                    transactions?.openPayment(orderId, expiresAt, q.bankAmount)
                 }
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {

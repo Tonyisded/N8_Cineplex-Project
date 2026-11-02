@@ -92,4 +92,24 @@ export class MailService {
       return false;
     }
   }
+  async sendTransaction(
+    to: string,
+    message: import("../notifications/transaction-email.js").TransactionEmail,
+  ) {
+    if (this.config.get<boolean>("TRANSACTION_EMAIL_ENABLED") !== true)
+      return false;
+    try {
+      await this.transport.sendMail({
+        from: {
+          name: "N8 Cineplex",
+          address: this.config.getOrThrow<string>("GMAIL_USER"),
+        },
+        to,
+        ...message,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }

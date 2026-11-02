@@ -21,8 +21,8 @@ class VoucherUiTest {
   val file=java.io.File(context.getExternalFilesDir(null),"visual_checks/voucher-picker.png")
   file.parentFile!!.mkdirs()
   file.outputStream().use { androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
-  compose.onNodeWithText("Chọn FIRST50").performClick();assertEquals("FIRST50",selected)
-  compose.onNodeWithTag("commerce-promo").performClick();compose.onNodeWithText("Không dùng voucher").performClick();assertEquals("",selected)
+  compose.onNodeWithText("Chọn FIRST50").performClick();assertEquals("",selected);compose.onNodeWithText("Áp dụng").performClick();assertEquals("FIRST50",selected)
+  compose.onNodeWithTag("commerce-promo").performClick();compose.onNodeWithText("Không dùng voucher").performClick();compose.onNodeWithText("Áp dụng").performClick();assertEquals("",selected)
  }
  @Test fun discoveryTabReplacesFilmAndAnnouncesPreparation() {
   val vm=com.nhom8.cineplex.ui.CineplexViewModel()

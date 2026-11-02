@@ -1,61 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  calculatePrice,
-  signQuote,
-  readQuote,
-} from "../dist/booking/pricing.js";
-test("promotion boundaries, exact VND and amount bounds", () => {
-  assert.equal(calculatePrice("299999", "0", 0, "CINE20", "0").discount, "0");
-  assert.equal(
-    calculatePrice("300000", "0", 0, "CINE20", "999999").bankAmount,
-    "0",
-  );
-  assert.equal(
-    calculatePrice("300000", "0", 0, "CINE20", "999999").creditUsed,
-    "280000",
-  );
-  assert.throws(() => calculatePrice("1", "0", 0, "invalid", "0"));
-  assert.throws(() => calculatePrice("99999999999999", "1", 1, "", "0"));
-  const token = signQuote({ id: "a" }, "secret");
-  assert.deepEqual(readQuote(token, "secret"), { id: "a" });
+import { signQuote, readQuote } from "../dist/booking/pricing.js";
+import { voucherPrice } from "../dist/booking/vouchers.js";
+test("signed quote roundtrip, wrong key and tampering", () => {
+  const token = signQuote({ version: 2, id: "a" }, "fixture-key");
+  assert.deepEqual(readQuote(token, "fixture-key"), { version: 2, id: "a" });
   assert.throws(() => readQuote(token, "wrong"));
+  assert.throws(() => readQuote(token + "x", "fixture-key"));
 });
-
-test("quantity, promotion and Credit matrix preserves exact money invariants", () => {
+test("voucher quantity and VND matrix; amount paid never uses an internal balance", () => {
   for (const quantity of [0, 1, 9])
-    for (const balance of [0, 150000, 320000, 2000000]) {
-      const q = calculatePrice(
-        "240000",
-        "100000",
-        quantity,
-        " cine20 ",
-        String(balance),
-      );
-      const subtotal = 240000 + 100000 * quantity;
-      const discount = subtotal >= 300000 ? 20000 : 0;
-      assert.equal(q.subtotal, String(subtotal));
-      assert.equal(q.discount, String(discount));
-      assert.equal(q.totalAmount, String(subtotal - discount));
-      assert.equal(
-        q.creditUsed,
-        String(Math.min(balance, subtotal - discount)),
-      );
-      assert.equal(
-        BigInt(q.bankAmount) + BigInt(q.creditUsed),
-        BigInt(q.totalAmount),
-      );
-      assert.ok(BigInt(q.bankAmount) >= 0n);
+    for (const code of ["", "FIRST50", "CINE20"]) {
+      const subtotal = 240000n + 100000n * BigInt(quantity);
+      if (code === "CINE20" && subtotal < 300000n) {
+        assert.throws(() => voucherPrice("240000", "100000", quantity, code));
+        continue;
+      }
+      const q = voucherPrice("240000", "100000", quantity, code);
+      const discount =
+        code === "FIRST50" ? subtotal / 2n : code === "CINE20" ? 20000n : 0n;
+      assert.equal(q.bankAmount, String(subtotal - discount));
+      assert.equal(q.totalAmount, q.bankAmount);
+      assert.ok(!("creditUsed" in q));
     }
-  for (const amount of ["299999", "300000", "300001"]) {
-    assert.equal(
-      calculatePrice(amount, "0", 0, "CINE20", "0").discount,
-      BigInt(amount) >= 300000n ? "20000" : "0",
-    );
-  }
-  assert.equal(
-    calculatePrice("99999999999999", "0", 0, "", "0").totalAmount,
-    "99999999999999",
-  );
-  assert.throws(() => calculatePrice("0", "0", 0, "", "-1"));
+  assert.throws(() => voucherPrice("99999999999999", "1", 1, ""));
+  assert.equal(voucherPrice("100001", "0", 0, "FIRST50").bankAmount, "50001");
 });

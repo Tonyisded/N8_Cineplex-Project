@@ -25,6 +25,7 @@ class SeatServerUiTest {
         assertNotNull("No live $type showtime available; do not substitute fake inventory",pair)
         val (movie,slot)=pair!!
         val connection=URL("${BuildConfig.API_BASE_URL}showtimes/${slot.id}/seats").openConnection() as HttpsURLConnection
+        connection.setRequestProperty("X-App-Version-Code", BuildConfig.VERSION_CODE.toString())
         connection.connectTimeout=15000;connection.readTimeout=25000
         val snapshot=try {assertEquals(200,connection.responseCode);Json {ignoreUnknownKeys=true}.decodeFromString<SeatResponse>(connection.inputStream.bufferedReader().use {it.readText()})} finally {connection.disconnect()}
         assertEquals(slot.totalSeats,snapshot.items.size);assertTrue(snapshot.layout.key.endsWith("v1"))
@@ -38,7 +39,7 @@ class SeatServerUiTest {
         val state=SeatSelectionViewModel(readonly)
         compose.setContent {CineplexMockTheme {CineplexApp(vm,state)}}
         compose.runOnUiThread {vm.update(AuthForm(email="user@cineplex.test",password="123456"));vm.submit()}
-        compose.waitUntil(30000) {vm.movies.isNotEmpty()}
+        compose.waitUntil(30000) {vm.session?.role==Role.CUSTOMER}
         compose.runOnUiThread {vm.selectCatalogDate(vietnamDate(java.util.Date(isoMillis(slot.startAt))))}
         compose.waitUntil(30000) {!vm.catalogLoading && vm.movies.any {it.id==movie.id}}
         compose.runOnUiThread {vm.showSlot(slot)}

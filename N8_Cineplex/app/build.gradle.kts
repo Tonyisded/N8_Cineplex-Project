@@ -14,8 +14,13 @@ android {
         applicationId = "com.nhom8.cineplex"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 7
+        versionName = "1.6-live-status"
+
+        buildConfigField("String", "FIREBASE_APPLICATION_ID", "\"${providers.gradleProperty("firebaseApplicationId").getOrElse("")}\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"${providers.gradleProperty("firebaseApiKey").getOrElse("")}\"")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${providers.gradleProperty("firebaseProjectId").getOrElse("")}\"")
+        buildConfigField("String", "FIREBASE_SENDER_ID", "\"${providers.gradleProperty("firebaseSenderId").getOrElse("")}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_BASE_URL", "\"${providers.gradleProperty("cineplexApiUrl").getOrElse("https://18.143.100.43/api/v1/")}\"")
@@ -42,7 +47,7 @@ android {
 
 dependencies {
     implementation("com.google.zxing:core:3.5.3")
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.firebase:firebase-messaging:25.0.1")
     implementation("io.socket:socket.io-client:2.1.2") { exclude(group = "org.json", module = "json") }
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:3.0.0")

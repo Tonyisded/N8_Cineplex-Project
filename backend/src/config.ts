@@ -86,8 +86,74 @@ export function validateEnvironment(env: Record<string, unknown>) {
   if (!["true", "false"].includes(String(rawCrawlerEnabled))) {
     throw new Error("CRAWLER_ENABLED must be true or false");
   }
+  const switches = [
+    "PAYMENT_LIVE_ENABLED",
+    "REFUND_PAYOUT_ENABLED",
+    "TRANSACTION_EMAIL_ENABLED",
+    "FCM_ENABLED",
+  ];
+  for (const key of switches)
+    if (!["true", "false"].includes(String(env[key] ?? "false")))
+      throw new Error(`${key} must be true or false`);
+  const enabled = (key: string) => String(env[key] ?? "false") === "true";
+  if (enabled("PAYMENT_LIVE_ENABLED") || enabled("REFUND_PAYOUT_ENABLED")) {
+    for (const key of ["TICKET_QR_SECRET", "PAYMENT_DATA_ENCRYPTION_KEY"]) {
+      if (typeof env[key] !== "string" || (env[key] as string).length < 32)
+        throw new Error(`${key} must be configured`);
+    }
+    if (!/^[a-f0-9]{64}$/i.test(String(env.PAYMENT_DATA_ENCRYPTION_KEY)))
+      throw new Error("PAYMENT_DATA_ENCRYPTION_KEY must be 64 hex characters");
+  }
+  for (const [flag, prefix] of [
+    ["PAYMENT_LIVE_ENABLED", "PAYOS_COLLECT"],
+    ["REFUND_PAYOUT_ENABLED", "PAYOS_PAYOUT"],
+  ]) {
+    if (enabled(flag))
+      for (const suffix of ["CLIENT_ID", "API_KEY", "CHECKSUM_KEY"]) {
+        const key = `${prefix}_${suffix}`;
+        if (typeof env[key] !== "string" || !(env[key] as string).trim())
+          throw new Error(`${key} must be configured`);
+      }
+  }
+  if (
+    enabled("PAYMENT_LIVE_ENABLED") &&
+    !/^\d+$/.test(String(env.PAYOS_COLLECT_ACCOUNT_NUMBER ?? ""))
+  )
+    throw new Error("PAYOS_COLLECT_ACCOUNT_NUMBER must be configured");
+  if (enabled("FCM_ENABLED"))
+    for (const key of [
+      "FIREBASE_PROJECT_ID",
+      "FIREBASE_CLIENT_EMAIL",
+      "FIREBASE_PRIVATE_KEY",
+    ]) {
+      if (typeof env[key] !== "string" || !(env[key] as string).trim())
+        throw new Error(`${key} must be configured`);
+    }
+  const minimum = Number(env.ANDROID_MIN_VERSION_CODE ?? 0),
+    latest = Number(env.ANDROID_LATEST_VERSION_CODE ?? 7);
+  if (
+    !Number.isSafeInteger(minimum) ||
+    minimum < 0 ||
+    !Number.isSafeInteger(latest) ||
+    latest < Math.max(1, minimum)
+  )
+    throw new Error("Invalid Android release versions");
+  const apkPath = String(env.ANDROID_APK_PATH ?? ""),
+    apkHash = String(env.ANDROID_APK_SHA256 ?? "");
+  if (
+    (minimum > 0 || apkPath || apkHash) &&
+    (!path.isAbsolute(apkPath) ||
+      path.extname(apkPath).toLowerCase() !== ".apk" ||
+      !/^[a-f0-9]{64}$/.test(apkHash))
+  )
+    throw new Error("Published Android APK path/hash must be configured");
   return {
     ...env,
+    ANDROID_MIN_VERSION_CODE: minimum,
+    ANDROID_LATEST_VERSION_CODE: latest,
+    ANDROID_APK_PATH: apkPath,
+    ANDROID_APK_SHA256: apkHash,
+    ...Object.fromEntries(switches.map((key) => [key, enabled(key)])),
     HOST: host,
     PORT: port,
     CRAWLER_ENABLED: String(rawCrawlerEnabled) === "true",

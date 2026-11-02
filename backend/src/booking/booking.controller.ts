@@ -39,8 +39,7 @@ export class BookingController {
   @Post()
   @UseGuards(VerifiedEmailGuard)
   @ApiOperation({
-    summary:
-      "Hold a complete seat selection for 600 seconds; no payment/credit/combo in this release",
+    summary: "Hold a complete seat selection for 600 seconds",
   })
   @ApiHeader({
     name: "Idempotency-Key",
@@ -70,7 +69,9 @@ export class BookingController {
   @Post(":id/quote")
   @HttpCode(200)
   @UseGuards(VerifiedEmailGuard)
-  @ApiOperation({ summary: "Preview server pricing without reserving Credit" })
+  @ApiOperation({
+    summary: "Preview voucher pricing without changing the order",
+  })
   quote(
     @Req() req: AuthRequest,
     @Param("id", new ParseUUIDPipe()) id: string,
@@ -82,7 +83,7 @@ export class BookingController {
   @HttpCode(200)
   @UseGuards(VerifiedEmailGuard)
   @ApiOperation({
-    summary: "Reserve Credit once for this hold; no payment or ticket yet",
+    summary: "Confirm voucher pricing on this hold before creating a payment",
   })
   checkout(
     @Req() req: AuthRequest,

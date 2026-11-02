@@ -36,13 +36,12 @@ test("owned list excludes first voucher after purchase or another active reserva
     assert.ok(result.items.some((v) => v.code === "CINE20"));
   }
 });
-test("server revalidates first purchase and same-order reservation; stored balance never reduces voucher checkout", async () => {
+test("server revalidates first purchase and same-order reservation; voucher checkout uses the full discounted bill", async () => {
   const service = new BookingService({}, {}, {});
   service.now = async () => new Date("2030-01-01");
   const order = {
     id: "order",
     userId: "owner",
-    creditUsed: new Prisma.Decimal(150000),
     seats: [{ price: new Prisma.Decimal(240000) }],
   };
   for (const [used, reserved] of [
@@ -57,7 +56,6 @@ test("server revalidates first purchase and same-order reservation; stored balan
           isActive: true,
           emailVerifiedAt: new Date(),
           role: "CUSTOMER",
-          creditBalance: new Prisma.Decimal(150000),
         }),
       },
       order: {
@@ -78,7 +76,6 @@ test("server revalidates first purchase and same-order reservation; stored balan
     else {
       const q = await run();
       assert.equal(q.bankAmount, "120000");
-      assert.equal(q.creditUsed, "0");
       assert.equal(q.voucherCode, "FIRST50");
     }
   }

@@ -43,11 +43,6 @@ export class QuoteDto {
   @Min(0)
   @Max(9)
   combo_quantity!: number;
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @IsString()
-  @MaxLength(32)
-  promotion_code?: string;
   @ApiProperty({
     required: false,
     description:

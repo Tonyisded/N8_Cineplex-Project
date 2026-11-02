@@ -45,6 +45,7 @@ private fun comboPicture(item: ServerCombo) = when {
 fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, state: LiveCommerceState) {
     LaunchedEffect(seats.order?.id) { state.bind(seats.order) }
     LaunchedEffect(seats.order?.status) { state.wallet() }
+    state.transactions?.takeIf { it.paymentOrderId != null }?.let { PaymentScreen(vm, it, if (seats.held) seats.secondsLeft else null); return }
     val active = seats.held && seats.secondsLeft > 0 && seats.online
     val choosing = state.step == LiveCommerceStep.COMBOS
     val keyboard = LocalSoftwareKeyboardController.current
@@ -54,7 +55,7 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
         containerColor = Color(0xFFF6F7F9),
         topBar = {
             TopAppBar(
-                title = { Text(if (choosing) "Bắp nước & Combo" else "Kiểm tra đơn", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                title = { Text(if (choosing) "Bắp nước & Combo" else "Thanh toán", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     TextButton({ if (choosing) vm.back() else state.backToCombos() }, enabled = !state.busy && !state.unknown, modifier = Modifier.semantics { contentDescription = if (choosing) "Quay lại chọn ghế" else "Quay lại bắp nước" }) { Text("‹", fontSize = 30.sp) }
                 },
@@ -84,16 +85,17 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                             when {
                                 choosing -> state.continueToCheckout()
                                 state.quote == null -> state.price()
+                                state.confirmed && state.transactions != null -> state.transactions.openPayment(checkNotNull(seats.order).id, checkNotNull(seats.order).expiresAt, state.quote?.bankAmount)
                                 else -> state.confirm(seats)
                             }
                         },
-                        enabled = active && !state.busy && (choosing || !state.confirmed) && (!state.unknown || !choosing),
+                        enabled = active && !state.busy && (choosing || !state.confirmed || state.transactions != null) && (!state.unknown || !choosing),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag("commerce-next"),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = commerceAccent)
                     ) {
                         if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
-                        else Text(when { choosing -> "Tiếp tục"; state.confirmed -> "Đã xác nhận đơn"; state.unknown -> "Kiểm tra lại đơn"; state.quote == null -> "Thử lại"; else -> "Xác nhận đơn" }, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        else Text(when { choosing -> "Tiếp tục"; state.unknown -> "Kiểm tra lại đơn"; state.quote == null -> "Thử lại"; else -> "Thanh toán" }, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                 }
             }
@@ -142,8 +144,7 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                     }
                     TextButton({ state.backToCombos() }, enabled = !state.busy && !state.unknown) { Text("Đổi bắp nước") }
                 }
-                CheckoutCard {
-                    Text("Voucher của bạn", fontWeight = FontWeight.Bold)
+                Column {
                     VoucherPicker(state.vouchers, state.promo, state.quote?.subtotal?.toLong() ?: state.estimatedSubtotal,
                         active && !state.busy && !state.unknown && !state.confirmed) { code ->
                         state.promotion(code); state.price()
@@ -159,15 +160,9 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                         CommerceAmount("Tổng sau giảm", vnd(q.totalAmount.toLong()))
                         HorizontalDivider(color = Color(0xFFE9E4E6))
                         CommerceAmount("Còn thanh toán", vnd(q.bankAmount.toLong()), emphasized = true)
-                    } ?: Text("Đang chờ giá được kiểm tra. Chưa thể xác nhận đơn.", color = commerceMuted)
+                    } ?: Text("Đang chờ giá được kiểm tra. Chưa thể thanh toán.", color = commerceMuted)
                 }
-                if (state.confirmed && active) Text(
-                    if (state.quote?.bankAmount?.toLong() == 0L)
-                        "Đã xác nhận đơn — ngân hàng 0đ. Đơn vẫn chờ xử lý, chưa có vé; không cần chuyển khoản ở bước này."
-                    else "Đã xác nhận đơn — chờ thanh toán. Chưa có vé.",
-                    color = commerceAccent, modifier = Modifier.testTag("commerce-confirmation")
-                )
-                Text("Bước này chỉ xác nhận đơn, chưa thực hiện thanh toán hoặc phát vé.", color = commerceMuted, fontSize = 12.sp)
+                Text("Thanh toán để mở QR đúng số tiền. Vé chỉ được phát sau khi máy chủ xác nhận thanh toán thành công.", color = commerceMuted, fontSize = 12.sp)
                 if (state.unknown) TextButton({ seats.refresh(); state.wallet() }) { Text("Đọc lại trạng thái đơn") }
             }
             TextButton({ seats.cancelHold { state.wallet(); vm.back() } }, enabled = active && !state.busy) { Text("Hủy giữ ghế", color = commerceMuted) }

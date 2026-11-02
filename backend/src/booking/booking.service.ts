@@ -13,12 +13,7 @@ import { Prisma } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma.service.js";
 import { BookingGateway, type BookingEvent } from "./booking.gateway.js";
 import { ConfigService } from "@nestjs/config";
-import {
-  calculatePrice,
-  fingerprint,
-  signQuote,
-  readQuote,
-} from "./pricing.js";
+import { fingerprint, signQuote, readQuote } from "./pricing.js";
 import type { QuoteDto } from "./dto.js";
 import type { CreateOrderDto } from "./dto.js";
 
@@ -58,9 +53,8 @@ export function publicOrder(order: Order) {
     status: order.status,
     subtotal: order.subtotal.toString(),
     discount: order.discount.toString(),
-    creditUsed: order.creditUsed.toString(),
     totalAmount: order.totalAmount.toString(),
-    bankAmount: order.totalAmount.minus(order.creditUsed).toString(),
+    bankAmount: order.totalAmount.toString(),
     expiresAt: order.expiresAt.toISOString(),
     seats: order.seats.map((s) => ({
       id: s.showtimeSeatId,
@@ -126,14 +120,9 @@ export class BookingService implements OnApplicationBootstrap {
       data: { status: "CANCELED" },
     });
     await tx.payment.updateMany({
-      where: { orderId: order.id, status: "PENDING" },
+      where: { orderId: order.id, kind: "INTENT", status: "PENDING" },
       data: { status: "EXPIRED" },
     });
-    if (order.creditUsed.greaterThan(0))
-      await tx.user.update({
-        where: { id: order.userId },
-        data: { creditBalance: { increment: order.creditUsed } },
-      });
     const result = await tx.order.update({
       where: { id: order.id },
       data: { status },
@@ -258,7 +247,6 @@ export class BookingService implements OnApplicationBootstrap {
             comboQuantity: 0,
             subtotal: total,
             discount: "0",
-            creditUsed: "0",
             totalAmount: total,
             expiresAt,
             seats: {
@@ -296,7 +284,7 @@ export class BookingService implements OnApplicationBootstrap {
 
   async vouchers(userId: string) {
     const used = await this.prisma.order.count({
-      where: { userId, status: { in: ["PAID", "REFUNDED"] } },
+      where: { userId, status: { in: ["PAID", "REFUND_PENDING", "REFUNDED"] } },
     });
     const reserved = await this.prisma.order.count({
       where: {
@@ -319,7 +307,6 @@ export class BookingService implements OnApplicationBootstrap {
       order.subtotal.toString(),
       order.discount.toString(),
       order.totalAmount.toString(),
-      order.creditUsed.toString(),
       order.voucherCode ?? null,
     ];
   }
@@ -348,12 +335,13 @@ export class BookingService implements OnApplicationBootstrap {
     const seats = order.seats
       .reduce((sum, s) => sum + BigInt(s.price.toString()), 0n)
       .toString();
-    const voucherMode = body.voucher_code !== undefined;
-    if (voucherMode && body.promotion_code)
-      throw new BadRequestException("Không cộng dồn ưu đãi.");
+
     if (body.voucher_code === "FIRST50") {
       const used = await tx.order.count({
-        where: { userId: order.userId, status: { in: ["PAID", "REFUNDED"] } },
+        where: {
+          userId: order.userId,
+          status: { in: ["PAID", "REFUND_PENDING", "REFUNDED"] },
+        },
       });
       const reserved = await tx.order.count({
         where: {
@@ -370,26 +358,17 @@ export class BookingService implements OnApplicationBootstrap {
           "Voucher lần đầu đã dùng hoặc đang giữ cho đơn khác.",
         );
     }
-    const price = voucherMode
-      ? voucherPrice(
-          seats,
-          combo?.price.toString() ?? "0",
-          body.combo_quantity,
-          body.voucher_code!,
-        )
-      : calculatePrice(
-          seats,
-          combo?.price.toString() ?? "0",
-          body.combo_quantity,
-          body.promotion_code ?? "",
-          user.creditBalance.plus(order.creditUsed).toString(),
-        );
+    const price = voucherPrice(
+      seats,
+      combo?.price.toString() ?? "0",
+      body.combo_quantity,
+      body.voucher_code ?? "",
+    );
     return {
       ...price,
       comboId,
       comboQuantity: body.combo_quantity,
-      creditBalance: user.creditBalance.toString(),
-      voucherCode: voucherMode ? body.voucher_code || null : null,
+      voucherCode: body.voucher_code || null,
     };
   }
   private async checkoutLock(tx: Tx, id: string, userId: string) {
@@ -424,11 +403,12 @@ export class BookingService implements OnApplicationBootstrap {
           price.subtotal,
           price.discount,
           price.totalAmount,
-          price.creditUsed,
           price.voucherCode,
         ];
         const quoteToken = signQuote(
           {
+            version: 2,
+            revision: order.checkoutRevision,
             id,
             userId,
             body,
@@ -456,6 +436,8 @@ export class BookingService implements OnApplicationBootstrap {
       this.config.getOrThrow<string>("JWT_ACCESS_SECRET"),
     );
     if (quote.id !== id || quote.userId !== userId) throw missing();
+    if (quote.version !== 2)
+      throw conflict("QUOTE_CHANGED", "Hãy lấy lại báo giá mới.");
     const events: BookingEvent[] = [];
     const result = await this.prisma.$transaction(
       async (tx) => {
@@ -470,8 +452,25 @@ export class BookingService implements OnApplicationBootstrap {
         if (quote.expiresAt !== order.expiresAt.toISOString())
           throw conflict("QUOTE_CHANGED", "Hãy lấy lại báo giá.");
         const current = fingerprint(this.economic(order));
-        if (current === fingerprint(quote.target))
+        if (
+          current === fingerprint(quote.target) &&
+          order.checkoutConfirmedAt &&
+          order.checkoutRevision === quote.revision + 1
+        )
           return { closed: false, order };
+        if (order.checkoutRevision !== quote.revision)
+          throw conflict(
+            "QUOTE_CHANGED",
+            "Báo giá đã cũ; hãy lấy lại báo giá.",
+          );
+        const intent = await tx.payment.findFirst({
+          where: { intentOrderId: id },
+        });
+        if (intent)
+          throw conflict(
+            "PAYMENT_LOCKED",
+            "Đơn đã có thanh toán; không đổi giá hoặc giỏ.",
+          );
         if (current !== quote.from)
           throw conflict(
             "QUOTE_CHANGED",
@@ -484,13 +483,12 @@ export class BookingService implements OnApplicationBootstrap {
           price.subtotal,
           price.discount,
           price.totalAmount,
-          price.creditUsed,
           price.voucherCode,
         ];
         if (fingerprint(target) !== fingerprint(quote.target))
           throw conflict(
             "QUOTE_CHANGED",
-            "Giá hoặc số dư đã thay đổi. Hãy xác nhận báo giá mới.",
+            "Giá đã thay đổi. Hãy xác nhận báo giá mới.",
           );
         const seats = await tx.showtimeSeat.count({
           where: {
@@ -507,14 +505,6 @@ export class BookingService implements OnApplicationBootstrap {
             closed: true,
             order: await this.finish(tx, order, "EXPIRED", events),
           };
-        await tx.user.update({
-          where: { id: userId },
-          data: {
-            creditBalance: {
-              increment: order.creditUsed.minus(price.creditUsed),
-            },
-          },
-        });
         const updated = await tx.order.update({
           where: { id },
           data: {
@@ -523,8 +513,9 @@ export class BookingService implements OnApplicationBootstrap {
             subtotal: price.subtotal,
             discount: price.discount,
             totalAmount: price.totalAmount,
-            creditUsed: price.creditUsed,
             voucherCode: price.voucherCode,
+            checkoutConfirmedAt: now,
+            checkoutRevision: { increment: 1 },
           },
           include: { seats: true },
         });
@@ -534,10 +525,7 @@ export class BookingService implements OnApplicationBootstrap {
     );
     this.gateway.publish(events);
     if (result.closed)
-      throw conflict(
-        "ORDER_CLOSED",
-        "Đơn đã hủy hoặc hết hạn; Credit đã được xử lý theo trạng thái đơn.",
-      );
+      throw conflict("ORDER_CLOSED", "Đơn đã hủy hoặc hết hạn.");
     return {
       serverTime: new Date().toISOString(),
       item: publicOrder(result.order),

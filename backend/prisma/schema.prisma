@@ -67,6 +67,7 @@ enum OrderStatus {
   EXPIRED
   CANCELED
   REFUNDED
+  REFUND_PENDING
 }
 
 enum OrderSeatStatus {
@@ -74,6 +75,12 @@ enum OrderSeatStatus {
   ACTIVE
   CANCELED
   REFUNDED
+}
+
+enum PaymentKind {
+  INTENT
+  RECEIPT
+  REFUND
 }
 
 enum PaymentStatus {
@@ -91,6 +98,7 @@ enum PaymentIssueReason {
 }
 
 enum TicketStatus {
+  REFUND_PENDING
   VALID
   USED
   REFUNDED
@@ -108,7 +116,6 @@ model User {
   role             Role           @default(CUSTOMER)
   isActive         Boolean        @default(true) @map("is_active")
   emailVerifiedAt  DateTime?      @map("email_verified_at") @db.Timestamptz(3)
-  creditBalance    Decimal        @default(0) @map("credit_balance") @db.Decimal(14, 0)
   refreshTokenHash String?        @map("refresh_token_hash") @db.Text
   fcmToken         String?        @map("fcm_token") @db.Text
   orders           Order[]
@@ -213,10 +220,11 @@ model Order {
   showtimeId    String      @map("showtime_id") @db.Uuid
   comboId       String?     @map("combo_id") @db.Uuid
   comboQuantity Int         @default(0) @map("combo_quantity")
+  checkoutRevision Int @default(0) @map("checkout_revision")
+  checkoutConfirmedAt DateTime? @map("checkout_confirmed_at") @db.Timestamptz(3)
   voucherCode   String?     @map("voucher_code") @db.Text
   subtotal      Decimal     @db.Decimal(14, 0)
   discount      Decimal     @default(0) @db.Decimal(14, 0)
-  creditUsed    Decimal     @default(0) @map("credit_used") @db.Decimal(14, 0)
   totalAmount   Decimal     @map("total_amount") @db.Decimal(14, 0)
   status        OrderStatus @default(PENDING_PAYMENT)
   expiresAt     DateTime    @map("expires_at") @db.Timestamptz(3)
@@ -248,7 +256,7 @@ model OrderSeat {
 
 model Payment {
   id                    String              @id @default(uuid()) @db.Uuid
-  orderId               String              @map("order_id") @db.Uuid
+  orderId               String?              @map("order_id") @db.Uuid
   paymentCode           String              @unique @map("payment_code") @db.Text
   expectedAmount        Decimal             @map("expected_amount") @db.Decimal(14, 0)
   receivedAmount        Decimal?            @map("received_amount") @db.Decimal(14, 0)
@@ -259,7 +267,26 @@ model Payment {
   expiresAt             DateTime            @map("expires_at") @db.Timestamptz(3)
   paidAt                DateTime?           @map("paid_at") @db.Timestamptz(3)
   createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  order                 Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order                 Order?               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  kind PaymentKind @default(INTENT)
+  intentOrderId String? @unique @map("intent_order_id") @db.Uuid
+  refundOrderId String? @unique @map("refund_order_id") @db.Uuid
+  parentId String? @map("parent_id") @db.Uuid
+  parent Payment? @relation("PaymentParent", fields:[parentId], references:[id], onDelete:Restrict)
+  children Payment[] @relation("PaymentParent")
+  providerOrderCode BigInt? @unique @map("provider_order_code")
+  providerObjectId String? @unique @map("provider_object_id") @db.Text
+  operationState String @default("REQUESTED") @map("operation_state") @db.Text
+  recipientCipher String? @map("recipient_cipher") @db.Text
+  snapshot Json @default("{}")
+  notificationState Json @default("{}") @map("notification_state")
+  attempts Int @default(0)
+  nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz(3)
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  resolvedBy String? @map("resolved_by") @db.Uuid
+  resolutionNote String? @map("resolution_note") @db.Text
+  @@index([kind,operationState,nextAttemptAt], map: "payments_work_idx")
 
   @@map("payments")
 }
@@ -275,6 +302,11 @@ model Ticket {
   comboRedeemedAt DateTime?    @map("combo_redeemed_at") @db.Timestamptz(3)
   refundedAt      DateTime?    @map("refunded_at") @db.Timestamptz(3)
   cancelledAt     DateTime?    @map("cancelled_at") @db.Timestamptz(3)
+  snapshot Json @default("{}")
+  emailAttempts Int @default(0) @map("email_attempts")
+  emailNextAttemptAt DateTime? @map("email_next_attempt_at") @db.Timestamptz(3)
+  emailLeaseUntil DateTime? @map("email_lease_until") @db.Timestamptz(3)
+  fcmSentAt DateTime? @map("fcm_sent_at") @db.Timestamptz(3)
   emailSentAt     DateTime?    @map("email_sent_at") @db.Timestamptz(3)
   expiresAt       DateTime     @map("expires_at") @db.Timestamptz(3)
   order           Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)

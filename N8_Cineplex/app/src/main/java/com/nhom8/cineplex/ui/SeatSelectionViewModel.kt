@@ -111,7 +111,7 @@ class SeatSelectionViewModel(private val repository: SeatRepository? = null,
     private suspend fun accept(response: HoldResponse,expected: HoldRequest) {
         val current=response.item
         check(current.showtimeId==expected.showtimeId && current.id==expected.key)
-        check(current.status in setOf("PENDING_PAYMENT","EXPIRED","CANCELED","PAID","REFUNDED"))
+        check(current.status in setOf("PENDING_PAYMENT","EXPIRED","CANCELED","PAID","REFUND_PENDING","REFUNDED"))
         check(current.seats.map { it.id }.sorted()==expected.seatIds.sorted())
         isoMillis(response.serverTime); isoMillis(current.expiresAt); check(current.totalAmount.toLong()>=0)
         if(request?.key!=expected.key || current.showtimeId!=showtimeId) return

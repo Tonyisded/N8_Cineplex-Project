@@ -45,11 +45,20 @@ import com.nhom8.cineplex.ui.screens.*
 import com.nhom8.cineplex.ui.theme.*
 
 class MainActivity : ComponentActivity() {
+    private var pendingTicketId by mutableStateOf<String?>(null)
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        pendingTicketId = com.nhom8.cineplex.data.TicketPush.ticketId(intent.getStringExtra("ticketId") ?: intent.getStringExtra("ticket_id"))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT))
         val account = ApiAccountRepository(applicationContext)
+        pendingTicketId = com.nhom8.cineplex.data.TicketPush.ticketId(intent.getStringExtra("ticketId") ?: intent.getStringExtra("ticket_id"))
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) com.nhom8.cineplex.data.TicketPush.sync(applicationContext, account)
+        })
         val vm = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = CineplexViewModel(account, ApiCatalogRepository()) as T
@@ -59,12 +68,37 @@ class MainActivity : ComponentActivity() {
             override fun <T : ViewModel> create(modelClass: Class<T>): T = SeatSelectionViewModel(ApiSeatRepository(applicationContext, account)) as T
         })[SeatSelectionViewModel::class.java]
         val commerce = ViewModelProvider(this)[CommerceState::class.java]
+        val transactions = ViewModelProvider(this, object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = com.nhom8.cineplex.ui.TicketsState(com.nhom8.cineplex.data.ApiTicketsRepository(account)) as T
+        })[com.nhom8.cineplex.ui.TicketsState::class.java]
         val live = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = com.nhom8.cineplex.ui.LiveCommerceState(com.nhom8.cineplex.data.ApiCommerceRepository(account)) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = com.nhom8.cineplex.ui.LiveCommerceState(com.nhom8.cineplex.data.ApiCommerceRepository(account), transactions) as T
         })[com.nhom8.cineplex.ui.LiveCommerceState::class.java]
         commerce.live = live
-        setContent { CineplexMockTheme { CineplexApp(vm, seats, commerce) } }
+        val appVersion = ViewModelProvider(this, object: ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST") override fun <T: ViewModel> create(modelClass: Class<T>): T = com.nhom8.cineplex.ui.AppVersionState(com.nhom8.cineplex.data.ApiVersionRepository()) as T
+        })[com.nhom8.cineplex.ui.AppVersionState::class.java]
+        setContent {
+            val permission = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+                if (granted) com.nhom8.cineplex.data.TicketPush.sync(applicationContext, account)
+            }
+            LaunchedEffect(vm.session?.id, pendingTicketId) {
+                transactions.bindUser(vm.session?.id)
+                if (vm.session?.role == com.nhom8.cineplex.model.Role.CUSTOMER) {
+                    pendingTicketId?.let { id -> transactions.closePayment(); vm.tickets(); transactions.openTicket(id); pendingTicketId = null }
+                    if (com.nhom8.cineplex.data.TicketPush.initialize(applicationContext)) {
+                        val prefs = getSharedPreferences("ticket-notifications", MODE_PRIVATE)
+                        if (android.os.Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("permission-requested", false)) {
+                            prefs.edit().putBoolean("permission-requested", true).apply()
+                            permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        } else com.nhom8.cineplex.data.TicketPush.sync(applicationContext, account)
+                    }
+                }
+            }
+            CineplexMockTheme { com.nhom8.cineplex.ui.screens.AppUpdateGate(appVersion) { CineplexApp(vm, seats, commerce) } }
+        }
     }
 }
 @Composable
@@ -72,12 +106,12 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
     // Keep movie filters/scroll across profile navigation; tokens are handled by the repository.
     val grid = rememberLazyListState()
     val signedIn = vm.session != null
-    LaunchedEffect(vm.session?.id) { if(!signedIn) { grid.scrollToItem(0); commerce.clear() } }
+    LaunchedEffect(vm.session?.id) { commerce.live?.transactions?.bindUser(vm.session?.id); if(!signedIn) { grid.scrollToItem(0); commerce.clear(); commerce.live?.transactions?.clear() } }
     fun seatBack() {
         if (seats.selected.isNotEmpty() || seats.pending != null || seats.confirming) seats.requestLeave()
         else { seats.release(); vm.back() }
     }
-    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.ageSheet || seats.leaveDialog || seats.expiredDialog || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.SHOWTIMES,Screen.SEAT_SUMMARY,Screen.SEAT_HANDOFF,Screen.PROFILE,Screen.VOUCHERS)) {
+    BackHandler(vm.trailer != null || vm.notice != null || vm.dialog != null || vm.ageSheet || seats.leaveDialog || seats.expiredDialog || vm.screen in listOf(Screen.SIGNUP,Screen.STAFF,Screen.DETAIL,Screen.SHOWTIMES,Screen.SEAT_SUMMARY,Screen.SEAT_HANDOFF,Screen.PROFILE,Screen.VOUCHERS,Screen.TICKETS)) {
         when { seats.leaveDialog -> seats.stay(); seats.expiredDialog -> seats.dismissExpired(); vm.screen == Screen.SEAT_SUMMARY -> seatBack(); vm.screen == Screen.SEAT_HANDOFF && commerce.page in listOf(com.nhom8.cineplex.ui.CommercePage.PROCESSING, com.nhom8.cineplex.ui.CommercePage.UNKNOWN) -> commerce.transactionMessage = "Hãy kiểm tra kết quả giao dịch mẫu trước khi rời luồng."; vm.screen == Screen.SEAT_HANDOFF && commerce.page == com.nhom8.cineplex.ui.CommercePage.CHECKOUT -> commerce.page = com.nhom8.cineplex.ui.CommercePage.COMBOS; else -> vm.back() }
     }
     LaunchedEffect(vm.session?.id, vm.selectedShowtime?.id, vm.screen) {
@@ -98,7 +132,7 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, vm) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { seats.refreshClock(); vm.refreshProfile(); vm.refreshCatalog() } }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { seats.refreshClock(); vm.refreshProfile(); vm.refreshCatalog();  } }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
@@ -145,10 +179,11 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
                         Screen.SHOWTIMES -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("showtimes-${selected.id}") { DetailShowtimesScreen(vm,selected) } }
                         Screen.SEAT_SUMMARY -> vm.movie?.let { selected -> savedScreens.SaveableStateProvider("seat-${vm.selectedShowtime?.id}") { SeatSelectionScreen(vm,seats,selected,::seatBack) } }
                         Screen.SEAT_HANDOFF -> vm.movie?.let { selected -> SeatHandoffScreen(vm,seats,selected,commerce) }
-                        Screen.ADMIN -> AdminScreen(vm)
+                        Screen.ADMIN -> AdminScreen(vm, commerce.live?.transactions)
                         Screen.STAFF_HOME -> StaffScreen(vm)
                         Screen.PROFILE -> ProfileScreen(vm)
                         Screen.VOUCHERS -> VoucherWalletScreen(commerce,vm::back)
+                        Screen.TICKETS -> TicketsScreen(vm,commerce.live?.transactions)
                     }
                 }
                 vm.notice?.let { CineplexDialog(it,vm::dismissNotice,vm::logout) }

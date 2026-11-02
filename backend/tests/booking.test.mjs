@@ -89,7 +89,6 @@ function fixture(now = () => new Date()) {
         role: "CUSTOMER",
         isActive: true,
         emailVerifiedAt: new Date(),
-        creditBalance: new Prisma.Decimal(1000),
       },
     ]),
   );
@@ -134,11 +133,6 @@ function fixture(now = () => new Date()) {
     user: {
       findUnique: async (q) => users.get(q.where.id),
       findUniqueOrThrow: async (q) => users.get(q.where.id),
-      update: async (q) => {
-        const u = users.get(q.where.id);
-        u.creditBalance = u.creditBalance.plus(q.data.creditBalance.increment);
-        return u;
-      },
     },
     combo: { findUnique: async (q) => combos.get(q.where.id) },
     showtime: {
@@ -189,9 +183,9 @@ function fixture(now = () => new Date()) {
         const o = {
           ...d,
           status: "PENDING_PAYMENT",
+          checkoutRevision: 0,
           subtotal: new Prisma.Decimal(d.subtotal),
           discount: new Prisma.Decimal(d.discount),
-          creditUsed: new Prisma.Decimal(d.creditUsed),
           totalAmount: new Prisma.Decimal(d.totalAmount),
           seats: d.seats.create.map((s) => ({
             ...s,
@@ -204,8 +198,11 @@ function fixture(now = () => new Date()) {
       },
       update: async (q) => {
         const o = orders.get(q.where.id);
+        const revision = o.checkoutRevision;
         Object.assign(o, q.data);
-        for (const k of ["subtotal", "discount", "creditUsed", "totalAmount"])
+        if (q.data.checkoutRevision)
+          o.checkoutRevision = revision + q.data.checkoutRevision.increment;
+        for (const k of ["subtotal", "discount", "totalAmount"])
           o[k] = new Prisma.Decimal(o[k]);
         return withSeats(o);
       },
@@ -218,17 +215,17 @@ function fixture(now = () => new Date()) {
         return { count: o.seats.length };
       },
     },
-    payment: { updateMany: async () => ({ count: 0 }) },
+    payment: {
+      updateMany: async () => ({ count: 0 }),
+      findFirst: async () => null,
+    },
     $transaction: async (fn) => {
       let unlock;
       const previous = tail;
       tail = new Promise((r) => (unlock = r));
       await previous;
       const savedSeats = seats.map((s) => ({ ...s })),
-        savedOrders = new Map([...orders].map(([id, o]) => [id, withSeats(o)])),
-        savedBalances = new Map(
-          [...users].map(([id, u]) => [id, u.creditBalance]),
-        );
+        savedOrders = new Map([...orders].map(([id, o]) => [id, withSeats(o)]));
       phase = "TRANSACTION";
       try {
         const result = await fn(db);
@@ -238,8 +235,6 @@ function fixture(now = () => new Date()) {
       } catch (e) {
         seats = savedSeats;
         orders = savedOrders;
-        for (const [id, balance] of savedBalances)
-          users.get(id).creditBalance = balance;
         phase = "ROLLED_BACK";
         throw e;
       } finally {
@@ -310,13 +305,11 @@ test("an application clock ahead of PostgreSQL never shortens a hold", async (t)
   assert.equal(f.events.length, 1);
 });
 
-test("expiry and cancellation contention restore credit and release once, preserving resale", async () => {
+test("expiry and cancellation contention release once, preserving resale", async () => {
   let dbNow = Date.now();
   const f = fixture(() => new Date(dbNow));
   const key = randomUUID();
   const original = await f.service.create(f.userId, key, body(f));
-  f.orders.get(key).creditUsed = new Prisma.Decimal(100);
-  f.users.get(f.userId).creditBalance = new Prisma.Decimal(900);
   dbNow = Date.parse(original.item.expiresAt);
   await Promise.all([
     f.service.expire(),
@@ -326,7 +319,6 @@ test("expiry and cancellation contention restore credit and release once, preser
   assert.ok(
     f.orders.get(key).seats.every((seat) => seat.status === "CANCELED"),
   );
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
   assert.deepEqual(
     f.events.map((event) => event.name),
     ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"],
@@ -343,16 +335,13 @@ test("expiry and cancellation contention restore credit and release once, preser
       ),
   );
   assert.equal(f.orders.get(resale).status, "PENDING_PAYMENT");
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
 });
 
-test("failed expiry rolls back seats, credit and events before a later retry succeeds", async (t) => {
+test("failed expiry rolls back seats and events before a later retry succeeds", async (t) => {
   let dbNow = Date.now();
   const f = fixture(() => new Date(dbNow));
   const key = randomUUID();
   const original = await f.service.create(f.userId, key, body(f));
-  f.orders.get(key).creditUsed = new Prisma.Decimal(100);
-  f.users.get(f.userId).creditBalance = new Prisma.Decimal(900);
   dbNow = Date.parse(original.item.expiresAt);
   const update = f.db.order.update;
   let fail = true;
@@ -368,12 +357,10 @@ test("failed expiry rolls back seats, credit and events before a later retry suc
   assert.equal(log.mock.callCount(), 1);
   assert.equal(f.orders.get(key).status, "PENDING_PAYMENT");
   assert.ok(f.seats.slice(0, 2).every((seat) => seat.status === "HELD"));
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "900");
   assert.equal(f.events.length, 1);
   await f.service.expire();
   await f.service.expire();
   assert.equal(f.orders.get(key).status, "EXPIRED");
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
   assert.deepEqual(
     f.events.map((event) => event.name),
     ["SEAT_HELD", "SEAT_RELEASED", "ORDER_EXPIRED"],
@@ -387,8 +374,6 @@ test("hold is atomic, uses DB prices, lasts exactly 600 seconds and publishes af
   const result = await f.service.create(f.userId, key, body(f));
   assert.equal(result.item.status, "PENDING_PAYMENT");
   assert.equal(result.item.totalAmount, "200000");
-  assert.equal(result.item.creditUsed, "0");
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
   assert.ok(new Date(result.item.expiresAt).getTime() >= before + 600000);
   assert.ok(new Date(result.item.expiresAt).getTime() <= Date.now() + 600000);
   assert.ok(f.seats.slice(0, 2).every((s) => s.status === "HELD"));
@@ -461,7 +446,6 @@ test("cutoff rejects new holds exactly at start and 1 ms after without side effe
     assert.deepEqual(f.seats, before);
     assert.equal(f.orders.size, 0);
     assert.equal(f.events.length, 0);
-    assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
   }
 });
 
@@ -534,7 +518,6 @@ test("retry at expiry after cutoff releases once without reviving or extending t
   );
   assert.equal(f.orders.size, 1);
   assert.equal(f.events.length, 3);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
 });
 
 test("an inactive auditorium rejects the entire hold without changing inventory", async () => {
@@ -629,18 +612,15 @@ test("cancel and expiry release once, retain history and never free another hold
     (e) => e.getResponse().code === "ORDER_NOT_CANCELABLE",
   );
 });
-test("lazy expiry before a new hold preserves refunded credit exactly once", async () => {
+test("lazy expiry before a new hold releases the old hold exactly once", async () => {
   const f = fixture();
   const key = randomUUID();
   await f.service.create(f.userId, key, body(f));
   const o = f.orders.get(key);
-  o.creditUsed = new Prisma.Decimal(100);
   o.expiresAt = new Date(Date.now() - 1);
   f.seats.slice(0, 2).forEach((s) => (s.holdExpiresAt = o.expiresAt));
   await f.service.create(f.otherId, randomUUID(), body(f));
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1100");
   await f.service.expire();
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1100");
   assert.equal(o.status, "EXPIRED");
 });
 
@@ -745,7 +725,6 @@ test("real HTTP booking validates JWT/UUID/DTO/key, refuses status/price injecti
     assert.equal(res.status, 400, JSON.stringify(payload));
   }
   assert.equal(JSON.stringify([...f.orders]), beforeInvalid);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
   for (const quantity of [1, 9]) {
     const res = await fetch(quoteUrl, {
       method: "POST",
@@ -775,14 +754,12 @@ test("real HTTP booking validates JWT/UUID/DTO/key, refuses status/price injecti
   });
   assert.equal(qr.status, 200);
   const priced = await qr.json();
-  assert.equal(priced.item.creditUsed, "1000");
   const cr = await fetch(url + `/orders/${o.item.id}/checkout`, {
     method: "POST",
     headers,
     body: JSON.stringify({ quoteToken: priced.item.quoteToken }),
   });
   assert.equal(cr.status, 200);
-  assert.equal((await cr.json()).item.creditUsed, "1000");
   assert.equal(o.item.userId, undefined);
   const c = await fetch(url + `/orders/${o.item.id}/cancel`, {
     method: "POST",
@@ -876,7 +853,7 @@ test("real Socket.IO handshake rejects invalid/staff tokens, isolates user rooms
   assert.equal(privateLeaks, 0);
 });
 
-test("checkout reserves automatic Credit once; quote is read-only and cancel restores once", async () => {
+test("checkout confirms voucher pricing once; quote is read-only and cancellation is idempotent", async () => {
   const f = fixture();
   const key = randomUUID();
   const combo = randomUUID();
@@ -886,27 +863,21 @@ test("checkout reserves automatic Credit once; quote is read-only and cancel res
     price: new Prisma.Decimal(100000),
   });
   f.seats.slice(0, 2).forEach((s) => (s.price = new Prisma.Decimal(120000)));
-  f.users.get(f.userId).creditBalance = new Prisma.Decimal(150000);
   const hold = await f.service.create(f.userId, key, body(f));
   const q = await f.service.quote(key, f.userId, {
     combo_id: combo,
     combo_quantity: 1,
-    promotion_code: " cine20 ",
+    voucher_code: "CINE20",
   });
-  assert.equal(q.item.bankAmount, "170000");
-  assert.equal(q.item.creditUsed, "150000");
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "150000");
+  assert.equal(q.item.bankAmount, "320000");
   const result = await f.service.checkout(key, f.userId, q.item.quoteToken);
   assert.equal(result.item.totalAmount, "320000");
   assert.equal(result.item.expiresAt, hold.item.expiresAt);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "0");
   await f.service.checkout(key, f.userId, q.item.quoteToken);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "0");
   await f.service.cancel(key, f.userId);
   await f.service.cancel(key, f.userId);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "150000");
 });
-test("stale quote, token tampering and failed checkout never spend credit", async () => {
+test("stale quote, token tampering and failed checkout never change pricing", async () => {
   const f = fixture();
   const key = randomUUID();
   await f.service.create(f.userId, key, body(f));
@@ -914,12 +885,11 @@ test("stale quote, token tampering and failed checkout never spend credit", asyn
   await assert.rejects(
     f.service.checkout(key, f.userId, q.item.quoteToken + "x"),
   );
-  f.users.get(f.userId).creditBalance = new Prisma.Decimal(500);
+  f.orders.get(key).discount = new Prisma.Decimal(1);
   await assert.rejects(
     f.service.checkout(key, f.userId, q.item.quoteToken),
     (e) => e.getResponse().code === "QUOTE_CHANGED",
   );
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "500");
   const fresh = await f.service.quote(key, f.userId, { combo_quantity: 0 });
   const update = f.db.order.update;
   f.db.order.update = async () => {
@@ -928,15 +898,13 @@ test("stale quote, token tampering and failed checkout never spend credit", asyn
   await assert.rejects(
     f.service.checkout(key, f.userId, fresh.item.quoteToken),
   );
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "500");
-  assert.equal(f.orders.get(key).creditUsed.toString(), "0");
   f.db.order.update = update;
 });
-test("zero-bank checkout remains pending, expiry restores Credit exactly once", async () => {
+test("zero-price checkout stays pending until explicit finalization, expiry remains idempotent", async () => {
   let now = Date.now();
   const f = fixture(() => new Date(now));
   const key = randomUUID();
-  f.users.get(f.userId).creditBalance = new Prisma.Decimal(300000);
+  f.seats.slice(0, 2).forEach((s) => (s.price = new Prisma.Decimal(0)));
   const hold = await f.service.create(f.userId, key, body(f));
   const q = await f.service.quote(key, f.userId, { combo_quantity: 0 });
   const done = await f.service.checkout(key, f.userId, q.item.quoteToken);
@@ -944,17 +912,14 @@ test("zero-bank checkout remains pending, expiry restores Credit exactly once", 
   assert.equal(done.item.status, "PENDING_PAYMENT");
   now = Date.parse(hold.item.expiresAt);
   await assert.rejects(f.service.checkout(key, f.userId, q.item.quoteToken));
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "300000");
   await f.service.expire();
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "300000");
 });
 
-test("checkout repricing returns only the reservation delta and rejects an older snapshot", async () => {
+test("checkout repricing updates pricing and rejects an older snapshot", async () => {
   const f = fixture();
   const key = randomUUID(),
     combo = randomUUID();
   f.seats.slice(0, 2).forEach((s) => (s.price = new Prisma.Decimal(120000)));
-  f.users.get(f.userId).creditBalance = new Prisma.Decimal(400000);
   f.combos.set(combo, {
     id: combo,
     status: "AVAILABLE",
@@ -964,21 +929,17 @@ test("checkout repricing returns only the reservation delta and rejects an older
   const first = await f.service.quote(key, f.userId, {
     combo_id: combo,
     combo_quantity: 1,
-    promotion_code: "CINE20",
+    voucher_code: "CINE20",
   });
   await f.service.checkout(key, f.userId, first.item.quoteToken);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "80000");
   const next = await f.service.quote(key, f.userId, { combo_quantity: 0 });
   await f.service.checkout(key, f.userId, next.item.quoteToken);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "160000");
   await f.service.checkout(key, f.userId, next.item.quoteToken);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "160000");
   await assert.rejects(
     f.service.checkout(key, f.userId, first.item.quoteToken),
     (e) => e.getResponse().code === "QUOTE_CHANGED",
   );
   await f.service.cancel(key, f.userId);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "400000");
 });
 test("quote rejects invalid combo pairs, unavailable combos, wrong ownership and changed prices", async () => {
   const f = fixture(),
@@ -1006,9 +967,9 @@ test("quote rejects invalid combo pairs, unavailable combos, wrong ownership and
   await assert.rejects(
     f.service.quote(key, f.userId, {
       combo_quantity: 0,
-      promotion_code: "UNKNOWN",
+      voucher_code: "UNKNOWN",
     }),
-    (e) => e.getResponse().code === "PROMOTION_INVALID",
+    (e) => e.getResponse().code === "VOUCHER_INVALID",
   );
   const q = await f.service.quote(key, f.userId, {
     combo_id: combo,
@@ -1019,16 +980,13 @@ test("quote rejects invalid combo pairs, unavailable combos, wrong ownership and
     f.service.checkout(key, f.userId, q.item.quoteToken),
     (e) => e.getResponse().code === "QUOTE_CHANGED",
   );
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "1000");
-  assert.equal(f.orders.get(key).creditUsed.toString(), "0");
 });
 
-test("combo quantity changes and removal reserve only the delta on the same hold", async () => {
+test("combo quantity changes and removal update server prices on the same hold", async () => {
   const f = fixture();
   const key = randomUUID();
   const combo = randomUUID();
   f.seats.slice(0, 2).forEach((s) => (s.price = new Prisma.Decimal(120000)));
-  f.users.get(f.userId).creditBalance = new Prisma.Decimal(400000);
   f.combos.set(combo, {
     id: combo,
     status: "AVAILABLE",
@@ -1045,7 +1003,7 @@ test("combo quantity changes and removal reserve only the delta on the same hold
     const q = await f.service.quote(key, f.userId, {
       combo_id: quantity ? combo : null,
       combo_quantity: quantity,
-      promotion_code: "CINE20",
+      voucher_code: quantity === 0 ? "" : "CINE20",
     });
     assert.equal(JSON.stringify([...f.orders]), before);
     const result = await f.service.checkout(key, f.userId, q.item.quoteToken);
@@ -1053,9 +1011,32 @@ test("combo quantity changes and removal reserve only the delta on the same hold
     assert.equal(result.item.comboQuantity, quantity);
     assert.equal(result.item.comboId, quantity ? combo : null);
     assert.equal(result.item.expiresAt, hold.item.expiresAt);
-    assert.equal(f.users.get(f.userId).creditBalance.toString(), balance);
   }
   await f.service.cancel(key, f.userId);
   await f.service.cancel(key, f.userId);
-  assert.equal(f.users.get(f.userId).creditBalance.toString(), "400000");
+});
+
+test("old quote version is rejected; confirmed snapshot cannot mutate after payment intent", async () => {
+  const f = fixture(),
+    key = randomUUID();
+  await f.service.create(f.userId, key, body(f));
+  const q = await f.service.quote(key, f.userId, { combo_quantity: 0 });
+  const { signQuote, readQuote } = await import("../dist/booking/pricing.js");
+  const claims = readQuote(q.item.quoteToken, "fixture-quote-secret");
+  delete claims.version;
+  await assert.rejects(
+    f.service.checkout(
+      key,
+      f.userId,
+      signQuote(claims, "fixture-quote-secret"),
+    ),
+    (e) => e.getResponse().code === "QUOTE_CHANGED",
+  );
+  const before = JSON.stringify([...f.orders]);
+  f.db.payment.findFirst = async () => ({ intentOrderId: key });
+  await assert.rejects(
+    f.service.checkout(key, f.userId, q.item.quoteToken),
+    (e) => e.getResponse().code === "PAYMENT_LOCKED",
+  );
+  assert.equal(JSON.stringify([...f.orders]), before);
 });

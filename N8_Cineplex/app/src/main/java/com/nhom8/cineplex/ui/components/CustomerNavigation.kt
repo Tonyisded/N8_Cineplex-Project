@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.nhom8.cineplex.ui.theme.CineplexColors as C
 
 @Composable
-fun CustomerNavigation(selectedIndex: Int, onHome: () -> Unit, onAccount: () -> Unit, onComing: (String) -> Unit) {
+fun CustomerNavigation(selectedIndex: Int, onHome: () -> Unit, onAccount: () -> Unit, onComing: (String) -> Unit, onTickets: (() -> Unit)? = null) {
     Column(Modifier.background(C.Surface)) {
         HorizontalDivider(color = C.Line)
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -28,7 +28,7 @@ fun CustomerNavigation(selectedIndex: Int, onHome: () -> Unit, onAccount: () -> 
                     Modifier.weight(1f).heightIn(min = 64.dp).clip(RoundedCornerShape(12.dp))
                         .background(if (active) C.Raised else C.Surface)
                         .clickable(role = Role.Button) {
-                            when (index) { 0 -> onHome(); 3 -> onAccount(); else -> onComing(label) }
+                            when (index) { 0 -> onHome(); 2 -> if (onTickets != null) onTickets() else onComing(label); 3 -> onAccount(); else -> onComing(label) }
                         }
                         .padding(vertical = 4.dp).semantics { selected = active },
                     horizontalAlignment = Alignment.CenterHorizontally,

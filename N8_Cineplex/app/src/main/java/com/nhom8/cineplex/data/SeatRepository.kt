@@ -52,7 +52,7 @@ class ApiSeatRepository(context: Context, private val account: ApiAccountReposit
     private val store = context.applicationContext.holdStore
     private val json = Json { ignoreUnknownKeys = true }
     private val api = Retrofit.Builder().baseUrl(BuildConfig.API_BASE_URL)
-        .client(OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build())
+        .client(cineplexHttpClient())
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build().create(SeatApi::class.java)
     override suspend fun seats(showtimeId: String): SeatResponse = account.withAuthorization { api.seats(showtimeId) }.also { r ->
         check(r.showtimeId == showtimeId); isoMillis(r.serverTime)

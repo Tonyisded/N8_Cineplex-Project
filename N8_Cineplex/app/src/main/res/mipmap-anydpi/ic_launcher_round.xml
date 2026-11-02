@@ -1,0 +1,1 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"><item><shape><size android:width="48dp" android:height="48dp"/><solid android:color="#FFF7EB"/></shape></item><item android:width="42dp" android:height="34.8dp" android:gravity="center" android:drawable="@drawable/n8_launcher_logo"/></layer-list>

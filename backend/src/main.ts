@@ -1,3 +1,4 @@
+import { appVersionMiddleware } from "./app-release.js";
 import "reflect-metadata";
 import process from "node:process";
 import {
@@ -40,6 +41,14 @@ try {
     new DocumentBuilder()
       .setTitle("N8 Cineplex API")
       .setVersion("0.1.0")
+      .addGlobalParameters({
+        name: "X-App-Version-Code",
+        in: "header",
+        required: false,
+        schema: { type: "integer", example: 7 },
+        description:
+          "Required for app APIs when minimum Android version is enabled",
+      })
       .addBearerAuth()
       .build(),
   );
@@ -47,6 +56,7 @@ try {
     jsonDocumentUrl: "api/docs-json",
   });
   const config = app.get(ConfigService);
+  app.use("/api/v1", appVersionMiddleware(config));
   if (config.get<boolean>("TRUST_PROXY"))
     app.getHttpAdapter().getInstance().set("trust proxy", 1);
   await app.listen(

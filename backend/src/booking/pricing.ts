@@ -1,37 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { BadRequestException } from "@nestjs/common";
 
-export function calculatePrice(
-  seats: string,
-  combo: string,
-  quantity: number,
-  promotion: string,
-  balance: string,
-) {
-  const subtotal = BigInt(seats) + BigInt(combo) * BigInt(quantity);
-  const code = promotion.trim().toUpperCase();
-  if (code && code !== "CINE20")
-    throw new BadRequestException({
-      code: "PROMOTION_INVALID",
-      message: "Mã ưu đãi không hợp lệ.",
-    });
-  const discount = code === "CINE20" && subtotal >= 300000n ? 20000n : 0n;
-  const total = subtotal - discount;
-  const credit = BigInt(balance) < total ? BigInt(balance) : total;
-  if (subtotal < 0n || subtotal > 99999999999999n || credit < 0n)
-    throw new BadRequestException({
-      code: "AMOUNT_INVALID",
-      message: "Số tiền vượt giới hạn.",
-    });
-  return {
-    subtotal: String(subtotal),
-    discount: String(discount),
-    totalAmount: String(total),
-    creditUsed: String(credit),
-    bankAmount: String(total - credit),
-    promotionCode: discount ? code : "",
-  };
-}
 export const fingerprint = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export function signQuote(value: unknown, secret: string) {

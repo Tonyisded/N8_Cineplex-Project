@@ -65,6 +65,7 @@ class CheckoutIntegrationServerUiTest {
             compose.waitUntil(15000) { state.quote != null }
             compose.onNodeWithTag("commerce-promo").performScrollTo().performClick()
             compose.onNodeWithText(if (firstPurchase) "Chọn FIRST50" else "Chọn CINE20").performClick()
+            compose.onNodeWithText("Áp dụng").performClick()
             compose.waitUntil(15000) { state.quote?.promotionCode == (if (firstPurchase) "FIRST50" else "CINE20") }
             val quote = checkNotNull(state.quote)
             assertEquals(if (firstPurchase) "100000" else "340000", quote.subtotal)
@@ -81,7 +82,7 @@ class CheckoutIntegrationServerUiTest {
             val token = checkNotNull(state.quote).quoteToken
             compose.onNodeWithTag("commerce-next").performClick()
             compose.waitUntil(15000) { state.confirmed && !state.busy }
-            compose.onNodeWithTag("commerce-confirmation").performScrollTo()
+            compose.onNodeWithTag("commerce-total").performScrollTo()
                 .assertTextContains(if (firstPurchase) "ngân hàng 0đ" else "chờ thanh toán", substring = true)
             compose.onNodeWithTag("commerce-next").assertIsNotEnabled()
             compose.onNodeWithText("Thanh toán thành công", substring = true).assertDoesNotExist()

@@ -32,7 +32,7 @@ interface CommerceBackend {
 }
 class ApiCommerceRepository(private val account:ApiAccountRepository):CommerceBackend {
  private val api=Retrofit.Builder().baseUrl(BuildConfig.API_BASE_URL)
-  .client(OkHttpClient.Builder().connectTimeout(15,TimeUnit.SECONDS).readTimeout(25,TimeUnit.SECONDS).build())
+  .client(cineplexHttpClient())
   .addConverterFactory(Json {ignoreUnknownKeys=true;encodeDefaults=true}.asConverterFactory("application/json".toMediaType())).build().create(CommerceApi::class.java)
  override suspend fun combos()=api.combos().items.also { rows -> check(rows.all { it.price.toLong()>=0 }) }
  override suspend fun vouchers()=account.withAuthorization { api.vouchers(it).items }
