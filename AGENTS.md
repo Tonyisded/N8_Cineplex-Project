@@ -1,5 +1,17 @@
 # AGENTS.md — N8 Cineplex
 
+## Quy định cấu hình và bí mật `.env` — 2026-11-02
+
+<!-- ENV_SECRETS_POLICY_20261102 -->
+Từ giờ, khi thêm key, token, mật khẩu, chuỗi kết nối có thông tin xác thực hoặc cấu hình nhạy cảm cần giấu, phải đặt giá trị thật trong `backend/.env` riêng của môi trường và đọc qua biến môi trường/ConfigService; không hardcode trong source, test/fixture, tài liệu hoặc log. Nếu thêm biến mới, cập nhật đồng thời nơi đọc/kiểm tra cấu hình và `backend/.env.example` bằng tên biến, mô tả và placeholder hoặc giá trị rỗng, tuyệt đối không sao chép bí mật thật vào bản mẫu.
+
+`backend/.env` và các `.env`/`.env.*` chứa bí mật phải được Git ignore, không commit/push GitHub. Chỉ `backend/.env.example` đã loại bỏ bí mật được phép track. Giữ nguyên credential/JWT secret đang dùng nếu không có yêu cầu đổi; không ghi đè `.env` hiện có bằng bản mẫu. Không đưa nội dung `.env` vào báo cáo hoặc artifact công khai; bản sao kiểm chứng/rollback có bí mật phải nằm ngoài repo, giới hạn quyền truy cập. Nếu bí mật từng bị commit/lộ, phải báo để thu hồi/đổi key; thêm ignore không xóa được lịch sử Git.
+
+Android hiện dùng Gradle properties cho URL API và Google WEB client ID công khai, không tự đọc `.env`. Secret backend/provider phải ở server, không đóng gói vào `BuildConfig`, resource hoặc APK; chuyển sang `.env` khi build không làm secret trong APK trở nên an toàn. Chỉ thêm biến provider khi tích hợp được triển khai/duyệt, không bịa key hay coi kế hoạch payOS/MB/Bảo Kim là đã hoạt động.
+
+Đã rà 13 biến backend hiện được sử dụng; giữ 9 giá trị có sẵn và bổ sung rõ `HOST`, `PORT`, `TRUST_PROXY`, `CRAWLER_ENABLED` với mặc định local. Bản mẫu chứa đủ 13 tên biến, bí mật để rỗng/placeholder; README nêu cách cấu hình backend và giới hạn Android. Kiểm tra offline BASELINE → MODIFIED → ROLLBACK gồm validate cấu hình, Git ignore và đồng bộ chính sách hai MD; rollback chỉ trên bản sao, source hiện tại giữ thay đổi. Không commit/push, deploy, ghi DB hoặc thử gửi mail/thanh toán thật trong đợt này.
+
+
 ## Thay đổi kế hoạch: bỏ Credit trong app, dùng voucher; tab Khám phá — 2026-11-01
 
 <!-- VOUCHERS_DISCOVERY_REPLACES_CREDIT_20261101 -->
