@@ -6,7 +6,7 @@ Theo yêu cầu user: README.md ở root đã làm trống và vẫn giữ file,
 
 GitHub Release thử nghiệm: https://github.com/Tonyisded/N8_Cineplex-Project/releases/tag/v1.6-live-status. Đã upload APK1.6-live-status/versionCode7 và SHA256SUMS.txt; tải lại qua URL công khai xác nhận SHA256 `7a67a2fe63b637e81be251c9c6ce3059d3c98ccda5669f33a7347d41dfcdc41b` khớp APK root/emulator/VPS. APK ký debug để nhóm test, không nhận là ký production/Play Store. Các kết quả135backend/138Linux/88unit Android/11native UI+5native HTTPS chỉ đọc và rollback111→135→111,77→88→77 ở mục bên dưới giữ nguyên; không coi công bố GitHub là lượt test tiền thật mới hoặc CI remote.
 
-Mục này xác nhận kết quả đã quan sát và thay trạng thái “tag dự kiến/chưa công bố” bên dưới. Tag giữ nguyên source commit đã kiểm chứng; bản ghi xác nhận chỉ cập nhật hai MD trong commit tiếp theo trên cùng nhánh, không di chuyển tag. 7e45158d8d6831894bb0866b2a7bc46f0c75b5e7 cuối nhánh được đối chiếu sau push và lưu ngoài repo, không tự tham chiếu 7e45158d8d6831894bb0866b2a7bc46f0c75b5e7 trước commit. Khoản hoàn qua ví trung gian vẫn cần đối soát người nhận cuối; không nhận cả3 task tuần9 đã nghiệm thu tiền thật hoàn chỉnh.
+Mục này xác nhận kết quả đã quan sát và thay trạng thái “tag dự kiến/chưa công bố” bên dưới. Tag giữ nguyên source commit đã kiểm chứng; bản ghi xác nhận chỉ cập nhật hai MD trong commit tiếp theo trên cùng nhánh, không di chuyển tag. SHA cuối nhánh được đối chiếu sau push và lưu ngoài repo, không tự tham chiếu SHA trước commit. Khoản hoàn qua ví trung gian vẫn cần đối soát người nhận cuối; không nhận cả3 task tuần9 đã nghiệm thu tiền thật hoàn chỉnh.
 
 
 ## Phiên bản bắt buộc và tự cập nhật trạng thái — 2026-11-02
