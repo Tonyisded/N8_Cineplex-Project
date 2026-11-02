@@ -85,7 +85,7 @@ interface CatalogApi {
 }
 class ApiCatalogRepository : CatalogRepository {
     private val api = Retrofit.Builder().baseUrl(BuildConfig.API_BASE_URL)
-        .client(OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build())
+        .client(cineplexHttpClient())
         .addConverterFactory(Json { ignoreUnknownKeys = true }.asConverterFactory("application/json".toMediaType())).build().create(CatalogApi::class.java)
     override suspend fun dates(): List<String> {
         val r = api.dates()

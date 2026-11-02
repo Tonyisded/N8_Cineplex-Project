@@ -72,7 +72,7 @@ class LiveCommerceUiTest {
   screenshot("checkout-server-price")
   compose.onNodeWithTag("commerce-next").performClick()
   compose.waitUntil(5000){state.confirmed}
-  compose.onNodeWithText("Đã xác nhận đơn — chờ thanh toán.",substring=true).assertExists()
+  compose.onNodeWithTag("commerce-next").assertTextEquals("Thanh toán")
   assertEquals(1,commits);assertTrue(seats.held);assertEquals(deadline,seats.deadlineMillis)
   compose.onNodeWithText("Mô phỏng thành công").assertDoesNotExist()
   compose.onNodeWithTag("commerce-next").assertIsNotEnabled()
@@ -137,7 +137,7 @@ class LiveCommerceUiTest {
    compose.onNodeWithTag("commerce-next").performClick()
   }
   compose.waitUntil(5000) {state.confirmed&&!state.busy}
-  compose.onNodeWithTag("commerce-confirmation").assertTextContains("chờ thanh toán", substring=true)
+  compose.onNodeWithTag("commerce-next").assertTextEquals("Thanh toán")
   compose.onNodeWithText("Thanh toán thành công",substring=true).assertDoesNotExist()
   compose.onNodeWithText("Mô phỏng thành công",substring=true).assertDoesNotExist()
   compose.onNodeWithTag("commerce-next").assertIsNotEnabled()

@@ -15,6 +15,6 @@ import { JwtGuard, RoleGuard, VerifiedEmailGuard } from "./guards.js";
     RoleGuard,
     VerifiedEmailGuard,
   ],
-  exports: [AuthService, JwtGuard, RoleGuard, VerifiedEmailGuard],
+  exports: [AuthService, MailService, JwtGuard, RoleGuard, VerifiedEmailGuard],
 })
 export class AuthModule {}

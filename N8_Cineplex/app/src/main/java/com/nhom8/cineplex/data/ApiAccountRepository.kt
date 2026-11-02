@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit
     override fun toString() = "TokenResponse(<redacted>)"
 }
 @Serializable data class MessageResponse(val message: String, val userId: String? = null, val emailSent: Boolean? = null)
+@Serializable data class FcmRegistrationResponse(val registered: Boolean)
 interface AccountApi {
     @POST("auth/register") suspend fun register(@Body body: JsonObject): MessageResponse
     @POST("auth/login") suspend fun login(@Body body: JsonObject): TokenResponse
@@ -32,6 +33,8 @@ interface AccountApi {
     @POST("auth/logout") suspend fun logout(@Body body: JsonObject): MessageResponse
     @POST("auth/forgot-password") suspend fun forgot(@Body body: JsonObject): MessageResponse
     @POST("auth/resend-verification") suspend fun resend(@Body body: JsonObject): MessageResponse
+    @PUT("me/fcm-token") suspend fun putFcm(@Header("Authorization") auth: String, @Body body: JsonObject): FcmRegistrationResponse
+    @DELETE("me/fcm-token") suspend fun deleteFcm(@Header("Authorization") auth: String): FcmRegistrationResponse
     @GET("me") suspend fun me(@Header("Authorization") auth: String): UserProfile
     @PATCH("me") suspend fun edit(@Header("Authorization") auth: String, @Body body: JsonObject): UserProfile
     @POST("me/change-email") suspend fun email(@Header("Authorization") auth: String, @Body body: JsonObject): MessageResponse
@@ -47,7 +50,7 @@ class ApiAccountRepository(context: Context) : AccountRepository {
     private var access: String? = null
     private var generation = 0
     private val api = Retrofit.Builder().baseUrl(BuildConfig.API_BASE_URL)
-        .client(OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build())
+        .client(cineplexHttpClient())
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build().create(AccountApi::class.java)
     private fun body(vararg values: Pair<String, String>) = buildJsonObject { values.forEach { (k, v) -> put(k, v) } }
     override fun validate(form: AuthForm, signup: Boolean) = validateAuth(form, signup)
@@ -103,7 +106,9 @@ class ApiAccountRepository(context: Context) : AccountRepository {
     }
     override suspend fun avatar(bytes: ByteArray, mime: String): Session = authorized { api.avatar(it, MultipartBody.Part.createFormData("file", "avatar", bytes.toRequestBody(mime.toMediaType()))).session() }
     override suspend fun deleteAvatar(): Session = authorized { api.deleteAvatar(it).session() }
+    internal suspend fun uploadFcm(token: String) { authorized { api.putFcm(it, body("token" to token)) } }
     override suspend fun logout() {
+        try { authorized { api.deleteFcm(it) } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { /* Server logout also clears its token. */ }
         val refresh = mutex.withLock { generation++; val old = vault.read(); access = null; vault.write(null); old }
         if (refresh != null) call { api.logout(body("refreshToken" to refresh)); Unit }
     }

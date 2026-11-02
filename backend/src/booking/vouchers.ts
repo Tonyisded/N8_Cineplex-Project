@@ -44,7 +44,6 @@ export function voucherPrice(
     discount: String(discount),
     totalAmount: String(subtotal - discount),
     bankAmount: String(subtotal - discount),
-    creditUsed: "0",
     promotionCode: code,
   };
 }

@@ -55,7 +55,6 @@ function fixture() {
           isActive: true,
           emailVerifiedAt: null,
           refreshTokenHash: null,
-          creditBalance: 0,
           avatarUrl: null,
           ...data,
         };

@@ -1,5 +1,87 @@
 # AGENTS.md — N8 Cineplex
 
+## Xác nhận công bố source và APK tuần 9 — 2026-11-02
+
+Theo yêu cầu user: README.md ở root đã làm trống và vẫn giữ file, source commit `7e45158d8d6831894bb0866b2a7bc46f0c75b5e7` đã push lên nhánh mới `feat/nguyen-week9-payos-live-status`. Annotated tag `v1.6-live-status` đã push và peel đúng source 7e45158d8d6831894bb0866b2a7bc46f0c75b5e7; Author/Committer được GitHub xác nhận cùng tài khoản thnguyen290106, dùng noreply, không thêm đồng tác giả. Không main/force-push/PR/merge, không công bố .env/key/token hoặc evidence riêng tư.
+
+GitHub Release thử nghiệm: https://github.com/Tonyisded/N8_Cineplex-Project/releases/tag/v1.6-live-status. Đã upload APK1.6-live-status/versionCode7 và SHA256SUMS.txt; tải lại qua URL công khai xác nhận SHA256 `7a67a2fe63b637e81be251c9c6ce3059d3c98ccda5669f33a7347d41dfcdc41b` khớp APK root/emulator/VPS. APK ký debug để nhóm test, không nhận là ký production/Play Store. Các kết quả135backend/138Linux/88unit Android/11native UI+5native HTTPS chỉ đọc và rollback111→135→111,77→88→77 ở mục bên dưới giữ nguyên; không coi công bố GitHub là lượt test tiền thật mới hoặc CI remote.
+
+Mục này xác nhận kết quả đã quan sát và thay trạng thái “tag dự kiến/chưa công bố” bên dưới. Tag giữ nguyên source commit đã kiểm chứng; bản ghi xác nhận chỉ cập nhật hai MD trong commit tiếp theo trên cùng nhánh, không di chuyển tag. SHA cuối nhánh được đối chiếu sau push và lưu ngoài repo, không tự tham chiếu SHA trước commit. Khoản hoàn qua ví trung gian vẫn cần đối soát người nhận cuối; không nhận cả3 task tuần9 đã nghiệm thu tiền thật hoàn chỉnh.
+
+
+## Phiên bản bắt buộc và tự cập nhật trạng thái — 2026-11-02
+
+<!-- APP_COMPATIBILITY_AUTO_REFRESH_20261102 -->
+Đã triển khai bản Android versionCode7/versionName1.6-live-status. Source Android và backend hiện đồng bộ vào project chính `D:\NT118\N8_Cineplex-Project`, không chỉ ở candidate. Build/install từ Gradle root `N8_Cineplex`; giữ session, local.properties, IDE settings, signing và .env, không uninstall/clear data. APK kéo từ emulator khớp SHA256 của APK build tại root: `7a67a2fe63b637e81be251c9c6ce3059d3c98ccda5669f33a7347d41dfcdc41b`. MainActivity đã qua cổng kiểm tra phiên bản của VPS và vào Trang chủ; ảnh kiểm chứng giữ ngoài Git.
+
+Backend công bố GET /app/version và GET /app/android/download. Android gửi X-App-Version-Code qua toàn bộ năm API client; kiểm tra khi mở/quay lại app và mỗi60giây foreground. Dưới minimumVersionCode: chặn luồng app, hiện “Phiên bản ứng dụng đã cũ, vui lòng cập nhật lên phiên bản mới.”, nút tải APK và Kiểm tra lại. HTTP426 cũng kích hoạt cảnh báo. Mạng lỗi lần đầu có thông báo/thử lại, không tự nhận tương thích. URL cập nhật chỉ HTTPS cùng API host/path, không chấp nhận URL lạ. Người dùng tự xác nhận cài APK; không cài ngầm, không cần xóa app.
+
+Quy trình deploy ghép API–APK: build/test source mới, tăng versionCode khi đổi hợp đồng API cần client mới, công bố APK có hash kiểm chứng trước, rồi mới tăng ANDROID_MIN_VERSION_CODE. ANDROID_LATEST_VERSION_CODE, ANDROID_APK_PATH và ANDROID_APK_SHA256 được validate cùng min; path tuyệt đối .apk, archive PK/hash được kiểm tra trước API startup. Bản mẫu .env chỉ có tên biến/public default và placeholder, không credential. Thay dữ liệu phim/lịch chiếu hoặc restart server không tự ép tải APK nếu hợp đồng vẫn tương thích. Min local mặc định0; VPS hiện min/latest7, APK content-addressed gắn read-only, manifest/download no-store. Giữ image/env/compose/APK trước để rollback vận hành; không hạ/xóa dữ liệu giao dịch.
+
+Tự cập nhật thanh toán/vé/hoàn: vòng foreground theo lifecycle, đọc ngay khi quay lại từ ngân hàng; đang chờ/chi tiết khoảng3giây, danh sách10giây, lỗi tăng dần tối đa30giây. Dừng background và sau trạng thái terminal; vào lại vẫn đọc một lần. GET /orders/:id/payment xác thực ownership, chỉ đọc DB; auto-refresh không tạo order/payment, không gọi provider và không gửi lại yêu cầu hoàn. Giữ QR thanh toán khi lỗi mạng tạm thời, hiển thị lỗi nhẹ/thử lại; QR vé không còn hợp lệ được ẩn. Generation/identity guard bỏ phản hồi cũ khi logout, điều hướng, thanh toán thủ công hoặc hoàn, không để pending cũ đè PAID hay VALID cũ khôi phục QR sau hoàn. Khi đọc mới thành công xóa lỗi mạng cũ.
+
+Nghiệm thu mới: backend build/typecheck/format đạt135/135; Linux138/138 gồm3proxy. Android assembleDebug/assembleDebugAndroidTest/testDebugUnitTest/lintDebug/installDebug đạt88/88 unit; native11/11 gồm VersionRefresh2, Tickets5, CheckoutPolish2, Voucher2 đạt. Kiểm thử auto status dùng fake transport, có pause/resume, lỗi mạng/backoff, không resend và cạnh tranh phản hồi; không coi là mua/hoàn tiền thật. VPS min7: thiếu header/bản6 trả426, bản7 /combos200; health/Swagger/email verification200; avatar public404 khi không tồn tại thay vì426; webhook unsigned400 (không426); payment read không JWT401. Manifest/download200 và APK hash khớp, API healthy/restart0. Không đổi schema/DB hoặc gọi giao dịch thu–chi thật trong đợt này; worker nghiệp vụ hiện có tiếp tục vận hành.
+
+Rollback thực thi trên bản sao bằng ROLLBACK.sh --version-refresh: cùng npm run build && npm test cho BASELINE111 → MODIFIED135 → ROLLBACK111; cùng Gradle assembleDebug cleanTestDebugUnitTest testDebugUnitTest cho77/version6 →88/version7 →77/version6, tất cả exit0.307 pristine file khớp archive baseline; source root/emulator giữ modified. Bộ bốn role MODIFIED_FILE.zip/DIFF_FILE.patch/VERIFICATION.txt/ROLLBACK.sh vẫn ở D:\NT118\verification\week9-payos-ticket-refund, bổ sung mode/bằng chứng mới chứ không thay bộ cũ. Lỗi formatting ban đầu đã giữ literal log rồi sửa đúng style; không sửa logic để né test.
+
+Theo yêu cầu công bố mới của user: chỉ làm trống README.md ở root (không xóa file, không đổi README con); baseline2090byte → modified0byte → rollback bản sao2090byte/hash gốc. Source bàn giao trên nhánh mới `feat/nguyen-week9-payos-live-status`, tag phát hành dự kiến `v1.6-live-status`; APK dùng đúng bytes root/emulator/VPS đã kiểm chứng, debug-signed cho kiểm thử, không nhận là bản ký production/Play Store. Chỉ commit/push source và hai MD, không đưa env/key/token/log/verification/APK vào Git; APK đính kèm GitHub Release riêng. Không force-push, không main, không tạo/merge PR. SHA/remote/tag/release asset chỉ ghi vào ledger sau khi lệnh thực sự thành công, không tự tham chiếu SHA trước commit.
+
+Bổ sung kiểm thử native HTTPS chỉ đọc5/5: auth health/login validation và inventory STANDARD/IMAX/SCREENX/GOLD thật. Hai test dùng HTTP thô đã thêm version header; sửa giả định test cũ “hôm nay phải có phim” bằng chờ CUSTOMER rồi chọn ngày thực tế của suất. Lượt đầu1pass/4timeout và exit0 adb được giữ trong ledger; lượt retry runner OK(5tests), không sửa production/lịch chiếu/giờ hệ thống để né test. Năm hash dist runtime mới khớp root theo byte sau formatting; APK vẫn giữ nguyên hash đã công bố.
+
+Giới hạn: chưa kiểm tra máy vật lý hoặc luồng tiền thật mới sau thay đổi auto-refresh. Một lần hoàn qua nguồn thanh toán trung gian vẫn cần chủ tài khoản đối soát người nhận cuối; provider SUCCEEDED không tự chứng minh khách nhận vào tài khoản cá nhân. Vì vậy chưa chốt toàn bộ3 task tuần9 là nghiệm thu tiền thật hoàn chỉnh. Không retry/xóa lần hoàn đó trong đợt này.
+
+
+## Bắt buộc đồng bộ source Android khi code xong — 2026-11-02
+
+<!-- ANDROID_SOURCE_SYNC_REQUIRED_20261102 -->
+Theo yêu cầu người dùng: sau mỗi lần hoàn tất thay đổi Android, phải đồng bộ source và cấu hình public mới nhất vào đúng project Android Studio đang mở: `D:\NT118\N8_Cineplex-Project\N8_Cineplex`. Candidate ngoài repo chỉ là bản làm việc/kiểm chứng, không phải nơi bàn giao cuối. Không được chỉ cài APK từ candidate rồi báo hoàn thành trong khi project chính vẫn build bản cũ.
+
+Trước đồng bộ phải giữ bản pristine/hash và kiểm tra xung đột với thay đổi của người dùng; không ghi đè âm thầm. Chỉ đồng bộ các file liên quan, giữ `local.properties`, SDK/IDE settings, signing và bí mật môi trường. Backend/provider secret không được chuyển vào Android/APK; Firebase client config public được giữ đúng theo triển khai. Sau đồng bộ, build/test từ chính Gradle root của project chính, cài APK được build tại đó, đối chiếu versionCode/versionName, hash APK và phiên bản trên thiết bị. Giữ tài khoản/dữ liệu ứng dụng khi cập nhật, không uninstall/clear data.
+
+Chỉ kết thúc khi source project chính khớp bản đã kiểm chứng và lần Run tiếp theo có thể build source mới. AGENTS.md và N8_Cineplex_Plan.md phải cùng cập nhật trạng thái đồng bộ, lệnh/kết quả, phiên bản và giới hạn; không dùng kết quả cũ thay cho lượt kiểm tra mới. Không tự commit/push/deploy hay ghi đè `.env` khi đồng bộ Android.
+
+## Chỉnh ghi chú QR và mũi tên Chi tiết vé — 2026-11-02
+
+Theo ảnh người dùng: đã bỏ đúng dòng “QR chỉ có giá trị khi vé còn hợp lệ trên máy chủ.” trong TicketsScreen, không thay điều kiện hiệu lực/ẩn QR. NavigationIcon ở Chi tiết vé đổi từ ký tự nhỏ sang CineplexIcon(back)28dp trong IconButton48dp, mô tả trợ năng “Quay lại vé của tôi”, giữ callback closeTicket. Dùng lại icon có sẵn, không thêm dependency hay đổi các màn khác.
+
+Đã đồng bộ hai file production+native regression vào project Android Studio chính, build/test/lint/install từ chính `D:\NT118\N8_Cineplex-Project\N8_Cineplex`, source khớp candidate. VersionCode6/versionName1.5-ticket-detail; 77unit đạt và native TicketsUiTest5/5 đạt, gồm kiểm tra không còn ghi chú, icon28dp/hitbox48dp, bấm quay lại, QR vé hoàn vẫn ẩn và các regression thanh toán/hoàn dùng fake. Native baseline mới trước sửa1fail do còn dòng ghi chú, sau sửa đạt; không coi exit0 của adb là kết quả runner.
+
+Source probe cùng input: BASELINE ghi chú có/arrow mới chưa có → MODIFIED ghi chú không còn/28dp+48dp có → ROLLBACK trên bản sao trở lại baseline; restored SHA256 TicketsScreen=44ccf1946e0aa838219798e5bb369816589b548036b89e613e38f6cd5bed2f3b, bốn hash baseline trong TICKET_DETAIL_BASELINE.zip khớp. Mode ROLLBACK.sh --ticket-detail đã thực thi, giữ mọi mode/hồ sơ cũ. Project chính và APK trên emulator giữ modified, không rollback thiết bị hoặc dữ liệu thật.
+
+Đã xem ảnh ticket-detail-back-polished.png từ emulator. APK build từ root và APK kéo ngược trên thiết bị khớp SHA256 8fc1dd7d4cdc921bc0e4308c9c50fdc1bd2a0fbf357fc800705d06e33da50f12. Không thay backend/.env/VPS/thanh toán/hoàn tiền, không giao dịch tài chính hoặc xóa dữ liệu trong lượt UI này. Không uninstall/clear data, không commit/push; chưa thử máy vật lý. Hai MD được đồng bộ sau thay đổi theo quy định bắt buộc.
+
+## Trạng thái bàn giao Android Studio hiện tại — 2026-11-02
+
+Đã sửa nguyên nhân Run mở bản cũ: project chính trước đây vẫn version1/1.0 trong khi APK mới build ở candidate. Theo yêu cầu mới, đã xuất bản 31 file Android thay đổi/mới vào `D:\NT118\N8_Cineplex-Project\N8_Cineplex`; toàn bộ137 file Android source/config public khớp bản mới đã kiểm chứng. Hai MD hiện cũng được đồng bộ trực tiếp vào repo chính. Các ghi chú lịch sử bên dưới nói Android chỉ ở candidate hoặc source gốc chưa đổi không còn mô tả trạng thái bàn giao hiện tại.
+
+Đã build/test từ đúng Gradle root project chính bằng `gradlew.bat assembleDebug cleanTestDebugUnitTest testDebugUnitTest`: BASELINE version1/1.0 và68unit → MODIFIED version5/1.4-checkout-polish và77unit → ROLLBACK trên bản sao version1/1.0 và68unit, tất cả exit0. Bản sao rollback khớp mọi hash pristine Android+hai MD; source project chính giữ MODIFIED. Lần CLI đầu thiếu JAVA_HOME/exit9009 được lưu, đã sửa dùng Android Studio bundled JBR; không sửa IDE/JDK settings của người dùng.
+
+`gradlew.bat installDebug` từ project chính cài thành công lên emulator, khởi động MainActivity và dumpsys xác nhận versionCode5/versionName1.4-checkout-polish. APK kéo ngược từ thiết bị có SHA256 khớp chính APK ở `N8_Cineplex/app/build/outputs/apk/debug/app-debug.apk`: f9a146bafcbf892b4027bbba8cc949adf1902db3b0d0f363ffed408e45ce3fc1. Đã giữ session/dữ liệu, local.properties, IDE settings và signing; không uninstall/clear data. IDE linkedExternalProjectPath là $PROJECT_DIR$, module app cùng root.
+
+Bộ bốn role hiện hữu bổ sung ANDROID_STUDIO_BASELINE.zip, manifest xuất bản, mode ROLLBACK.sh --studio-source và literal commands/stdout/stderr. Bytes pristine được giữ trong archive bất biến; đồng bộ bản đã kiểm chứng vào đường dẫn source người dùng yêu cầu. Không sửa backend, .env, VPS, dữ liệu tiền thật hoặc commit/push trong đợt đồng bộ này. Chưa tự bấm nút Run trong IDE hoặc thử máy vật lý; build/install Gradle từ đúng root đã thực thi.
+
+## Sửa bàn giao checkout và hoàn thiện UI/FCM — 2026-11-02
+
+<!-- WEEK9_UI_FCM_FOLLOWUP_20261102 -->
+Chưa chốt hoàn thành cả3 task tuần9 hoặc E2E tiền thật. User phát hiện checkout còn thông báo tuần8; đã sửa nút Thanh toán, bỏ thông báo xác nhận đơn cũ, mở payment QR trên cùng order. Native mới kiểm tra liên tục checkout→QR→PAID→Vé của tôi→hoàn→QR vô hiệu, transport giả, không chuyển tiền thật. Bộ native checkout/tickets/voucher10/10 đạt; Android74unit/build/lint đạt. Voucher đổi thành bottom sheet full-width, thẻ minh hoạ/mức giảm/điều kiện/chọn-bỏ; nhận diện N8, không logo MoMo. My Tickets có hero/tabs/thẻ poster/nhãn trạng thái/khung QR và tiến trình hoàn. Logo APK dùng nguyên PNG image-8.png do user cung cấp, adaptive+legacy; không đổi ảnh gốc. APK versionCode3/versionName1.2-week9-payments để phân biệt bản cũ.
+
+Theo user yêu cầu Playwright tự thiết lập: đã tạo Firebase project n8-cineplex, gói Spark, tắt Analytics/Gemini/Developer Program/billing upgrade. Đã đăng ký Android com.nhom8.cineplex, service account riêng cineplex-fcm-sender chỉ role Firebase Cloud Messaging API Admin, cấu hình private key trong backend env bảo vệ. FCM_ENABLED đã bật VPS, OAuth thật đạt, gửi thông báo kiểm thử HTTP200 và thấy thông báo đúng package trên emulator; không dùng sự kiện này làm bằng chứng mua/hoàn tiền thật. Không đưa private key/device token vào Git, APK hoặc evidence; browser working files private/ignored, key chuyển ra thư mục private ngoài repo. Thu/chi/email vẫn bật theo user trước đó; không tạo payment/payout thật. Bản nguồn và APK mới chỉ ở candidate/evidence, không phải source cũ trong repo gốc. Chưa nghiệm thu ngân hàng hai đầu hoặc máy vật lý.
+
+Bằng chứng backend và rollback trước giữ nguyên:111→129→111 exit0,296hash khớp; Linux132,PostgreSQL14 dùng provider giả. Bộ bốn role cũ được cập nhật, không thay bộ khác.
+
+
+## Nghiệm thu code tuần 9 và bật thu–chi — 2026-11-02
+
+<!-- WEEK9_PAYOS_VERIFIED_20261102 -->
+Code được kiểm chứng trên candidate; VPS đã migrate và chạy `n8-cineplex-api:week9-payos-20261102`, healthy/restart0. Đã xóa cột Credit production, giữ10 bảng nghiệp vụ; không reset tài khoản/đơn. Backup trước migration đã restore thành công trên PostgreSQL cô lập rồi dọn container kiểm chứng. Health/Swagger200, tickets/vouchers không JWT401, OpenAPI có payment/ticket/refund. Bốn hash JS payment/provider/email/booking runtime khớp local; config riêng Linux giữ lớp proxy cũ.
+
+Kết quả mới: backend129/129, typecheck/Prisma/format đạt; Linux132/132 (129 public+3proxy); PostgreSQL cô lập14/14, transport giả; Android74/74 unit, native7/7, build/lint đạt (0errors/54warnings/5hints). Đã xem ảnh UI vé/payment/refund và email desktop/mobile. Rollback bản sao cùng lệnh `npm run build && npm test`: BASELINE111 → MODIFIED129 → ROLLBACK111, exit0;296/296 hash pristine khớp, patch tái tạo đúng byte. Repo gốc giữ nguyên, source mới nằm trong candidate và MODIFIED_FILE.zip ngoài repo; không commit/push.
+
+Theo yêu cầu tiếp theo của user, PAYMENT_LIVE_ENABLED/REFUND_PAYOUT_ENABLED/TRANSACTION_EMAIL_ENABLED đã bật trên VPS; webhook payOS đăng ký thành công. FCM vẫn tắt vì chưa có Firebase project/credentials. Ảnh ví Bảo Kim user cung cấp hiển thị0đ; đã cảnh báo cần nạp quỹ trước thử hoàn. Chưa tạo payment/payout/gửi email thật trong kiểm chứng, payments/tickets production vẫn0 tại postcheck; chưa nhận là E2E tiền thật đạt. User tự mua/hoàn và đối chiếu ngân hàng hai đầu.
+
+Lỗi build hết đĩa đã đổi sang image delta tái sử dụng base cũ, chỉ dọn cache/image mới theo ID, không đụng volume/image dự phòng. Lỗi test Linux do overlay proxy đã sửa bằng giữ cả helper/config/test overlay cũ, không sửa production để né test. Lỗi interpreter rollback và newline patch đã sửa, giữ lỗi/lượt chạy trong evidence. Bằng chứng tại `D:\NT118\verification\week9-payos-ticket-refund`: MODIFIED_FILE.zip, DIFF_FILE.patch, VERIFICATION.txt, ROLLBACK.sh và APK N8-Cineplex-week9.apk. Chưa thử máy vật lý/Gmail/FCM thật; không scanner/CRUD Staff/reminder.
+
+
 ## Quy định cấu hình và bí mật `.env` — 2026-11-02
 
 <!-- ENV_SECRETS_POLICY_20261102 -->
@@ -11,6 +93,27 @@ Android hiện dùng Gradle properties cho URL API và Google WEB client ID côn
 
 Đã rà 13 biến backend hiện được sử dụng; giữ 9 giá trị có sẵn và bổ sung rõ `HOST`, `PORT`, `TRUST_PROXY`, `CRAWLER_ENABLED` với mặc định local. Bản mẫu chứa đủ 13 tên biến, bí mật để rỗng/placeholder; README nêu cách cấu hình backend và giới hạn Android. Kiểm tra offline BASELINE → MODIFIED → ROLLBACK gồm validate cấu hình, Git ignore và đồng bộ chính sách hai MD; rollback chỉ trên bản sao, source hiện tại giữ thay đổi. Không commit/push, deploy, ghi DB hoặc thử gửi mail/thanh toán thật trong đợt này.
 
+
+## Tuần 9 — payOS, vé/hoàn tiền thật, bỏ Credit — 2026-11-02
+
+<!-- WEEK9_PAYOS_TICKETS_REFUNDS_20261102 -->
+**Đặc tả hiện hành được người dùng chốt; thay SePay/Refund Credit cũ. Trạng thái: đang triển khai và kiểm chứng trên candidate, chưa nghiệm thu tiền thật.** Thu qua payOS về MB; hoàn bằng kênh chi payOS từ quỹ Bảo Kim về đúng nguồn thanh toán đã xác minh. Có khóa/kênh hoạt động không chứng minh đã đủ quỹ hoặc chi tự động thành công. Không tự thu/chi, gửi mail thật, commit/push hoặc xác nhận E2E ngân hàng trong bước code/test.
+
+- Bỏ sạch Credit N8: loại cột `users.credit_balance`, `orders.credit_used`, constraint, logic/DTO/profile/fixture đang dùng bằng migration mới; không sửa migration đã áp dụng, không reset DB/tài khoản/đơn. User xác nhận chưa sử dụng Credit. Backup bảo vệ ngoài repo trước drop; nếu thấy khoản tiền thật liên quan trái với tiền đề này thì dừng cutover để báo. Không xóa credit phí dịch vụ của payOS. Bản API cũ đọc cột Credit không dùng được làm image rollback sau drop.
+- Voucher FIRST50/CINE20 hiện có giữ nguyên, mỗi đơn một voucher, không cộng dồn; `bankAmount=totalAmount`. Quote readonly, giá do server quyết định; token quote cũ yêu cầu báo giá mới. Giữ cùng order/deadline 600 giây khi back/retry, không fallback demo.
+- QR thu do payOS sinh cho từng đơn, số tiền/nội dung điền sẵn; app không có ô sửa tiền. Không hứa kiểm soát thao tác của mọi app ngân hàng: backend chỉ phát vé khi tiền thực nhận đúng, chữ ký và trạng thái hợp lệ. Sai/thừa/thiếu/trễ hoặc chuyển thêm giữ vết và `NEEDS_ADMIN`, không hồi sinh đơn/ghế.
+- Finalization chung cho webhook/query và ca 0đ; một transaction kiểm tra hold/ghế rồi PAID/ACTIVE/SOLD/phát một vé. Ca 0đ không gọi thu tiền hoặc tạo khoản thu giả. Return URL/socket không phải bằng chứng thanh toán.
+- Một order/một ticket/một QR, có thể nhiều ghế. Snapshot giá/phim/poster/suất/phòng/ghế/combo/voucher/email giữ nguyên khi ghế được hoàn rồi bán lại. QR không chứa dữ liệu cá nhân; vé hoàn/hủy/hết hạn không dùng lại được.
+- Self-refund toàn đơn: PAID, VALID, chưa check-in/chưa nhận combo, còn ít nhất45 phút theo DB. Hoàn100% tiền thực trả vé+combo sau voucher, không đổi voucher ra tiền; N8 chịu phí chi. Ghi nghĩa vụ/idempotency trước HTTP; REFUND_PENDING vô hiệu vé/nhả đúng ghế, chỉ REFUNDED khi chi thành công. Thiếu dữ liệu người trả/quỹ/phí hoặc timeout giữ nghĩa vụ và trạng thái kiểm tra/unknown; không đổi key để chi lại. Không cho nhập STK tùy ý. Admin xử lý issue tối thiểu có tham chiếu, không manual-finalize/revive, không chi tay khi payout còn unknown.
+- Email mua có poster, suất/phòng/ghế, số ghế và combo/số lượng/đơn giá, voucher, tiền đã trả, booking code và QR CID. HTML responsive/inline CSS màu N8, plaintext, escape dữ liệu; ảnh bị chặn vẫn đọc được. Email tiếp nhận/hoàn thành/cần kiểm tra dùng cùng nhận diện; không báo tiền về trước kết quả cuối. Retry bền vững sau commit, lỗi mail/FCM không rollback vé/tiền. SMTP timeout có thể gửi trùng thư, không được tạo giao dịch lại. Nếu vé đã bị hoàn trước khi email mua gửi được, gửi biên nhận với cảnh báo vé không còn hiệu lực, không QR dùng được.
+- FCM HTTPv1, một token hiện tại/user, sự kiện chứa ticketId; chạm thông báo refetch REST. Firebase chưa cấu hình thì tắt an toàn, không chặn payment/email. Private key chỉ backend `.env`, không APK; cấu hình Android chỉ là giá trị public.
+- Giữ10 bảng nghiệp vụ; cho phép ngoại lệ field mới và JSON snapshot/notification retry có cấu trúc trong `payments`/`tickets` theo yêu cầu tuần9, không biến thành kho domain tùy ý. Không Redis/outbox/email queue/wallet. Dùng khóa DB, reference unique và trạng thái bền vững, không gọi provider dưới DB lock.
+- Mọi khóa thật chỉ trong `.env` riêng được ignore, không source/test/MD/log/APK. Giữ bộ khóa theo yêu cầu user; đã cảnh báo rủi ro vì xuất hiện trong chat, không tự đổi. Thu/chi/email/FCM có công tắc mặc định tắt, test dùng transport giả; không có sandbox payOS riêng được coi là an toàn mặc định.
+- Bàn giao gồm My Tickets thật (sắp tới/lịch sử/đơn pending), payment/refund status và UI trợ năng. Chưa kéo scanner/CRUD Staff/reminder tuần sau vào đợt này. Chỉ nói sẵn sàng UAT sau local/PostgreSQL/native/VPS gates; tiền thật do user tự mua/hoàn và kiểm tra ngân hàng hai đầu. Quỹ Bảo Kim/quyền chi, Firebase và ngân sách thử vẫn là gate bên ngoài.
+
+Các mục/nghiệm thu trước ngày02/11 bên dưới là **lịch sử có phạm vi riêng**, không phải yêu cầu khôi phục Credit/SePay hoặc bằng chứng payOS đã chạy tiền thật. Giữ bằng chứng nguyên vẹn; trạng thái kiểm thử/deploy mới chỉ cập nhật sau kết quả quan sát.
+
+## Nhật ký lịch sử trước02/11 (không phải đặc tả đang áp dụng)
 
 ## Thay đổi kế hoạch: bỏ Credit trong app, dùng voucher; tab Khám phá — 2026-11-01
 
@@ -80,6 +183,12 @@ Rollback bản sao: **BASELINE105 → MODIFIED108 → ROLLBACK105**, cùng npm t
 Trạng thái: **Hoàn thành công bố source tuần8** trên nhánh `feat/thnguyen-week8-commerce`. Commit source `cb633f5a4be19d6f8207e8837c9c5ca67425a32d` đã push thành công (exit0), ls-remote khớp SHA. GitHub xác thực `thnguyen290106`; Author/Committer Trần Thanh Nguyên dùng noreply cùng tài khoản, không thêm đồng tác giả. Phạm vi chỉ gồm pricing/order/Credit tuần8, Android live và UI combo tách checkout đã kiểm chứng, cùng hai tài liệu tiến độ. Các kế hoạch chuyển đổi chưa thực hiện và ghi chú tương ứng được giữ local, không đưa vào commit. Không ghi lên main, không tự tạo/merge PR.
 
 Gate local mới: backend build/typecheck/format và105/105 tests đạt. Android assembleDebug/lint đạt; testDebugUnitTest đã thực thi lại,64/64 không fail/error/skip. Không chạy lại native/VPS/fixture DB chung hoặc giao dịch thanh toán trong đợt công bố; các kết quả VPS108/native trước đó vẫn là lịch sử có phạm vi riêng. Chưa xác nhận kết quả CI remote. Không đưa key/env/log/verification vào nhánh. Bản ghi xác nhận này chỉ cập nhật tài liệu và sửa encoding của thông báo mới; SHA cuối của nhánh được kiểm tra sau push và lưu ngoài repo. Bước tiếp: nhóm trưởng review nhánh và quyết định tích hợp.
+
+
+## Kế hoạch payOS + MB + Bảo Kim — 2026-11-01
+
+<!-- PAYOS_MB_BAOKIM_E2E_PLAN_20261101 -->
+**Hoàn thành lập tài liệu; chưa triển khai chuyển đổi.** Theo yêu cầu người dùng, đã lập kế hoạch end-to-end tại `D:\NT118\ytuong\N8_Cineplex_PayOS_MB_BaoKim_E2E_Plan.md`: đăng ký/xác thực payOS–MB–Bảo Kim, quỹ hoàn/phí, gate duyệt tài khoản và thử thu–chi, voucher thay Credit, thiết kế API/dữ liệu đề xuất, kiểm thử local/Android/VPS, vận hành và rollback. Hướng đích là MB nhận tiền và Bảo Kim làm nguồn chi qua payOS; không phải tự động trích MB để hoàn. Chưa đăng ký/định danh/kích hoạt/chuyển tiền, chưa thay source/schema/API/runtime hoặc deploy trong đợt lập plan. Các yêu cầu provider và ngoại lệ field payments cần xác nhận/duyệt trước thực hiện; nội dung đề xuất chưa thay đặc tả đang chạy. Giữ lịch sử Credit và các kết quả cũ, không coi plan là nghiệm thu thanh toán. Đã kiểm tra cấu trúc Markdown, bản sao baseline/modified/rollback và hash tài liệu; không cần build lại cho đợt chỉ tài liệu. Bước tiếp: Nguyên xác nhận hồ sơ và quyền chi theo G0–G3; không tự mở giao dịch thật.
 
 
 ## UI chọn combo có ảnh và checkout tách bước — 2026-11-01
@@ -299,7 +408,7 @@ Không thêm lại nếu requirement chưa thay đổi rõ ràng:
 - idempotency_records table
 - token family/reuse detection phức tạp
 - payment reconciliation phức tạp
-- JSONB cho domain data
+- JSONB cho domain tùy ý ngoài snapshot/notification-state đã duyệt tuần9
 
 Không được xóa WebSocket/Socket.IO khỏi kiến trúc hiện tại.
 
@@ -323,7 +432,7 @@ Integrations:
 
 ```text
 Playwright
-SePay/VietQR
+payOS/VietQR
 FCM
 Gmail SMTP
 APK hosting
@@ -400,8 +509,8 @@ Database phải có đúng **10 bảng nghiệp vụ**:
 Rules:
 
 - PostgreSQL relational database cơ bản;
-- **không JSONB**;
-- mỗi bảng khoảng 7–12 fields;
+- JSON snapshot và notification-state có cấu trúc được duyệt tuần9; không JSONB cho domain tùy ý;
+- số field theo schema tuần9 đã mở rộng có chủ đích;
 - không tạo bảng mới nếu chưa có thay đổi requirement rõ ràng;
 - ưu tiên FK, UNIQUE, transaction.
 
@@ -413,166 +522,50 @@ Seat layout nằm trong code template; inventory thực tế nằm ở `showtime
 
 ## 7. Canonical fields
 
-### `users`
+Schema chuẩn là `backend/prisma/schema.prisma`; các field/quan hệ Prisma hiện hành dưới đây thay giới hạn7–12 field cũ. Không có cột số dư/khấu trừ nội bộ. Migrations mới giữ lịch sử bootstrap rồi drop các cột cũ; không sửa checksum migration đã chạy.
 
-```text
-id
-email
-password_hash nullable
-google_id nullable
-full_name
-avatar_url nullable
-role
-is_active
-email_verified_at nullable
-credit_balance
-refresh_token_hash nullable
-fcm_token nullable
-```
+### `User`
 
-### `movies`
+`id`, `email`, `passwordHash`, `googleId`, `fullName`, `avatarUrl`, `role`, `isActive`, `emailVerifiedAt`, `refreshTokenHash`, `fcmToken`, `orders`, `heldSeats`.
 
-```text
-id
-title
-poster_url nullable
-duration_minutes
-synopsis nullable
-age_rating
-genre nullable
-language nullable
-source_url UNIQUE
-original_title nullable
-release_date nullable (DATE)
-director nullable
-cast nullable
-trailer_youtube_id nullable (VARCHAR(11))
-updated_at
-```
+### `Movie`
 
-### `auditoriums`
+`id`, `title`, `posterUrl`, `durationMinutes`, `synopsis`, `ageRating`, `genre`, `language`, `sourceUrl`, `originalTitle`, `releaseDate`, `director`, `cast`, `trailerYoutubeId`, `updatedAt`, `showtimes`.
 
-```text
-id
-name
-type
-capacity
-is_extra
-status
-created_at
-updated_at
-```
+### `Auditorium`
 
-### `showtimes`
+`id`, `name`, `type`, `capacity`, `isExtra`, `status`, `createdAt`, `updatedAt`, `showtimes`.
 
-```text
-id
-movie_id
-auditorium_id
-start_at
-end_at
-format
-base_price
-status
-source_key
-presentation_label nullable
-created_at
-updated_at
-```
+### `Showtime`
 
-### `showtime_seats`
+`id`, `movieId`, `auditoriumId`, `startAt`, `endAt`, `format`, `presentationLabel`, `basePrice`, `status`, `sourceKey`, `createdAt`, `updatedAt`, `movie`, `auditorium`, `seats`, `orders`.
 
-```text
-id
-showtime_id
-seat_code
-row_name
-seat_number
-seat_type
-price
-status
-held_by_user_id nullable
-hold_expires_at nullable
-updated_at
-```
+### `ShowtimeSeat`
 
-### `combos`
+`id`, `showtimeId`, `seatCode`, `rowName`, `seatNumber`, `seatType`, `price`, `status`, `heldByUserId`, `holdExpiresAt`, `updatedAt`, `showtime`, `heldByUser`, `orderSeats`.
 
-```text
-id
-name
-description
-price
-image_url nullable
-status
-created_at
-updated_at
-```
+### `Combo`
 
-### `orders`
+`id`, `name`, `description`, `price`, `imageUrl`, `status`, `createdAt`, `updatedAt`, `orders`.
 
-```text
-id
-user_id
-showtime_id
-combo_id nullable
-combo_quantity
-subtotal
-discount
-credit_used
-total_amount
-status
-expires_at
-created_at
-```
+### `Order`
 
-### `order_seats`
+`id`, `userId`, `showtimeId`, `comboId`, `comboQuantity`, `checkoutRevision`, `checkoutConfirmedAt`, `voucherCode`, `subtotal`, `discount`, `totalAmount`, `status`, `expiresAt`, `createdAt`, `user`, `showtime`, `combo`, `seats`, `payments`, `ticket`.
 
-```text
-id
-order_id
-showtime_seat_id
-seat_code
-price
-status
-created_at
-```
+### `OrderSeat`
 
-### `payments`
+`id`, `orderId`, `showtimeSeatId`, `seatCode`, `price`, `status`, `createdAt`, `order`, `showtimeSeat`.
 
-```text
-id
-order_id
-payment_code
-expected_amount
-received_amount nullable
-provider_transaction_id nullable
-transfer_content nullable
-status
-issue_reason nullable
-expires_at
-paid_at nullable
-created_at
-```
+### `Payment`
 
-### `tickets`
+`id`, `orderId`, `paymentCode`, `expectedAmount`, `receivedAmount`, `providerTransactionId`, `transferContent`, `status`, `issueReason`, `expiresAt`, `paidAt`, `createdAt`, `order`, `kind`, `intentOrderId`, `refundOrderId`, `parentId`, `parent`, `children`, `providerOrderCode`, `providerObjectId`, `operationState`, `recipientCipher`, `snapshot`, `notificationState`, `attempts`, `nextAttemptAt`, `leaseUntil`, `updatedAt`, `resolvedBy`, `resolutionNote`.
 
-```text
-id
-order_id
-booking_code
-qr_token_hash
-status
-issued_at
-checked_in_at nullable
-combo_redeemed_at nullable
-refunded_at nullable
-cancelled_at nullable
-email_sent_at nullable
-expires_at
-```
+### `Ticket`
 
-Do not add fields casually. If a new field is needed, first check whether an existing field can satisfy the requirement without harming data integrity.
+`id`, `orderId`, `bookingCode`, `qrTokenHash`, `status`, `issuedAt`, `checkedInAt`, `comboRedeemedAt`, `refundedAt`, `cancelledAt`, `snapshot`, `emailAttempts`, `emailNextAttemptAt`, `emailLeaseUntil`, `fcmSentAt`, `emailSentAt`, `expiresAt`, `order`.
+
+Constraints bắt buộc: một ticket/order; intentOrderId/refundOrderId unique; provider reference/orderCode/objectId unique khi có; số tiền không âm; lịch sử order_seats không bị ghi đè khi bán lại. JSON chỉ dùng snapshot bất biến và trạng thái retry có cấu trúc.
+
 
 ---
 
@@ -686,7 +679,6 @@ Expiry cron:
 order EXPIRED
 order_seats CANCELED
 showtime_seats AVAILABLE
-restore order.credit_used once
 ```
 
 After commit emit:
@@ -696,7 +688,7 @@ SEAT_RELEASED
 ORDER_EXPIRED
 ```
 
-Booking cutoff (chốt 2026-10-25): chỉ tạo hold mới khi DB `clock_timestamp() < showtimes.start_at`, suất/phòng ACTIVE; kiểm tra lại thời gian DB sau khi chờ khóa/kiểm tra ghế. Tới hoặc qua giờ bắt đầu trả `409 SHOWTIME_UNAVAILABLE`, không tạo đơn/giữ một phần ghế/phát sự kiện. Không tự thêm mốc dừng trước 10/15 phút, không cắt ngắn hạn600s của hold hợp lệ. Đọc/retry cùng Idempotency-Key/payload sau cutoff giữ trạng thái/deadline cũ; retry tới hạn chỉ expire/nhả một lần, không hồi sinh/gia hạn. Giữ ownership, transaction, thứ tự khóa và phạm vi payment/combo/credit hiện tại.
+Booking cutoff (chốt 2026-10-25): chỉ tạo hold mới khi DB `clock_timestamp() < showtimes.start_at`, suất/phòng ACTIVE; kiểm tra lại thời gian DB sau khi chờ khóa/kiểm tra ghế. Tới hoặc qua giờ bắt đầu trả `409 SHOWTIME_UNAVAILABLE`, không tạo đơn/giữ một phần ghế/phát sự kiện. Không tự thêm mốc dừng trước 10/15 phút, không cắt ngắn hạn600s của hold hợp lệ. Đọc/retry cùng Idempotency-Key/payload sau cutoff giữ trạng thái/deadline cũ; retry tới hạn chỉ expire/nhả một lần, không hồi sinh/gia hạn. Giữ ownership, transaction, thứ tự khóa và phạm vi payment/combo/voucher hiện hành.
 
 ---
 
@@ -720,37 +712,12 @@ Do not remove transaction protection just because Redis is absent.
 
 ## 13. Pricing
 
-Backend calculates all prices.
+Giá do backend quyết định, VND nguyên: `subtotal = seats + comboUnitPrice × quantity`, `totalAmount = subtotal − discount`, `bankAmount = totalAmount`. Giữ FIRST50/CINE20, một voucher/đơn, không cộng dồn. Quote không ghi tiền, checkout giữ deadline gốc; sau tạo payment khóa snapshot. Không còn số dư nội bộ hoặc nhánh dùng Credit.
 
-```text
-subtotal = seats + combo
-final_total = subtotal - discount
-available_credit = user.credit_balance + previous_credit_used_for_this_pending_order
-credit_used = min(available_credit, final_total)
-bank_amount = final_total - credit_used
-```
 
-Promotion is code/config, not table.
+### Bỏ Credit theo yêu cầu02/11
+Đã duyệt loại dữ liệu/cột/logic Credit N8 bằng migration mới vì chưa dùng; không giữ ví hay nhánh tương thích. Backup ngoài repo, không reset/xóa đơn/tài khoản. Chỉ lịch sử và migration cũ giữ bằng chứng.
 
-Only one best promotion.
-
----
-
-## 14. Refund Credit
-
-Store in:
-
-```text
-users.credit_balance
-```
-
-Initial POST /orders only holds seats. At checkout confirmation on that same pending order, reserve automatic Credit inside the transaction: budget = users.credit_balance + this order’s previous credit_used; balance += old credit_used − new credit_used. Never extend expires_at. Signed quote retry is a no-op; changed price/balance/order snapshot requires a new quote.
-
-If order expires/cancels before PAID, restore exactly once.
-
-Self-refund adds `orders.total_amount` to credit.
-
-No wallet/ledger tables.
 
 ---
 
@@ -769,67 +736,24 @@ No product/item/option tables.
 
 ## 16. Payment
 
-Real payment via SePay + VietQR.
-
-Payment statuses:
+payOS là provider hiện hành. Thu về MB; hoàn bằng quỹ Bảo Kim, không tự trích tiền MB. Dùng SDK/API chính thức với hai client thu/chi, idempotency/reference bền vững. QR có amount/description do server; app không sửa. Backend kiểm tra chữ ký/reference/currency/tài khoản/số tiền/hold/ghế, finalizer chung transaction PAID/ACTIVE/SOLD/một ticket. Ca0đ không gọi thu, vẫn finalization/vé/email thật theo trạng thái. Webhook trùng/query không phát vé lần hai. Sai tiền/reference/trễ/chuyển thêm lưu receipt và NEEDS_ADMIN; không revive. Không coi return URL hoặc HTTP200 là bằng chứng tiền vào/ra. Unknown được query mã cũ, không tạo giao dịch mới.
 
 ```text
-PENDING
-PAID
-EXPIRED
-NEEDS_ADMIN
-RESOLVED
+POST /orders/:id/payment
+POST /orders/:id/payment/check
+POST /webhooks/payos
+GET /orders
+GET /orders/:id
+GET /tickets
+GET /tickets/:id
+GET /tickets/:id/qr
+POST /tickets/:id/refund
+GET /tickets/:id/refund
+PUT /me/fcm-token
+DELETE /me/fcm-token
 ```
+JWT+ownership cho API khách, role riêng cho Admin issues; webhook public chỉ chấp nhận chữ ký provider hợp lệ. Client không quyết định số tiền thu/hoàn hoặc người nhận. Mẫu webhook kiểm tra cấu hình không được phát vé.
 
-Issue reasons:
-
-```text
-WRONG_AMOUNT
-WRONG_REFERENCE
-LATE_PAYMENT
-```
-
-Successful finalization transaction:
-
-```text
-payment PAID
-order PAID
-order_seats ACTIVE
-showtime_seats SOLD
-ticket VALID
-```
-
-After commit:
-
-```text
-PAYMENT_PAID
-SEAT_SOLD
-FCM
-email ticket
-```
-
-Wrong/late payment:
-
-```text
-payment NEEDS_ADMIN
-```
-
-Staff never handles it.
-
-Admin can only mark bank-refunded/resolved.
-
-Do not revive an expired order.
-
-### Idempotency without table
-
-Use:
-
-- unique `payment_code`
-- unique `provider_transaction_id`
-- transaction
-- state guard
-
-Duplicate webhook must not issue a second ticket or spend credit twice.
 
 ---
 
@@ -868,6 +792,7 @@ Status:
 ```text
 VALID
 USED
+REFUND_PENDING
 REFUNDED
 CANCELLED
 EXPIRED
@@ -891,52 +816,15 @@ Combo redeem is stored by `combo_redeemed_at`.
 
 ## 19. Self-refund
 
-Eligibility:
+Chỉ nhận self-refund khi order PAID, ticket VALID, chưa check-in/chưa redeem combo, còn ít nhất45 phút theo DB. Hoàn toàn đơn,100% tiền thực trả sau voucher, N8 chịu phí; không hoàn voucher thành tiền. TX ngắn ghi nghĩa vụ REFUND, unique/idempotency và REFUND_PENDING; vô hiệu QR, cập nhật lịch sử ghế và nhả đúng ghế. HTTP payout ngoài transaction; timeout/query giữ reference cũ. SUCCEEDED mới chuyển REFUNDED; thiếu dữ liệu nguồn/quỹ/phí/lỗi giữ nghĩa vụ và đưa kiểm tra. Không cho chọn STK khác, không revive vé nếu chi lỗi. Admin không chi tay khi payout unknown. Email/FCM chạy sau commit, không đảo ngược giao dịch.
 
-- order PAID
-- ticket VALID
-- not checked in
-- combo not redeemed
-- >=45 min before showtime
-- not already refunded
-
-Transaction:
-
-```text
-order REFUNDED
-ticket REFUNDED
-order_seats REFUNDED
-showtime_seats AVAILABLE
-users.credit_balance += orders.total_amount
-```
-
-After commit emit FCM/realtime.
-
-No monthly quota.
 
 ---
 
 ## 20. Showtime cancellation
 
-Admin only.
+Mục tiêu tuần10/11: Admin hủy suất phải dùng chung nghĩa vụ hoàn tiền bền vững của khoản thu gốc; pending nhả hold, paid không cộng số dư nội bộ. Không tự coi chức năng hủy suất đã triển khai ở tuần9.
 
-Before showtime start.
-
-Reject automatic cancellation if any ticket is already USED.
-
-Pending orders:
-
-```text
-CANCELED + release seat + restore credit
-```
-
-Paid valid tickets:
-
-```text
-CANCELED/CANCELLED + release seat + add total to credit
-```
-
-Staff does not process any order manually.
 
 ---
 
@@ -975,56 +863,17 @@ Do not require Redis for Socket.IO in single-instance deployment.
 
 ## 22. Email ticket
 
-After ticket issue:
+Nodemailer/Gmail SMTP hiện có; không đổi credential. Email gửi tới email snapshot tài khoản, sau commit. Mua thành công có poster HTTPS tin cậy (không server-fetch URL tùy ý), tên phim/suất/phòng/ghế/số ghế, một QR cho cả đơn, combo số lượng/đơn giá, subtotal/voucher/discount/total, booking code và QR PNG CID. HTML dạng bảng responsive600px, inline CSS nhận diện N8, có plaintext/alt và escape. QR/thư cũ không làm vé hoàn/hủy/hết hạn hợp lệ lại. Nếu receipt mua gửi muộn khi vé không còn VALID thì cảnh báo trạng thái và không nhúng QR sử dụng.
 
-```text
-send email to users.email
-```
+Hoàn vé có email tiếp nhận, hoàn thành và cần kiểm tra; chỉ thông báo hoàn thành khi giao dịch chi thành công. Trạng thái gửi/lease/attempt/nextAttempt lưu trong ticket/payment, worker retry có backoff, tối đa10 lần mỗi sự kiện trước khi cần vận hành kiểm tra. Lỗi email/FCM không rollback booking/refund. SMTP có thể lặp thư khi mất phản hồi; Message-ID ổn định, không bao giờ dùng retry mail để chi hoặc phát vé lại. TRANSACTION_EMAIL_ENABLED mặc địnhfalse; test không gửi mail thật.
 
-Provider:
-
-```text
-Nodemailer + Gmail SMTP
-```
-
-Email includes:
-
-- movie
-- showtime
-- auditorium
-- seats
-- combo
-- amounts
-- booking code
-- QR
-
-If email fails:
-
-```text
-booking stays PAID
- ticket stays VALID
- email_sent_at stays NULL
-```
-
-Cron retries later.
-
-Never rollback a paid booking because email failed.
 
 ---
 
 ## 23. FCM
 
-Use `users.fcm_token` as one current token per user.
+FCM HTTPv1 dùng google-auth-library hiện có. Một fcmToken hiện tại/user, token chuyển login phải gỡ liên kết tài khoản cũ; logout gỡ token. Thông báo mua/hoàn gồm ticketId, không gửi QR/token ngân hàng. Tap mở vé rồi refetch REST. FCM_ENABLED mặc địnhfalse khi chưa có Firebase; private key chỉ server .env. Android public FirebaseOptions qua Gradle properties, không Analytics. Permission Android13+ không được chặn mua/xem vé. Reminder/scanner hoàn thiện ở tuần sau.
 
-Push:
-
-- payment success
-- ticket issued
-- T-1h reminder
-- showtime cancelled
-- refund completed
-
-FCM is delivery only, not source of truth.
 
 ---
 
@@ -1074,7 +923,7 @@ POST /orders
 POST /orders/:id/quote
 POST /orders/:id/checkout
 POST /orders/:id/payment
-POST /webhooks/sepay
+POST /webhooks/payos
 POST /tickets/:id/refund
 POST /staff/tickets/:id/check-in
 POST /staff/tickets/:id/redeem-combo
@@ -1089,7 +938,6 @@ Never expose generic endpoints that let clients directly set:
 order.status
 payment.status
 ticket.status
-credit_balance
 seat.status
 role
 ```
@@ -1178,7 +1026,7 @@ Must cover:
 - reject <45m
 - reject USED/redeemed
 - seat release
-- credit added once
+- payout obligation created once; unknown never paid again
 
 ### Email
 
@@ -1945,3 +1793,46 @@ Chạy lại76/76 backend tests exit0 trước xuất bản; diff/index whitespa
 - Kiểm chứng tối thiểu: backend build/typecheck/format/tests; Linux tests trong container có proxy variant; one-shot coming-soon qua proxy trên VPS; API HTTPS trả danh sách đúng biên ngày/không showtimes; Android build/unit/lint + fixture UI + live VPS UI; DB đọc-only xác nhận 10 bảng/109 cột, không phát sinh showtime/ghế, users/inventory không đổi. Không tuyên bố tick cron tương lai nếu chưa quan sát; không nhận lượt lỗi đầu tiên là thành công.
 - Trạng thái hiện tại: **Hoàn thành code/crawler/API/migration, deploy VPS, kiểm chứng Android và verification bundle/rollback**. Backend commit `f6af43bf81e6a90b97fa25d48cd3c9a8c77f31d7` và Android commit `03526a50493fee4398ae6b4f1fb0ba25c80580b8` trên `feat/nguyen-week8-coming-soon`, remote khớp; local 83/83 tests, bản proxy overlay 86/86, VPS Linux container 86/86. Migration đã backup `n8_cineplex-20261025T100129Z-390666.dump` (SHA-256 `6af515e3...d1f7`), apply đạt, 10 bảng/109 cột, users hash không đổi. API VPS health/Swagger 200, `/movies/coming-soon` trả 24 item toàn ngày tương lai/không showtimes; one-shot proxy runId `dc09cba8-...` tạo 24 phim, 2 omitted, 7 skipped nên PARTIAL (không gọi là SUCCESS; cron sẽ thử lại). Android 55 unit/34 connected (live VPS đạt), lint 0 lỗi. Đã prune builder/image theo khóa và xoá temp VPS, giữ 3 image đang chạy; không prune volume/network/DB. Verification bundle ngoài repo đã chốt; ROLLBACK.sh trên bản sao: baseline hashes OK, route/migration vắng mặt, baseline build + 14/14 catalog tests + probe route absent đạt. Giới hạn: 7 phim chưa vào DB lượt đầu, chưa quan sát cron tick, chưa thử máy vật lý; poster CLAYFACE tải chậm trong ảnh nhưng URL 200.
 - Công bố nhánh mới (2026-10-25): đã tạo/push `feat/nguyen-week8-coming-soon-publish` trỏ 3 commit đã kiểm chứng (`f6af43b`, `03526a5`, `c2455f9`) rồi thêm commit tài liệu công bố trên nhánh này; remote khớp và GitHub API xác nhận author/committer `thnguyen290106`; không tạo commit rỗng, không đụng `main`/nhánh cũ, base `5987ce8` đã có trong `origin/main`.
+
+## Sửa lỗi QR payOS thật — 2026-11-02
+
+Đã tái hiện lỗi production `42501 permission denied for sequence payos_order_code_seq`: migration dùng role quản trị nhưng API dùng role giới hạn. Migration additive `20261102010000_payos_sequence_privileges` chỉ cấp USAGE sequence cho các role đã có INSERT payments, không nâng API thành admin; đã áp dụng bằng Prisma deploy trên VPS.
+
+Lỗi kế tiếp: phản hồi tạo link có chữ ký hợp lệ dùng tài khoản định danh MB khác nhau cho từng đơn, không phải STK vật lý cấu hình. Đã giữ đối chiếu orderCode/amount/currency và chữ ký SDK, lưu tài khoản định danh từ phản hồi ký trên từng intent; receipt chỉ chấp nhận STK vật lý cấu hình hoặc đúng tài khoản định danh của intent đó. Không chấp nhận tài khoản định danh của đơn khác. Check khi transaction trước chưa tạo intent gọi lại start idempotent trên cùng order/deadline. Sửa đăng ký FCM dùng executeRaw cho hàm khóa advisory trả void, tránh Prisma UnsupportedNativeDataType.
+
+Đã thao tác app thật trên emulator tới QR payOS 150000đ của order 5adb1a5e-171b-48ba-91dc-8f5e1dc71c7d, mã payOS N81000003; ảnh real-payment-qr.png ngoài repo. Đọc ngược QR từ chính ảnh: amount150000/currency704/countryVN/CRC16 hợp lệ. Không tự chuyển tiền, không đánh dấu PAID. Giữ deadline thật; QR hết hạn không được dùng lại hay kéo dài. Thu/chi/email/FCM đang bật ở VPS nhưng không suy diễn thành giao dịch tiền thật đã nghiệm thu.
+
+Regression PostgreSQL bằng role không superuser: quyền sequence BASELINE=false → MODIFIED=true → ROLLBACK=false trên DB dùng một lần; 15/15 gồm start/check, QR VA, thanh toán, hoàn/resale, duplicate, timeout và FCM register. Provider của regression là giả lập, không coi là hoàn tiền thật. API quỹ chi payOS thật gọi chỉ đọc thành công; tại lúc kiểm tra chưa đủ hoàn150000đ. Cần bổ sung quỹ phù hợp trước tự test hoàn; chưa nhận hoàn tiền về ngân hàng thật là đạt. Không rollback production hoặc xóa đơn/vé/giao dịch.
+
+Source thay đổi và bốn role vẫn ở D:\NT118\verification\week9-payos-ticket-refund; source gốc giữ nguyên. Không sửa Android/build APK trong đợt sửa backend này. Toàn bộ 3 task tuần9 vẫn chưa được đánh dấu hoàn thành trước nghiệm thu thu/hoàn thật và email tương ứng.
+
+## Sửa DTO hoàn vé, hoàn thật và dọn đơn hết hạn — 2026-11-02
+
+Đã tái hiện Android MissingFieldException tại $.items[1].ticket. GET /orders trả ticket tóm tắt id/status, không phải ServerTicket chi tiết. Đã tách OrderTicketSummary cho CustomerOrder.ticket; vẫn bắt buộc field tài chính/QR ở ServerTicket thật, không thêm default giả để né validation. Regression trước sửa 2 test/1 fail, sau sửa đạt; APK version4/1.3-week9-refund-fix đã cài lại giữ session. My Tickets đọc HTTPS thật không còn lỗi parse.
+
+Nguồn trả tiền đã có đủ số tiền: API payOS lúc20:34:24 trả150000VND, khớp app Bảo Kim. Ảnh payOS0đ là ảnh thời điểm cũ/chưa đồng bộ; không suy diễn thành hai ví riêng hay yêu cầu nạp thêm. Hoàn bị review thực tế vì counterAccountBankId là CITAD01203001, không phải NAPAS BIN6chữ số. Mapping Vietcombank01203001→970436 được đối chiếu VSDC (https://vsdc.vn/vi/thong-tin-ngan-hang-thanh-vien-thanh-toan) và VietQR (https://api.vietqr.io/v2/banks). Mã CITAD khác chưa xác minh vẫn phải review; không đoán ngân hàng hay lấy tài khoản từ client.
+
+Đã xác minh signed getLink/reference/amount/payer của receipt thật, số dư quỹ và không có payout; chỉ bổ sung recipient mã hóa vào cùng receipt/refund attempts0 và đưa lại đúng refund cũ vào REQUESTED, giữ id/reference. Worker tự chi đúng một lần: refund bff8756b-e0de-400b-8091-74157a29984a RESOLVED/SUCCEEDED/attempts1; provider query đúng1 SUCCEEDED. Email completed đã gửi. Người dùng xác nhận nhận đủ150000đ về Vietcombank và yêu cầu xóa sau đối soát.
+
+Sau khi kiểm tra lại provider SUCCEEDED/amount/destination và xác nhận người dùng, đã xóa đúng vé thử/order5adb1a5e-171b-48ba-91dc-8f5e1dc71c7d: orders0/tickets0/order_seats0/payments liên kết0. Chỉ giữ receipt tombstone vô danh chứa reference chống callback trùng; không order/email/account/snapshot/tổng tiền. Backup trước xóa nằm /var/backups/n8-cineplex-private/reconciled-test-5adb1a5e-20261102.json quyền600 ngoài source/artifact; không restore vào production sau hoàn tiền.
+
+Dọn tự động mỗi15giây: chỉ xóa vật lý đơn EXPIRED không có payment/ticket/reference và toàn bộ order_seats đã CANCELED, trong transaction khóa order. Đơn đã tạo link provider còn trace cần xử lý tiền đến trễ được giữ server nhưng không hiện ở danh sách. UI tự bỏ đơn chờ đúng deadline, không chờ người dùng tải lại. Không xóa vé đang chờ hoàn hoặc nghĩa vụ tài chính chưa đối soát.
+
+Bằng chứng mới: backend131 unit đạt; PostgreSQL16/16 bằng role không superuser, gồm xóa hold rỗng/giữ trace/chống lặp và tiền hoàn; Android77 unit đạt cùng assembleDebug/assembleDebugAndroidTest/lintDebug. Test ISO fixture từng sai định dạng thiếu milliseconds đã giữ literal lỗi và sửa fixture đúng response server, không thay production để né test. Bốn role cũ mở rộng, source gốc giữ nguyên; không commit/push.
+
+### Chốt lượt sửa và đối soát 2026-11-02
+Sau khi người dùng xác nhận nhận đủ tiền, dữ liệu vé thử đã xóa đúng phạm vi như trên. API quỹ chi lúc20:48:15 trả0VND sau khoản hoàn150000đ, không phải báo mất tiền hay yêu cầu nạp lại giao dịch vừa hoàn. Các đơn hết hạn không có liên kết tài chính còn0; trace provider được giữ server nhưng không hiện giao diện.
+
+Bổ sung nhánh retry: getLink đã xác minh thành công đưa intent còn hạn từ UNKNOWN về PROCESSING để dùng hosted checkout cũ; link provider đã EXPIRED/CANCELLED dừng poll/cancel lặp; không đổi NEEDS_ADMIN thành EXPIRED. Linux PostgreSQL role giới hạn17/17 đạt, fake provider. Native mới6/6, Android77unit; ba hash runtime payments.service/payment-domain/fcm.controller khớp local. APK version4 hash20aa573c9dd3b8eceea201d35d41826b4e97fc1b42dc170a143c9b6807ad04d9 đã cài.
+
+Rollback bổ sung --refund-dto: cùng lệnh, cùng2test/input trên copy: BASELINE1fail MissingFieldException/exit1 → MODIFIED2pass/exit0 → ROLLBACK1fail MissingFieldException/exit1. Lỗi quay lại đúng theo baseline, không rollback APK/VPS hay tiền thật. Source active giữ MODIFIED. ROLLBACK.sh giữ mode toàn bộ source từ BASELINE.zip và mode DTO từ REFUND_DTO_BASELINE.zip; bằng chứng/ảnh/literal logs cùng bốn role hiện hữu.
+
+## UI ưu đãi tham khảo ảnh người dùng và tab vé toàn hàng — 2026-11-02
+
+Đã chỉnh VoucherPicker thành entry Ưu đãi dạng hàng thẻ trắng, minh họa %, chevron và mã đã chọn; bỏ nhãn/container trùng trong LiveCommerceScreen. Mở màn dialog toàn màn hình với header gradient hồng nhạt theo màu N8, voucher có ảnh/điều kiện/trạng thái, thanh Áp dụng cố định dưới cùng. Chọn/Bỏ chỉ đổi draft; Áp dụng mới gọi callback quote server; Back/đóng bỏ draft. Không nhập mã tay, không Xu/Credit, không ngân hàng/số dư giả. Giữ kiểm tra minimum, một voucher, guard busy/unknown/confirmed, original order và deadline. Thẻ không đủ điều kiện không bấm được. Dialog có trạng thái lỗi/rỗng theo danh sách thật, cuộn nội dung và system-bar contrast đúng.
+
+TicketsScreen thay hai FilterChip nhỏ bằng hai thẻ selectable Role.Tab chia đều toàn chiều ngang, màu đậm cho mục chọn, số lượng, mô tả và vạch nhấn; nhãn có weight để không đè badge. Không thay nguồn dữ liệu, phân loại vé hay quyền hoàn. Cập nhật các caller/test tương tác mới, không sửa backend/schema/provider/FCM/secret hoặc deploy VPS trong đợt UI; 79 hash backend khớp trước sửa.
+
+Kiểm chứng: assembleDebug/assembleDebugAndroidTest/testDebugUnitTest/lintDebug đạt, 77unit không fail/error. Native 8/8 gồm voucher apply/remove/cancel, disabled minimum, tab equal width>44% mỗi tab, selected semantics, cùng regression QR/payment/refund fakes. Hai test mới quan sát BASELINE2fail (chọn lập tức/thiếu full-width tabs) → MODIFIED2pass → ROLLBACK2fail; cùng lệnh instrument và input hành vi. adb đều exit0, riêng kết quả runner mới là bằng chứng pass/fail; không coi adb exit0 là tests đạt. ROLLBACK.sh --checkout-ui chạy trên checkout-ui-rollback, ba file restored khớp CHECKOUT_UI_BASELINE.zip chính xác; source active giữ modified, emulator cài lại APK mới. Bốn role cũ mở rộng, không thay lịch sử các mode all/--refund-dto.
+
+Đã mở xem ảnh voucher-polished.png và ticket-tabs-polished.png từ emulator; ảnh đầu chụp giữa animation/systembar chưa chuẩn được giữ, ảnh cuối sau đợi350ms + sửa riêng dialog window background/contrast đã xem lại. Không phát sinh thanh toán/hoàn/fixture DB thật trong lượt UI này. APK versionCode5/versionName1.4-checkout-polish, SHA256 67576f0282da8e9ba70642146708fc22e265552b7f094da2cfe4b4990a391595. Source nằm candidate ngoài repo gốc; chưa commit/push. Chưa thử máy vật lý, font scale rất lớn hoặc nhiều viewport.

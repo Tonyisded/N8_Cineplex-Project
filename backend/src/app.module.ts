@@ -1,3 +1,6 @@
+import { AppReleaseController } from "./app-release.js";
+import { PaymentsModule } from "./payments/payments.module.js";
+import { NotificationsModule } from "./notifications/notifications.module.js";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
@@ -20,9 +23,11 @@ import { BookingModule } from "./booking/booking.module.js";
     PrismaModule,
     AuthModule,
     BookingModule,
+    PaymentsModule,
+    NotificationsModule,
     ThrottlerModule.forRoot([{ name: "default", ttl: 60000, limit: 120 }]),
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, AppReleaseController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

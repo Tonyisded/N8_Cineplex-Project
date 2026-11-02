@@ -24,7 +24,6 @@ export const profile = (u: User) => ({
   role: u.role,
   emailVerifiedAt: u.emailVerifiedAt,
   hasPassword: u.passwordHash !== null,
-  creditBalance: u.creditBalance.toString(),
 });
 const failure = (code: string, message: string) => ({ code, message });
 const digest = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -292,7 +291,7 @@ export class AuthService {
     const c = this.decode(token, "refresh");
     await this.db.user.updateMany({
       where: { id: c.sub, refreshTokenHash: digest(token) },
-      data: { refreshTokenHash: null },
+      data: { refreshTokenHash: null, fcmToken: null },
     });
     return { message: "Đã đăng xuất." };
   }
