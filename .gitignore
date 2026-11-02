@@ -144,3 +144,6 @@ firebase-service-account*.json
 fcm-credentials*.json
 application_default_credentials.json
 .firebase/
+
+# Only the sanitized backend template is safe to track.
+!backend/.env.example
