@@ -1890,3 +1890,23 @@ TicketsScreen thay hai FilterChip nhỏ bằng hai thẻ selectable Role.Tab chi
 Kiểm chứng: assembleDebug/assembleDebugAndroidTest/testDebugUnitTest/lintDebug đạt, 77unit không fail/error. Native 8/8 gồm voucher apply/remove/cancel, disabled minimum, tab equal width>44% mỗi tab, selected semantics, cùng regression QR/payment/refund fakes. Hai test mới quan sát BASELINE2fail (chọn lập tức/thiếu full-width tabs) → MODIFIED2pass → ROLLBACK2fail; cùng lệnh instrument và input hành vi. adb đều exit0, riêng kết quả runner mới là bằng chứng pass/fail; không coi adb exit0 là tests đạt. ROLLBACK.sh --checkout-ui chạy trên checkout-ui-rollback, ba file restored khớp CHECKOUT_UI_BASELINE.zip chính xác; source active giữ modified, emulator cài lại APK mới. Bốn role cũ mở rộng, không thay lịch sử các mode all/--refund-dto.
 
 Đã mở xem ảnh voucher-polished.png và ticket-tabs-polished.png từ emulator; ảnh đầu chụp giữa animation/systembar chưa chuẩn được giữ, ảnh cuối sau đợi350ms + sửa riêng dialog window background/contrast đã xem lại. Không phát sinh thanh toán/hoàn/fixture DB thật trong lượt UI này. APK versionCode5/versionName1.4-checkout-polish, SHA256 67576f0282da8e9ba70642146708fc22e265552b7f094da2cfe4b4990a391595. Source nằm candidate ngoài repo gốc; chưa commit/push. Chưa thử máy vật lý, font scale rất lớn hoặc nhiều viewport.
+
+
+## payOS request budget / refund v3 — 2026-11-03
+
+Đã triển khai source backend, chưa công bố hoặc deploy production trong bước này. Governor PostgreSQL chia COLLECT/PAYOUT, một HTTP mỗi kênh, giãn cách1s/5s; cooldown4293/6/12/30/60phút, Retry-After dài hơn được giữ, GET không reset streak POST. SDK maxRetries0, proxy Việt/TLS giữ nguyên. API/SDK client thô được đóng kín, balance facade cũng đi governor.
+
+Refund mới v3 gửi POST đầu không GET khi chứng minh chưa gửi; payload mã hóa/hash bất biến trước HTTP. SUCCEEDED hợp lệ finalize ngay, không đọc thêm. POST429/timeout chỉ đối soát, không tự replay. Có ID dùng GET, chưa có dùng LIST; lịch3/10/30/60phút cộng jitter nhỏ. WAITING_FUNDS dừng chờ admin; resume chỉ FUNDS_ADDED, requestId chống trùng, giữ lifetime budget4. Bản ghi v1/v2 và Verity không reset/requeue. Backend/Android DTO cũ giữ nguyên, không APK/release mới/minimum change.
+
+Webhook xác thực rồi dedup/capture durable inbox, ACK sau DB; consumer đồng bộ theo payment link, vẫn đọc authoritative để lấy payer. Manual payment/check tôn trọng due, không tạo intent mới. Hai bảng mới additive, không sửa dữ liệu tài chính cũ. Không lấy số dư, email hoặc màn hình ngân hàng làm bằng chứng thành công; không giả định callback Payout chưa được xác minh.
+
+Gate quan sát: build/typecheck/format và150/150 local; PostgreSQL cô lập27/27 với fake provider và role hạn chế. Lỗi fixture cũ do kỳ vọng tự retry/kiểm tra trước due đã giữ log rồi cập nhật theo chính sách user đã chốt; không bỏ assertion tài chính. Linux/rollback/VPS status xem ledger ngoài repo; chưa nhận là E2E ngân hàng thật. README root rỗng, Android source không thay đổi.
+
+
+## X?c nh?n tri?n khai request budget ? 2026-11-03
+
+?? ho?n t?t rollout backend l?n VPS sau gate:150/150 local,150/150 Linux,27/27 PostgreSQL c? l?p (provider gi?, role kh?ng superuser). Runtime7SHA256 kh?p build root; API healthy/restart0, health/Swagger/combos7&8 HTTP200, b?n6 HTTP426, webhook unsigned400. Swagger c? resume v?i requestId/reason/note. Kh?ng g?i payout th?, kh?ng reset/retry Verity. Ch? hai b?ng b? sung, kh?ng x?a/s?a giao d?ch c?; private dump mode600 ?? gi? tr??c migration, image before-request-budget-20261103 c?n ?? ph?c h?i. Env/proxy/private config wrappers/Nginx/volume/APK kh?ng thay.
+
+Rollback source ?? th?c thi tr?n b?n sao b?ng ROLLBACK.sh --request-budget: c?ng npm run build && npm test ??t BASELINE150?MODIFIED150?ROLLBACK150, exit0;336 pristine hashes kh?p. Probe c?ng100000? gi?: baseline1GET+1POST, modified0GET+1POST, rollback1GET+1POST, ??uSUCCEEDED/exit0. Kh?ng ph?i rollback DB/ti?n th?t. Root v? candidate gi? MODIFIED, ngu?n Android kh?ng thay, README root v?n r?ng. B?n role c? MODIFIED_FILE.zip/DIFF_FILE.patch/VERIFICATION.txt/ROLLBACK.sh ti?p t?c m? r?ng, kh?ng thay b?.
+
+C?c l?i test/command ban ??u ???c gi? trong ledger: fixture thi?u field/quoting/encoding, old expectation t? replay/time ch?a due, ch?y PG nh?m superuser v? thi?u mount theme Linux. ?? s?a ??ng fixture/setup/ch?nh s?ch user ?? ch?t, kh?ng gi?m b?o v? t?i ch?nh ?? qua test. Ch?a c? ki?m th? mua/ho?n ng?n h?ng th?t m?i, CI GitHub hay ?i?n tho?i v?t l?; kh?ng cam k?t nh? cung c?p h?t429. Payload Payout/credential kh?ng ??a v?o source/log. Ch?a t?o APK/release ho?c t? c?ng b? GitHub trong ??t n?y.

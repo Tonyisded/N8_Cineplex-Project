@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { ProviderDeferred } from "./provider-governor.js";
 import {
   Injectable,
   BadRequestException,
@@ -14,6 +16,8 @@ import { PrismaService } from "../prisma.service.js";
 import { BookingGateway } from "../booking/booking.gateway.js";
 import { PayosAdapter } from "./payos.adapter.js";
 import {
+  sealPaymentData,
+  openPaymentData,
   canRefund,
   collectionAccountMatches,
   collectionProblem,
@@ -25,6 +29,7 @@ import {
   tokenHash,
 } from "./payment-domain.js";
 import {
+  sparseRefundAt,
   initialRefundRetry,
   readRefundRetry,
   refundRetryDecision,
@@ -58,6 +63,17 @@ const json = (value: unknown) =>
 @Injectable()
 export class PaymentsService {
   private busy = false;
+  private inboxBusy = false;
+  @Interval(15000)
+  async inboxTick() {
+    if (this.inboxBusy) return;
+    this.inboxBusy = true;
+    try {
+      await this.processWebhookInbox();
+    } finally {
+      this.inboxBusy = false;
+    }
+  }
   constructor(
     private readonly db: PrismaService,
     private readonly config: ConfigService,
@@ -296,7 +312,13 @@ export class PaymentsService {
   private async lease(id: string) {
     const now = new Date();
     const r = await this.db.payment.updateMany({
-      where: { id, OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }] },
+      where: {
+        id,
+        OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
+        AND: [
+          { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
+        ],
+      },
       data: {
         leaseUntil: new Date(now.getTime() + 60_000),
         attempts: { increment: 1 },
@@ -348,7 +370,10 @@ export class PaymentsService {
           } else if (link.status === "PENDING") {
             await this.db.payment.update({
               where: { id },
-              data: { operationState: "PROCESSING" },
+              data: {
+                operationState: "PROCESSING",
+                nextAttemptAt: new Date(Date.now() + 60000),
+              },
             });
           }
         }
@@ -392,10 +417,17 @@ export class PaymentsService {
           }),
         },
       });
-    } catch {
+    } catch (error) {
+      const e = error as { headers?: Headers };
       await this.db.payment.updateMany({
         where: { id, status: { not: "PAID" } },
-        data: { operationState: "UNKNOWN" },
+        data: {
+          operationState: "UNKNOWN",
+          nextAttemptAt:
+            error instanceof ProviderDeferred
+              ? error.until
+              : sparseRefundAt(new Date(), 0, e?.headers?.get?.("retry-after")),
+        },
       });
     } finally {
       await this.db.payment.update({
@@ -444,7 +476,7 @@ export class PaymentsService {
           expiresAt: order.expiresAt.toISOString(),
           ticketId: order.ticket.id,
         });
-      return this.start(id, userId);
+      return this.paymentStatus(id, userId);
     }
     await this.processIntent(order.payments[0].id);
     const p = await this.db.payment.findUniqueOrThrow({
@@ -483,40 +515,87 @@ export class PaymentsService {
       });
     if (!Number.isSafeInteger(data.orderCode) || data.orderCode < 1000000)
       return { received: true };
-    const link = await this.provider.getLink(data.orderCode);
-    if (link.orderCode !== data.orderCode || link.id !== data.paymentLinkId)
-      throw new BadRequestException("Provider reference mismatch");
-    const transaction = link.transactions.find(
-      (t) => t.reference === data.reference,
-    );
-    if (!transaction) return { received: true };
-    const p = await this.db.payment.findUnique({
-      where: { providerOrderCode: BigInt(data.orderCode) },
+    const existing = await this.db.payment.findUnique({
+      where: { providerTransactionId: `payos:${data.reference}` },
     });
-    if (!p) {
-      await this.db.payment.upsert({
-        where: { providerTransactionId: `payos:${data.reference}` },
-        create: {
-          kind: "RECEIPT",
-          paymentCode: `ISSUE-${randomUUID()}`,
-          providerTransactionId: `payos:${data.reference}`,
-          expectedAmount: 0,
-          receivedAmount:
-            Number.isSafeInteger(data.amount) && data.amount >= 0
-              ? data.amount
-              : 0,
-          status: "NEEDS_ADMIN",
-          operationState: "NEEDS_REVIEW",
-          issueReason: "WRONG_REFERENCE",
-          expiresAt: new Date(),
-        },
-        update: {},
-      });
-      return { received: true };
-    }
-    // Query authoritative transaction set; browser-return data and test pings cannot issue tickets.
-    if (transaction) await this.receive(p, transaction, link.id);
+    if (existing) return { received: true };
+    await this.db
+      .$executeRaw`INSERT INTO provider_webhook_inbox(event_key,order_code,reference,payment_link_id)
+      VALUES (${`payos:${data.reference}`},${BigInt(data.orderCode)},${data.reference},${data.paymentLinkId}) ON CONFLICT DO NOTHING`;
     return { received: true };
+  }
+  private async processWebhookInbox() {
+    const rows = await this.db.$transaction(async (tx) => {
+      const candidates = await tx.$queryRaw<
+        { order_code: bigint; payment_link_id: string }[]
+      >`
+        SELECT order_code,payment_link_id FROM provider_webhook_inbox WHERE completed_at IS NULL
+        AND next_attempt_at<=clock_timestamp() AND (lease_until IS NULL OR lease_until<=clock_timestamp()) ORDER BY received_at LIMIT 1`;
+      if (!candidates.length) return [];
+      const candidate = candidates[0];
+      const [lock] = await tx.$queryRaw<
+        { acquired: boolean }[]
+      >`SELECT pg_try_advisory_xact_lock(${candidate.order_code}) AS acquired`;
+      if (!lock.acquired) return [];
+      const active = await tx.$queryRaw<
+        { count: bigint }[]
+      >`SELECT count(*) FROM provider_webhook_inbox WHERE order_code=${candidate.order_code} AND completed_at IS NULL AND lease_until>clock_timestamp()`;
+      if (Number(active[0].count) > 0) return [];
+      return tx.$queryRaw<
+        { order_code: bigint; payment_link_id: string; lease_until: Date }[]
+      >`UPDATE provider_webhook_inbox SET lease_until=clock_timestamp()+interval '120 seconds'
+        WHERE order_code=${candidate.order_code} AND completed_at IS NULL RETURNING order_code,payment_link_id,lease_until`;
+    });
+    if (!rows.length) return;
+    const row = rows[0];
+    try {
+      const link = await this.provider.getLink(Number(row.order_code));
+      if (
+        link.orderCode !== Number(row.order_code) ||
+        link.id !== row.payment_link_id
+      )
+        throw new Error("Provider reference mismatch");
+      const intent = await this.db.payment.findUnique({
+        where: { providerOrderCode: row.order_code },
+      });
+      for (const transaction of link.transactions) {
+        if (intent) await this.receive(intent, transaction, link.id);
+        else
+          await this.db.payment.upsert({
+            where: { providerTransactionId: `payos:${transaction.reference}` },
+            create: {
+              kind: "RECEIPT",
+              paymentCode: `ISSUE-${randomUUID()}`,
+              providerTransactionId: `payos:${transaction.reference}`,
+              expectedAmount: 0,
+              receivedAmount: transaction.amount,
+              status: "NEEDS_ADMIN",
+              operationState: "NEEDS_REVIEW",
+              issueReason: "WRONG_REFERENCE",
+              expiresAt: new Date(),
+            },
+            update: {},
+          });
+        await this.db
+          .$executeRaw`UPDATE provider_webhook_inbox SET completed_at=clock_timestamp(),lease_until=NULL
+          WHERE order_code=${row.order_code} AND reference=${transaction.reference}`;
+      }
+    } catch (error) {
+      const until =
+        error instanceof ProviderDeferred
+          ? error.until
+          : sparseRefundAt(
+              new Date(),
+              0,
+              (error as { headers?: Headers })?.headers?.get?.("retry-after"),
+            );
+      await this.db
+        .$executeRaw`UPDATE provider_webhook_inbox SET next_attempt_at=${until} WHERE order_code=${row.order_code} AND completed_at IS NULL AND lease_until=${row.lease_until}`;
+    } finally {
+      await this.db
+        .$executeRaw`UPDATE provider_webhook_inbox SET lease_until=NULL,next_attempt_at=GREATEST(next_attempt_at,clock_timestamp()+interval '30 seconds')
+        WHERE order_code=${row.order_code} AND completed_at IS NULL AND lease_until=${row.lease_until}`;
+    }
   }
   private async receive(intent: Payment, t: Transaction, linkId: string) {
     if (!intent.orderId) return;
@@ -954,7 +1033,10 @@ export class PaymentsService {
     } finally {
       await this.db.payment.update({
         where: { id },
-        data: { leaseUntil: null },
+        data: {
+          leaseUntil: null,
+          nextAttemptAt: sparseRefundAt(new Date(), 3),
+        },
       });
     }
   }
@@ -990,6 +1072,7 @@ export class PaymentsService {
     let retryAfter: string | null | undefined;
     let phase = "query";
     let invalid = false;
+    let deferred: Date | undefined;
     const recordError = async (error: unknown, stage = phase) => {
       const event = safeRefundError(
         error,
@@ -1032,14 +1115,22 @@ export class PaymentsService {
         p.recipientCipher,
         this.config.getOrThrow<string>("PAYMENT_DATA_ENCRYPTION_KEY"),
       );
-      const results = await this.provider.findPayout(p.paymentCode);
-      const choice = refundRetryDecision(
-        results,
-        state,
-        p.paymentCode,
-        p.expectedAmount.toString(),
-        recipient,
-      );
+      const fresh =
+        state.version === 3 && state.phase === "READY" && !state.reconcileOnly;
+      const results = fresh
+        ? []
+        : p.providerObjectId
+          ? [await this.provider.getPayout(p.providerObjectId)]
+          : await this.provider.findPayout(p.paymentCode);
+      const choice = fresh
+        ? { action: "SEND" as const, newAttempt: false }
+        : refundRetryDecision(
+            results,
+            state,
+            p.paymentCode,
+            p.expectedAmount.toString(),
+            recipient,
+          );
       if (choice.action === "REVIEW") {
         review = true;
         invalid = true;
@@ -1053,33 +1144,67 @@ export class PaymentsService {
       }
       if (
         choice.action === "SEND" &&
+        fresh &&
         !state.reconcileOnly &&
         (state.sendAttempts ?? 0) < REFUND_RETRY_LIMIT &&
         this.enabled("REFUND_PAYOUT_ENABLED") &&
         this.enabled("REFUND_RETRY_ENABLED")
       ) {
-        if (choice.newAttempt) state.key = `${id}:retry:${state.cycles}`;
-        if (!state.dispatched || choice.newAttempt) {
-          state.baseIds = results.map((p) => p.id);
-          state.dispatches++;
-        }
-        state.dispatched = true;
-        state.sendAttempts = (state.sendAttempts ?? 0) + 1;
-        phase = "send";
-        await this.db.payment.update({
-          where: { id },
-          data: { snapshot: json({ ...obj(p.snapshot), refundRetry: state }) },
-        });
-        const sent = await this.provider.createPayout(
-          {
-            referenceId: p.paymentCode,
-            amount: Number(p.expectedAmount.toString()),
-            description: `N8 hoan ${id.slice(0, 8)}`,
-            toBin: recipient.bin,
-            toAccountNumber: recipient.account,
-          },
-          state.key,
+        const encryptionKey = this.config.getOrThrow<string>(
+          "PAYMENT_DATA_ENCRYPTION_KEY",
         );
+        const body = state.requestCipher
+          ? (openPaymentData(state.requestCipher, encryptionKey) as {
+              referenceId: string;
+              amount: number;
+              description: string;
+              toBin: string;
+              toAccountNumber: string;
+            })
+          : {
+              referenceId: p.paymentCode,
+              amount: Number(p.expectedAmount.toString()),
+              description: `N8 hoan ${id.slice(0, 8)}`,
+              toBin: recipient.bin,
+              toAccountNumber: recipient.account,
+            };
+        const hash = createHash("sha256")
+          .update(JSON.stringify(body))
+          .digest("hex");
+        if (
+          body.referenceId !== p.paymentCode ||
+          String(body.amount) !== p.expectedAmount.toString() ||
+          body.toBin !== recipient.bin ||
+          body.toAccountNumber !== recipient.account ||
+          (state.requestHash && state.requestHash !== hash)
+        )
+          throw new Error("Immutable payout mismatch");
+        state.requestHash = hash;
+        state.requestCipher ??= sealPaymentData(body, encryptionKey);
+        const activeState = state,
+          payment = p;
+        const sent = await this.provider.createPayout(
+          body,
+          state.key,
+          async () => {
+            phase = "send";
+            activeState.dispatched = true;
+            activeState.dispatches++;
+            activeState.sendAttempts = (activeState.sendAttempts ?? 0) + 1;
+            activeState.phase = "DISPATCHING";
+            await this.db.payment.update({
+              where: { id },
+              data: {
+                snapshot: json({
+                  ...obj(payment.snapshot),
+                  refundRetry: activeState,
+                }),
+              },
+            });
+          },
+        );
+        phase = "send";
+        state.phase = "AWAITING_RESULT";
         const verified = refundRetryDecision(
           [sent],
           { ...state, baseIds: [] },
@@ -1094,11 +1219,22 @@ export class PaymentsService {
           await recordError({ code: "PAYOUT_VALIDATION" }, "validation");
           return;
         }
-        if (sent.transactions[0].state === "FAILED")
+        if (sent.transactions[0].state === "FAILED") {
+          const transaction = sent.transactions[0];
+          if (
+            transaction.errorCode === "PAYOUT_INSUFFICIENT_FUNDS" &&
+            !transaction.reference &&
+            !transaction.transactionDatetime
+          ) {
+            state.phase = "WAITING_FUNDS";
+            state.reconcileOnly = false;
+            review = true;
+          }
           await recordError(
             { code: sent.transactions[0].errorCode },
             "provider",
           );
+        }
         await this.db.payment.update({
           where: { id },
           data: { providerObjectId: sent.id },
@@ -1110,16 +1246,35 @@ export class PaymentsService {
       const headers = (error as { headers?: Headers })?.headers;
       retryAfter = headers?.get?.("retry-after");
       if (!state) review = true;
-      await recordError(error);
+      if (error instanceof ProviderDeferred) {
+        deferred = error.until;
+      } else {
+        if (state?.phase === "DISPATCHING") {
+          state.phase = "AWAITING_RESULT";
+          state.reconcileOnly = true;
+          phase = "send";
+        }
+        await recordError(error);
+      }
     } finally {
       const completedAt = await this.now(this.db);
-      const next = refundRetryAt(completedAt, retryAfter);
+      const next =
+        deferred ??
+        sparseRefundAt(completedAt, state?.pollStep ?? 0, retryAfter);
+      if (state && !deferred)
+        state.pollStep = Math.min(3, (state.pollStep ?? 0) + 1);
       const success = !!result;
+      if (success && state) state.phase = "DONE";
       if (
         !success &&
         state &&
         !invalid &&
-        ((state.sendAttempts ?? 0) >= REFUND_RETRY_LIMIT || state.reconcileOnly)
+        state.phase !== "WAITING_FUNDS" &&
+        ((state.sendAttempts ?? 0) >= REFUND_RETRY_LIMIT ||
+          p?.status === "NEEDS_ADMIN" ||
+          completedAt.getTime() -
+            (p?.createdAt?.getTime() ?? completedAt.getTime()) >=
+            86400000)
       ) {
         review = true;
         state.reconcileOnly = true;
@@ -1179,6 +1334,64 @@ export class PaymentsService {
         providerObjectId: p.providerObjectId,
       })),
     };
+  }
+  async resumeFunds(
+    id: string,
+    actor: string,
+    requestId: string,
+    note: string,
+  ) {
+    return this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM payments WHERE id=${id}::uuid FOR UPDATE`;
+      const p = await tx.payment.findUniqueOrThrow({ where: { id } });
+      const state = readRefundRetry(obj(p.snapshot).refundRetry);
+      const requestHash = createHash("sha256")
+        .update(JSON.stringify({ actor, note }))
+        .digest("hex");
+      const previous = state.resumeRequests?.find((r) => r.id === requestId);
+      if (previous) {
+        if (previous.hash !== requestHash)
+          throw fail(
+            "RESUME_CONFLICT",
+            "Request ID reused with different input",
+          );
+        return this.wrap(this.publicRefund(p));
+      }
+      if (state.resumeRequestId === requestId && !state.resumeRequests)
+        return this.wrap(this.publicRefund(p));
+      if (
+        p.kind !== "REFUND" ||
+        p.operationState !== "NEEDS_REVIEW" ||
+        state.phase !== "WAITING_FUNDS" ||
+        state.version !== 3 ||
+        !p.providerObjectId ||
+        (state.sendAttempts ?? 4) >= 4 ||
+        (p.leaseUntil && p.leaseUntil > new Date())
+      )
+        throw fail("REFUND_NOT_RESUMABLE", "Refund cannot be resumed");
+      state.resumeRequestId = requestId;
+      state.resumeRequests = [
+        ...(state.resumeRequests ?? []),
+        { id: requestId, hash: requestHash },
+      ];
+      state.phase = "READY";
+      state.reconcileOnly = false;
+      state.pollStep = 0;
+      state.key = `${id}:retry:${(state.sendAttempts ?? 0) + 1}`;
+      const updated = await tx.payment.update({
+        where: { id },
+        data: {
+          status: "PENDING",
+          operationState: "REQUESTED",
+          providerObjectId: null,
+          nextAttemptAt: await this.now(tx),
+          resolvedBy: actor,
+          resolutionNote: note,
+          snapshot: json({ ...obj(p.snapshot), refundRetry: state }),
+        },
+      });
+      return this.wrap(this.publicRefund(updated));
+    });
   }
   async resolve(id: string, actor: string, action: string, note: string) {
     const p = await this.db.payment.findUnique({ where: { id } });
@@ -1341,14 +1554,20 @@ export class PaymentsService {
         take: 20,
         orderBy: { createdAt: "asc" },
       });
-      for (const p of due) {
-        if (p.kind === "INTENT") await this.processIntent(p.id);
-        else if (
-          this.enabled("REFUND_PAYOUT_ENABLED") ||
-          p.operationState !== "REQUESTED"
-        )
-          await this.processRefund(p.id);
-      }
+      await Promise.all([
+        (async () => {
+          for (const p of due.filter((p) => p.kind === "INTENT"))
+            await this.processIntent(p.id);
+        })(),
+        (async () => {
+          for (const p of due.filter((p) => p.kind === "REFUND"))
+            if (
+              this.enabled("REFUND_PAYOUT_ENABLED") ||
+              p.operationState !== "REQUESTED"
+            )
+              await this.processRefund(p.id);
+        })(),
+      ]);
       await this.pruneExpiredOrders();
       await this.db.ticket.updateMany({
         where: { status: "VALID", expiresAt: { lte: now } },

@@ -1,4 +1,4 @@
-﻿import {
+import {
   Body,
   Controller,
   Get,
@@ -20,7 +20,7 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import type { SchemaObject } from "@nestjs/swagger";
-import { IsIn, IsString, MaxLength, MinLength } from "class-validator";
+import { IsIn, IsString, IsUUID, MaxLength, MinLength } from "class-validator";
 import {
   JwtGuard,
   RoleGuard,
@@ -212,6 +212,19 @@ class ResolveDto {
   @MaxLength(1000)
   note!: string;
 }
+class ResumeFundsDto {
+  @ApiProperty({ format: "uuid" })
+  @IsUUID()
+  requestId!: string;
+  @ApiProperty({ enum: ["FUNDS_ADDED"] })
+  @IsIn(["FUNDS_ADDED"])
+  reason!: string;
+  @ApiProperty({ minLength: 8, maxLength: 1000 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(1000)
+  note!: string;
+}
 @ApiTags("Payments")
 @ApiBearerAuth()
 @UseGuards(JwtGuard, RoleGuard, VerifiedEmailGuard)
@@ -395,6 +408,21 @@ export class PaymentIssuesController {
   })
   list() {
     return this.payments.issues();
+  }
+  @Post(":id/resume")
+  @HttpCode(202)
+  @ApiAcceptedResponse({ schema: itemEnvelope(refundSchema) })
+  resume(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: ResumeFundsDto,
+    @Req() req: AuthRequest,
+  ) {
+    return this.payments.resumeFunds(
+      id,
+      req.user.id,
+      body.requestId,
+      body.note,
+    );
   }
   @Post(":id/resolve")
   @HttpCode(200)

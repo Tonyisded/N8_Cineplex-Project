@@ -313,3 +313,24 @@ model Ticket {
 
   @@map("tickets")
 }
+
+model ProviderApiGovernor {
+ channelKey String @id @map("channel_key")
+ nextAllowedAt DateTime @default(now()) @map("next_allowed_at") @db.Timestamptz(3)
+ blockedUntil DateTime @default(now()) @map("blocked_until") @db.Timestamptz(3)
+ leaseUntil DateTime @default(now()) @map("lease_until") @db.Timestamptz(3)
+ leaseToken String? @map("lease_token") @db.Uuid
+ streaks Json @default("{}")
+ @@map("provider_api_governor")
+}
+model ProviderWebhookInbox {
+ eventKey String @id @map("event_key")
+ orderCode BigInt @map("order_code")
+ reference String
+ paymentLinkId String @map("payment_link_id")
+ nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+ leaseUntil DateTime? @map("lease_until") @db.Timestamptz(3)
+ completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
+ receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+ @@map("provider_webhook_inbox")
+}

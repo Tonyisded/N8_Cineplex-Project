@@ -82,7 +82,9 @@ test("SDK verified webhook rejects bad signature/currency/reference; probe issue
     PAYOS_COLLECT_ACCOUNT_NUMBER: "123456789",
   };
   const config = new ConfigService(keys),
-    adapter = new PayosAdapter(config);
+    adapter = new PayosAdapter(config, {
+      execute: async (_key, _op, _interval, call) => call(),
+    });
   const sdk = new PayOS({
     clientId: keys.PAYOS_COLLECT_CLIENT_ID,
     apiKey: keys.PAYOS_COLLECT_API_KEY,
@@ -94,11 +96,23 @@ test("SDK verified webhook rejects bad signature/currency/reference; probe issue
     query++;
     return { id: "other-link", orderCode: 1000001, transactions: [] };
   };
-  const service = new PaymentsService({}, config, adapter, {
-    publish: () => {
-      throw new Error("must not publish");
+  let captured = 0;
+  const service = new PaymentsService(
+    {
+      payment: { findUnique: async () => null },
+      $executeRaw: async () => {
+        captured++;
+        return 1;
+      },
     },
-  });
+    config,
+    adapter,
+    {
+      publish: () => {
+        throw new Error("must not publish");
+      },
+    },
+  );
   const base = {
     code: "00",
     orderCode: 1000001,
@@ -120,15 +134,18 @@ test("SDK verified webhook rejects bad signature/currency/reference; probe issue
     service.webhook(await signed({ ...base, currency: "USD" })),
   );
   assert.equal(query, 0);
-  await assert.rejects(service.webhook(await signed(base)));
-  assert.equal(query, 1);
+  assert.deepEqual(await service.webhook(await signed(base)), {
+    received: true,
+  });
+  assert.equal(captured, 1);
+  assert.equal(query, 0);
   assert.deepEqual(
     await service.webhook(
       await signed({ ...base, orderCode: 123, accountNumber: "probe-account" }),
     ),
     { received: true },
   );
-  assert.equal(query, 1);
+  assert.equal(query, 0);
 });
 test("email snapshot combo unit price uses charged snapshot not changed catalog", () => {
   const service = new PaymentsService({}, new ConfigService({}), {}, {});
