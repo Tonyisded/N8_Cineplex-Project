@@ -226,7 +226,6 @@ fun TicketsScreen(vm: CineplexViewModel, state: TicketsState?) {
                     TicketDivider()
                     Text("✓ Đã tiếp nhận yêu cầu hoàn",fontWeight=FontWeight.SemiBold)
                     Text(if(refund.operationState=="SUCCEEDED") "✓ Đã chuyển tiền hoàn" else "◉ Đang xác minh / xử lý chuyển tiền",color=C.Muted)
-                    Text("Tài khoản nhận: ${refund.accountMasked ?: "Đang xác minh nguồn thanh toán"}")
                     refund.reason?.let { Text(it) }
                     Text("Mã yêu cầu: ${refund.id}", style = MaterialTheme.typography.bodySmall)
                     Text(when (refund.operationState) {
@@ -245,7 +244,7 @@ fun TicketsScreen(vm: CineplexViewModel, state: TicketsState?) {
         }
     }
     if (confirmRefund && selected != null) AlertDialog(onDismissRequest = { confirmRefund = false }, title = { Text("Hoàn toàn bộ đơn vé?") },
-        text = { Text("Số tiền ${money(selected.snapshot.totalAmount)} sẽ được hoàn về ${selected.accountMasked ?: "nguồn thanh toán đã xác minh"}. Vé sẽ mất hiệu lực ngay khi yêu cầu được tiếp nhận. Tiền hoàn cần thời gian xử lý; không phải hoàn tức thì.") },
+        text = { Text("Số tiền ${money(selected.snapshot.totalAmount)} sẽ được hoàn về ${"nguồn thanh toán đã xác minh"}. Vé sẽ mất hiệu lực ngay khi yêu cầu được tiếp nhận. Tiền hoàn cần thời gian xử lý; không phải hoàn tức thì.") },
         confirmButton = { TextButton({ confirmRefund = false; state.refund() }) { Text("Xác nhận hoàn vé") } }, dismissButton = { TextButton({ confirmRefund = false }) { Text("Giữ vé") } })
 }
 

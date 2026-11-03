@@ -1,5 +1,16 @@
 # N8 Cineplex — Master Plan
 
+## Giao diện điện thoại gọn hơn và bỏ tài khoản nhận hoàn — 2026-11-03
+
+Đã xem ba ảnh n1/n2/n3 do user cung cấp. Thu gọn Home/Auth/Profile bằng padding/khoảng cách/logo và tiêu đề24sp thay32sp; body/label14sp, nhãn thanh điều hướng dùng labelSmall. Giữ vùng chạm48dp trở lên, trường nhập56dp và cỡ chữ hệ thống, không ép fontScale hay giảm density toàn app. Thanh toán vẫn giữ tài khoản nhận thu tiền; chỉ bỏ dòng tài khoản nhận trong tiến trình hoàn và số tài khoản trong hộp xác nhận hoàn, thay bằng nguồn thanh toán đã xác minh. Không đổi dữ liệu người nhận/backend hoặc gửi lệnh chi.
+
+Đã đồng bộ candidate vào root Android Studio trước build/install: versionCode8/versionName1.7-compact-mobile. assembleDebug/assembleDebugAndroidTest/testDebugUnitTest/lintDebug/installDebug/installDebugAndroidTest đạt,88unit; native6/6 ở360dp (Compact1+Tickets5), thêm Compact1/1 ở fontScale1.3 đạt. Đã xem ảnh đăng nhập gọn ở360dp; chưa kiểm tra trực tiếp trên điện thoại vật lý của user hoặc mọi màn hình/fontScale. APK root/emulator hash khớp `d06479570526552f5f6ea10cd7903a6dbe98fab5203c60ccf20ee72fa0a53491`. Bản debug-signed cho nhóm thử, không uninstall/clear data; SDK/IDE/local.properties/.env giữ nguyên. Giữ README root rỗng.
+
+Bộ bốn role cũ bổ sung MOBILE_UI_BASELINE.zip và mode ROLLBACK.sh --mobile-ui, không thay các mode trước. BASELINE source version7/còn dòng nhận tiền/88unit → MODIFIED version8/không dòng nhận tiền/88unit → ROLLBACK bản sao version7/còn dòng/88unit, cùng lệnh assembleDebug cleanTestDebugUnitTest testDebugUnitTest, exit0; snapshot10file khớp. Root/emulator giữ MODIFIED. Lượt root baseline ban đầu có thể chồng thời gian sửa nên không dùng làm bằng chứng baseline; đã chạy lại baseline bất biến trên bản sao. Lỗi Python encoding và install thiếu emulator được giữ ngoài Git, sửa lệnh/khởi động lại AVD không wipe rồi kiểm thử đạt.
+
+Phạm vi commit UI lần này chỉ thu gọn giao diện/bỏ thông tin nhận tiền và kiểm thử/tài liệu tương ứng; không có code retry/proxy bị giấu trong commit. User chốt bước kế tiếp dùng một proxy Việt cố định (không luân phiên IP) và retry tối đa4lần cách180giây, dừng thành công, không hiện số lần frontend. Phần proxy/retry chưa triển khai hoặc deploy trong đợt UI này; cần kết nối proxy bảo vệ credential, kiểm tra chính sách provider, phân biệt query/dispatch và bảo đảm không tạo khoản chi mới khi kết quả còn unknown. Không thử chi tiền thật trong kiểm chứng UI. Không đổi tag/release1.6 hoặc minimum7 trên VPS trong bước này.
+
+
 ## Xác nhận công bố source và APK tuần 9 — 2026-11-02
 
 Theo yêu cầu user: README.md ở root đã làm trống và vẫn giữ file, source commit `7e45158d8d6831894bb0866b2a7bc46f0c75b5e7` đã push lên nhánh mới `feat/nguyen-week9-payos-live-status`. Annotated tag `v1.6-live-status` đã push và peel đúng source 7e45158d8d6831894bb0866b2a7bc46f0c75b5e7; Author/Committer được GitHub xác nhận cùng tài khoản thnguyen290106, dùng noreply, không thêm đồng tác giả. Không main/force-push/PR/merge, không công bố .env/key/token hoặc evidence riêng tư.

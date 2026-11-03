@@ -27,10 +27,10 @@ fun HomeScreen(vm: CineplexViewModel, grid: LazyListState) {
     val filtered = vm.filteredMovies
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().imePadding()) {
-            LazyColumn(state = grid,modifier = Modifier.weight(1f).testTag("movie-schedules"),contentPadding = PaddingValues(24.dp),verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            LazyColumn(state = grid,modifier = Modifier.weight(1f).testTag("movie-schedules"),contentPadding = PaddingValues(16.dp),verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 item(key = "header") {
-                    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                        Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.SpaceBetween) { CineplexLogo(); Avatar(vm::account, session = vm.session) }
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically,horizontalArrangement = Arrangement.SpaceBetween) { CineplexLogo(88.dp); Avatar(vm::account, session = vm.session) }
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Muted("Xin chào, ${vm.session?.name.orEmpty()}")
                             Text("Hôm nay, bạn muốn xem gì?",style = MaterialTheme.typography.headlineMedium)
