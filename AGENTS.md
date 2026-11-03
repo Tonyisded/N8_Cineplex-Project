@@ -1,5 +1,13 @@
 # AGENTS.md — N8 Cineplex
 
+## Quy định tên release — 2026-11-03
+
+<!-- RELEASE_NUMERIC_NAMING_20261103 -->
+Theo yêu cầu user: từ bản phát hành tiếp theo dùng tên release/tag chỉ gồm số phiên bản: v1.8, v1.9,...; không hậu tố compact-mobile/live-status hay mô tả khác. Khi tạo APK mới để phát hành, versionName tương ứng chỉ là1.8/1.9,... và tăng versionCode; không đổi tên release/tag cũ hoặc gắn nhãn1.8 lên APK1.7 cũ. Chỉ tạo release APK khi Android/APK thực sự cần cập nhật; thay đổi backend tương thích không cần APK mới thì không tạo release.
+
+Bản sửa nhật ký an toàn/đối soát đã push source b290d1e0c40d6d240e660190a8d4f1571ae8690d trên fix/nguyen-refund-observability-20261103 và deploy VPS; gate150local/153Linux/21PostgreSQL, rollback147→150→147 là kết quả đợt sửa vừa qua, không phải test mới trong cập nhật quy định này. Android/APK không đổi nên không tạo release v1.8 trong đợt backend này. Không đổi min/latest trên VPS hoặc tag/release1.7. Nhận tiền thật vẫn cần đối soát người nhận; không suy luận lỗi cũ429 khi lịch sử không lưu.
+
+
 ## Nhật ký lỗi hoàn tiền an toàn và tiếp tục đối soát — 2026-11-03
 
 Theo yêu cầu mới, đã sửa source root/candidate, kiểm thử và deploy VPS; không còn là phương án chỉ sửa riêng VPS. Chính sách snapshot.refundRetry v2 tách sendAttempts (tối đa4 lượt chuẩn bị/gửi HTTP, tính cả replay) khỏi cycles đối soát. Lỗi query không tiêu lượt gửi. Sau đủ4 lượt gửi, chuyển cần kiểm tra/reconcileOnly nhưng vẫn query theo lịch; tuyệt đối không có POST thứ5. Kết quả success đến muộn, ký/đúng reference/số tiền/bank/account, vẫn finalization transaction REFUNDED rồi dừng query. Sai dữ liệu/kết quả không hợp lệ vẫn dừng để kiểm tra, không tự chi lại. Key/body bền vững và quy tắc không đổi key khi chưa rõ kết quả giữ nguyên; mọi lượt vẫn dùng proxy Việt cố định, không đổi IP.
