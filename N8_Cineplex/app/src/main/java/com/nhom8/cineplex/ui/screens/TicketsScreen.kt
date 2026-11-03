@@ -70,7 +70,6 @@ fun NativeTicketQr(payload: String, label: String) {
 fun PaymentScreen(vm: CineplexViewModel, state: TicketsState, secondsLeft: Int? = null) {
     val payment = state.payment
     TransactionAutoRefresh(state)
-    val context = LocalContext.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(payment?.expiresAt) { while (true) { now = System.currentTimeMillis(); delay(1_000) } }
     val seconds = secondsLeft ?: payment?.expiresAt?.let { ((isoMillis(it) - now) / 1000).coerceAtLeast(0).toInt() } ?: 0
@@ -96,11 +95,7 @@ fun PaymentScreen(vm: CineplexViewModel, state: TicketsState, secondsLeft: Int? 
                         Text("Nội dung: ${p.description.orEmpty()}")
                         Text("QR đã điền sẵn số tiền và nội dung. Không chỉnh sửa khi chuyển khoản.", color = C.Muted)
                     }
-                    p.checkoutUrl?.let { url ->
-                        OutlinedButton({
-                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                        }, Modifier.fillMaxWidth()) { Text("Mở trang thanh toán payOS") }
-                    }
+
                 } else Text(when {
                     p.status == "NEEDS_ADMIN" -> "Khoản tiền cần được kiểm tra. Không chuyển thêm tiền. Liên hệ hỗ trợ với mã đơn bên dưới."
                     p.status == "EXPIRED" || seconds <= 0 -> "Đã hết thời hạn giữ ghế. Không chuyển khoản bằng QR cũ."
@@ -134,7 +129,7 @@ fun TicketsScreen(vm: CineplexViewModel, state: TicketsState?) {
         TopAppBar(title = { Text(if (selected == null) "Vé của tôi" else "Chi tiết vé", fontWeight = FontWeight.Bold) },
             navigationIcon = { if (selected != null) IconButton(state::closeTicket, Modifier.size(48.dp).testTag("ticket-detail-back").semantics { contentDescription = "Quay lại vé của tôi" }) { CineplexIcon("back", Modifier.size(28.dp).testTag("ticket-detail-back-icon"), color = C.Primary) } },
             actions = { TextButton({ if (selected == null) state.load() else state.openTicket(selected.id) }, enabled = !state.busy) { Text("Tải lại") } })
-    }, bottomBar = { CustomerNavigation(2, vm::back, vm::account, vm::coming, vm::tickets) }) { padding ->
+    }, bottomBar = { CustomerNavigation(3, vm::back, vm::account, vm::coming, vm::tickets, vm::vouchers) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.error.isNotBlank()) Text(state.error, color = C.Error)
@@ -214,7 +209,8 @@ fun TicketsScreen(vm: CineplexViewModel, state: TicketsState?) {
                     Text("Thông tin thanh toán", fontWeight = FontWeight.Bold,fontSize=19.sp)
                     Text("${s.seats.size} ghế · 1 vé điện tử")
                     s.seats.forEach { Text("Ghế ${it.seatCode} · ${money(it.price)}") }
-                    if (s.comboQuantity > 0) Text("${s.comboName.orEmpty()} × ${s.comboQuantity}")
+                    if(s.comboItems.isNotEmpty())s.comboItems.forEach { Text("${it.name} × ${it.quantity} · ${money(it.totalPrice)}") }
+                    else if (s.comboQuantity > 0) Text("${s.comboName.orEmpty()} × ${s.comboQuantity}")
                     AmountRow("Tạm tính", s.subtotal)
                     AmountRow("Giảm giá${s.voucherCode?.let { " · $it" }.orEmpty()}", if (s.discount.toLong() > 0) "-${s.discount}" else "0")
                     HorizontalDivider()

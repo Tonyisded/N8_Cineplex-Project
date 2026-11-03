@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
 @Serializable data class SeatLayout(val key: String, val width: Float, val height: Float, val screens: List<String>, val seats: List<SeatPosition>)
 @Serializable data class SeatResponse(val serverTime: String, val showtimeId: String, val items: List<SeatDto>, val layout: SeatLayout)
 @Serializable data class OrderSeatDto(val id: String, val seatCode: String, val price: String)
-@Serializable data class HoldOrder(val id: String, val showtimeId: String, val status: String, val subtotal: String, val discount: String, val totalAmount: String, val bankAmount: String, val expiresAt: String, val seats: List<OrderSeatDto>, val comboId: String? = null, val comboQuantity: Int = 0)
+@Serializable data class HoldOrder(val id: String, val showtimeId: String, val status: String, val subtotal: String, val discount: String, val totalAmount: String, val bankAmount: String, val expiresAt: String, val seats: List<OrderSeatDto>, val comboId: String? = null, val comboQuantity: Int = 0, val comboItems: List<ServerComboLine> = emptyList())
 @Serializable data class HoldResponse(val serverTime: String, val item: HoldOrder)
 @Serializable data class HoldBody(val showtime_id: String, val seat_ids: List<String>)
 @Serializable data class HoldRequest(val key: String, val showtimeId: String, val seatIds: List<String>)

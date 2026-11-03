@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 @Serializable data class TicketSnapshot(
     val movieTitle: String = "", val posterUrl: String? = null, val startAt: String = "",
     val format: String = "", val auditorium: String = "", val seatCodes: List<String> = emptyList(),
-    val seats: List<TicketSeat> = emptyList(), val comboName: String? = null, val comboQuantity: Int = 0,
+    val seats: List<TicketSeat> = emptyList(), val comboItems: List<ServerComboLine> = emptyList(), val comboName: String? = null, val comboQuantity: Int = 0,
     val subtotal: String = "0", val discount: String = "0", val totalAmount: String = "0",
     val voucherCode: String? = null
 )

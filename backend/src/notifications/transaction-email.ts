@@ -6,6 +6,13 @@ export type TicketSnapshot = {
   auditorium: string;
   seatCodes: string[];
   seats: { seatCode: string; price: string }[];
+  comboItems?: {
+    id: string;
+    name: string;
+    unitPrice: string;
+    quantity: number;
+    totalPrice: string;
+  }[];
   comboName?: string | null;
   comboQuantity: number;
   comboUnitPrice: string;
@@ -75,7 +82,12 @@ export function purchaseEmail(
   const lines = [...groups].map(([price, n]) =>
     row(`Vé ${money(price)} × ${n}`, money(String(BigInt(price) * BigInt(n)))),
   );
-  if (s.comboQuantity > 0)
+  if (s.comboItems?.length)
+    for (const item of s.comboItems)
+      lines.push(
+        row(`${item.name} × ${item.quantity}`, money(item.totalPrice)),
+      );
+  else if (s.comboQuantity > 0)
     lines.push(
       row(
         `${s.comboName ?? "Combo"} × ${s.comboQuantity} (${money(s.comboUnitPrice)}/phần)`,
@@ -98,7 +110,7 @@ export function purchaseEmail(
   return {
     subject: `[N8 Cineplex] Đặt vé thành công · ${s.bookingCode}`,
     html: layout(title, description, content),
-    text: `${title}\n${description}\n${s.movieTitle}\n${date(s.startAt)} · ${s.format} · ${s.auditorium}\nGhế: ${s.seatCodes.join(", ")} (${s.seatCodes.length} ghế / 1 QR)\n${s.seats.map((x) => `${x.seatCode}: ${money(x.price)}`).join("\n")}\nCombo: ${s.comboName ?? "Không"} × ${s.comboQuantity}\nTạm tính: ${money(s.subtotal)}\nVoucher: ${s.voucherCode ?? "Không"} · Giảm: ${money(s.discount)}\nTổng đã thanh toán: ${money(s.totalAmount)}\nMã vé: ${s.bookingCode}\nMở ứng dụng → Vé của tôi để xem QR và điều kiện hoàn.`,
+    text: `${title}\n${description}\n${s.movieTitle}\n${date(s.startAt)} · ${s.format} · ${s.auditorium}\nGhế: ${s.seatCodes.join(", ")} (${s.seatCodes.length} ghế / 1 QR)\n${s.seats.map((x) => `${x.seatCode}: ${money(x.price)}`).join("\n")}\nCombo: ${s.comboItems?.length ? s.comboItems.map((x) => `${x.name} × ${x.quantity}: ${money(x.totalPrice)}`).join("; ") : `${s.comboName ?? "Không"} × ${s.comboQuantity}`}\nTạm tính: ${money(s.subtotal)}\nVoucher: ${s.voucherCode ?? "Không"} · Giảm: ${money(s.discount)}\nTổng đã thanh toán: ${money(s.totalAmount)}\nMã vé: ${s.bookingCode}\nMở ứng dụng → Vé của tôi để xem QR và điều kiện hoàn.`,
     messageId: `<ticket-${s.ticketId}@n8-cineplex.local>`,
     attachments: usable
       ? [

@@ -1,5 +1,24 @@
 # AGENTS.md — N8 Cineplex
 
+## Xác nhận phát hành v1.8 — 2026-11-03
+
+Đã commit/push source `76de661e68574cc6bc2cd5039e816927d712549f` lên `feat/nguyen-voucher-multi-combo-v1.8`, annotated tag/tên GitHub Release đúng `v1.8`, không sửa tag cũ. Release kiểm thử: https://github.com/Tonyisded/N8_Cineplex-Project/releases/tag/v1.8. Asset `N8-Cineplex-1.8.apk` (versionCode9/versionName1.8) và SHA256SUMS.txt đã upload; tải công khai từ GitHub và đối chiếu SHA256 `5249593c68f070d15baad17cfbd7f701f51cf8b739dee17e9fcc9a4ee1caded7` khớp APK root/emulator/VPS. Author/committer được GitHub nhận cùng tài khoản thnguyen290106, dùng noreply. Source governor trước đó ở commit0b3069a cũng đã được push cùng nhánh, tách khỏi commit tính năng UI.
+
+Mục này thay trạng thái “chuẩn bị công bố” của mục dưới; kết quả90unit/14native,154backend/28PostgreSQL và rollback88→90→88/150→154→150 là các lượt kiểm tra của đợt này, không coi upload release là test mới. Chỉ cập nhật tài liệu xác nhận sau phát hành, không di chuyển tag khỏi source đã build. Hai plan ngoài ytuong và hai MD trong root cùng có xác nhận này. README root giữ0byte; không commit bí mật/log/evidence/APK. Bốn role hiện hữu đã được đóng gói lại và mở đọc, source chính/candidate giữ bản mới. Giới hạn ký debug/chưa máy vật lý/chưa giao dịch tiền thật mới không thay đổi.
+
+## Voucher, nhiều combo và APK v1.8 — 2026-11-03
+
+<!-- V18_VOUCHER_MULTI_COMBO_QR_20261103 -->
+Source Android đã đồng bộ trực tiếp tại `D:\NT118\N8_Cineplex-Project\N8_Cineplex`, build/cài từ chính Gradle root; versionCode9/versionName1.8. Thanh điều hướng có5 mục: Trang chủ, Khám phá, Voucher, Vé của tôi, Tài khoản; Voucher mở ví ưu đãi đã xác thực hiện có. Giỏ bắp nước giữ nhiều loại cùng lúc, tăng/giảm độc lập, bỏ giới hạn9 và giới hạn theo số ghế; vẫn kiểm tra kiểu số nguyên, sản phẩm khả dụng và giới hạn kỹ thuật số tiền DB. Bỏ đúng nút mở trang thanh toán payOS; giữ QR thanh toán trong ứng dụng, kiểm tra trạng thái và thông tin chuyển khoản.
+
+Backend mở rộng combo_items có giá do server tính, canonical lines lưu JSONB vào order và snapshot vé/email/lịch sử; voucher giảm trên toàn hóa đơn. Giữ định dạng combo cũ cho client7/8, không đổi điều kiện hoàn hoặc tạo chi thử. Fingerprint canonical hóa khóa object để JSONB không phá checkout replay. Migration `20261103010000_multi_combo_cart` chỉ thêm cột mặc định[], đã backup riêng mode600 và migrate VPS; không reset/xóa dữ liệu, không sửa provider/proxy credential/Nginx. API đã recreate healthy/restart0; health/Swagger/combos7,8,9 trả200, bản6 trả426, webhook unsigned400. Runtime5hash booking/pricing/payment/email/Prisma Order khớp build source. VPS minimum7/latest9, APK HTTPS tải lại khớp SHA256 `5249593c68f070d15baad17cfbd7f701f51cf8b739dee17e9fcc9a4ee1caded7`; giữ APK/tag/release cũ.
+
+Gate mới: Windows backend154/154, build/typecheck/format đạt; Linux154/154 và PostgreSQL cô lập28/28 với provider giả, có cart12+2, checkout replay1revision, payment/refund giữ giá/lịch sử dù catalog đổi. Android90unit, native14/14 (VoucherNavigation, LiveCommerce, Tickets, Voucher, CheckoutPolish), build/lint/install đạt; thêm nav360dp/fontScale1.3 đạt1/1 (nav không đổi sau lượt đó). Không uninstall/clear data; giữ session, SDK/IDE/local.properties/signing. APK build root, bản kéo từ emulator và artifact1.8 cùng hash trên. Lỗi test JSON trước sửa đã được lưu: trường comboItems thừa trong CheckoutBody bị strict DTO từ chối; bỏ trường và test serializer chặn tái phát, không nới validation server. Các lỗi fixture JWT, source upload thiếu và JSONB hash trước sửa đều giữ evidence, không nhận lượt fail là pass.
+
+Cùng lệnh Gradle `assembleDebug cleanTestDebugUnitTest testDebugUnitTest`: BASELINE88/version8 → MODIFIED90/version9 → ROLLBACK88/version8; cùng `npm run build && npm test`:150→154→150, exit0. `ROLLBACK.sh --voucher-combo` đã chạy trên bản sao modified,339hash pristine khớp `VOUCHER_MULTI_COMBO_BASELINE.zip`; root/emulator/VPS vẫn MODIFIED. Bốn role tiếp tục `D:\NT118\verification\week9-payos-ticket-refund\MODIFIED_FILE.zip`, `DIFF_FILE.patch`, `VERIFICATION.txt`, `ROLLBACK.sh`, mở rộng chứ không thay bộ. Không restore DB để đảo giao dịch tài chính; khi rollback vận hành giữ cột/metadata và đối soát trước khi tạo chi mới.
+
+Chuẩn bị công bố trên nhánh `feat/nguyen-voucher-multi-combo-v1.8`, tag/tên release chỉ `v1.8`; source governor ở commit0b3069a được tách rõ, không giấu logic tài chính trong commit UI. Trạng thái công bố chỉ chốt sau push/tag/download thực sự thành công. README root vẫn0byte, không đưa env/key/token/log/evidence/APK vào Git. APK ký debug cho nhóm thử, chưa thử điện thoại vật lý/CI remote hoặc thu–chi thật mới trong đợt UI này; không coi đây là nghiệm thu toàn bộ tiền thật tuần9.
+
 ## Quy định tên release — 2026-11-03
 
 <!-- RELEASE_NUMERIC_NAMING_20261103 -->
@@ -1890,3 +1909,23 @@ TicketsScreen thay hai FilterChip nhỏ bằng hai thẻ selectable Role.Tab chi
 Kiểm chứng: assembleDebug/assembleDebugAndroidTest/testDebugUnitTest/lintDebug đạt, 77unit không fail/error. Native 8/8 gồm voucher apply/remove/cancel, disabled minimum, tab equal width>44% mỗi tab, selected semantics, cùng regression QR/payment/refund fakes. Hai test mới quan sát BASELINE2fail (chọn lập tức/thiếu full-width tabs) → MODIFIED2pass → ROLLBACK2fail; cùng lệnh instrument và input hành vi. adb đều exit0, riêng kết quả runner mới là bằng chứng pass/fail; không coi adb exit0 là tests đạt. ROLLBACK.sh --checkout-ui chạy trên checkout-ui-rollback, ba file restored khớp CHECKOUT_UI_BASELINE.zip chính xác; source active giữ modified, emulator cài lại APK mới. Bốn role cũ mở rộng, không thay lịch sử các mode all/--refund-dto.
 
 Đã mở xem ảnh voucher-polished.png và ticket-tabs-polished.png từ emulator; ảnh đầu chụp giữa animation/systembar chưa chuẩn được giữ, ảnh cuối sau đợi350ms + sửa riêng dialog window background/contrast đã xem lại. Không phát sinh thanh toán/hoàn/fixture DB thật trong lượt UI này. APK versionCode5/versionName1.4-checkout-polish, SHA256 67576f0282da8e9ba70642146708fc22e265552b7f094da2cfe4b4990a391595. Source nằm candidate ngoài repo gốc; chưa commit/push. Chưa thử máy vật lý, font scale rất lớn hoặc nhiều viewport.
+
+
+## payOS request budget / refund v3 — 2026-11-03
+
+Đã triển khai source backend, chưa công bố hoặc deploy production trong bước này. Governor PostgreSQL chia COLLECT/PAYOUT, một HTTP mỗi kênh, giãn cách1s/5s; cooldown4293/6/12/30/60phút, Retry-After dài hơn được giữ, GET không reset streak POST. SDK maxRetries0, proxy Việt/TLS giữ nguyên. API/SDK client thô được đóng kín, balance facade cũng đi governor.
+
+Refund mới v3 gửi POST đầu không GET khi chứng minh chưa gửi; payload mã hóa/hash bất biến trước HTTP. SUCCEEDED hợp lệ finalize ngay, không đọc thêm. POST429/timeout chỉ đối soát, không tự replay. Có ID dùng GET, chưa có dùng LIST; lịch3/10/30/60phút cộng jitter nhỏ. WAITING_FUNDS dừng chờ admin; resume chỉ FUNDS_ADDED, requestId chống trùng, giữ lifetime budget4. Bản ghi v1/v2 và Verity không reset/requeue. Backend/Android DTO cũ giữ nguyên, không APK/release mới/minimum change.
+
+Webhook xác thực rồi dedup/capture durable inbox, ACK sau DB; consumer đồng bộ theo payment link, vẫn đọc authoritative để lấy payer. Manual payment/check tôn trọng due, không tạo intent mới. Hai bảng mới additive, không sửa dữ liệu tài chính cũ. Không lấy số dư, email hoặc màn hình ngân hàng làm bằng chứng thành công; không giả định callback Payout chưa được xác minh.
+
+Gate quan sát: build/typecheck/format và150/150 local; PostgreSQL cô lập27/27 với fake provider và role hạn chế. Lỗi fixture cũ do kỳ vọng tự retry/kiểm tra trước due đã giữ log rồi cập nhật theo chính sách user đã chốt; không bỏ assertion tài chính. Linux/rollback/VPS status xem ledger ngoài repo; chưa nhận là E2E ngân hàng thật. README root rỗng, Android source không thay đổi.
+
+
+## X?c nh?n tri?n khai request budget ? 2026-11-03
+
+?? ho?n t?t rollout backend l?n VPS sau gate:150/150 local,150/150 Linux,27/27 PostgreSQL c? l?p (provider gi?, role kh?ng superuser). Runtime7SHA256 kh?p build root; API healthy/restart0, health/Swagger/combos7&8 HTTP200, b?n6 HTTP426, webhook unsigned400. Swagger c? resume v?i requestId/reason/note. Kh?ng g?i payout th?, kh?ng reset/retry Verity. Ch? hai b?ng b? sung, kh?ng x?a/s?a giao d?ch c?; private dump mode600 ?? gi? tr??c migration, image before-request-budget-20261103 c?n ?? ph?c h?i. Env/proxy/private config wrappers/Nginx/volume/APK kh?ng thay.
+
+Rollback source ?? th?c thi tr?n b?n sao b?ng ROLLBACK.sh --request-budget: c?ng npm run build && npm test ??t BASELINE150?MODIFIED150?ROLLBACK150, exit0;336 pristine hashes kh?p. Probe c?ng100000? gi?: baseline1GET+1POST, modified0GET+1POST, rollback1GET+1POST, ??uSUCCEEDED/exit0. Kh?ng ph?i rollback DB/ti?n th?t. Root v? candidate gi? MODIFIED, ngu?n Android kh?ng thay, README root v?n r?ng. B?n role c? MODIFIED_FILE.zip/DIFF_FILE.patch/VERIFICATION.txt/ROLLBACK.sh ti?p t?c m? r?ng, kh?ng thay b?.
+
+C?c l?i test/command ban ??u ???c gi? trong ledger: fixture thi?u field/quoting/encoding, old expectation t? replay/time ch?a due, ch?y PG nh?m superuser v? thi?u mount theme Linux. ?? s?a ??ng fixture/setup/ch?nh s?ch user ?? ch?t, kh?ng gi?m b?o v? t?i ch?nh ?? qua test. Ch?a c? ki?m th? mua/ho?n ng?n h?ng th?t m?i, CI GitHub hay ?i?n tho?i v?t l?; kh?ng cam k?t nh? cung c?p h?t429. Payload Payout/credential kh?ng ??a v?o source/log. Ch?a t?o APK/release ho?c t? c?ng b? GitHub trong ??t n?y.

@@ -1,4 +1,4 @@
-﻿import {
+import {
   createCipheriv,
   createDecipheriv,
   createHash,
@@ -27,7 +27,7 @@ export function payer(input: {
     ? { bin, account, name }
     : null;
 }
-export function sealRecipient(recipient: Recipient, keyHex: string) {
+export function sealPaymentData(recipient: unknown, keyHex: string) {
   if (!/^[a-f0-9]{64}$/i.test(keyHex))
     throw new Error("PAYMENT_DATA_ENCRYPTION_KEY is required");
   const iv = randomBytes(12),
@@ -39,7 +39,7 @@ export function sealRecipient(recipient: Recipient, keyHex: string) {
     c.getAuthTag(),
   ]).toString("base64");
 }
-export function openRecipient(value: string, keyHex: string): Recipient {
+export function openPaymentData(value: string, keyHex: string): unknown {
   const b = Buffer.from(value, "base64");
   const d = createDecipheriv(
     "aes-256-gcm",
@@ -94,3 +94,8 @@ export function collectionAccountMatches(
     (typeof virtual === "string" && virtual.length > 0 && account === virtual)
   );
 }
+
+export const sealRecipient = (r: Recipient, key: string) =>
+  sealPaymentData(r, key);
+export const openRecipient = (value: string, key: string): Recipient =>
+  openPaymentData(value, key) as Recipient;

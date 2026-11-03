@@ -1,3 +1,4 @@
+import { BookingService } from "../../dist/booking/booking.service.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID, randomBytes } from "node:crypto";
@@ -10,6 +11,7 @@ if (!url || !url.includes("w9_test"))
   throw new Error("Only disposable w9_test database allowed");
 const config = new ConfigService({
   DATABASE_URL: url,
+  JWT_ACCESS_SECRET: randomBytes(32).toString("hex"),
   PAYMENT_LIVE_ENABLED: true,
   REFUND_PAYOUT_ENABLED: true,
   TICKET_QR_SECRET: randomBytes(32).toString("hex"),
@@ -42,7 +44,8 @@ const provider = {
     transactions: [],
   }),
   cancelLink: async () => ({}),
-  createPayout: async (d, key) => {
+  createPayout: async (d, key, beforeSend) => {
+    await beforeSend?.();
     payoutCalls++;
     return {
       id: "payout-" + key,
@@ -159,14 +162,16 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
   await db.$connect();
   try {
     await t.test(
-      "schema removed Credit, keeps 10 business tables",
+      "schema removed Credit, keeps business tables plus governor and inbox",
       async () => {
         const cols =
           await db.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND column_name IN ('credit_balance','credit_used')`;
         assert.equal(cols.length, 0);
         const tables =
           await db.$queryRaw`SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'_prisma_migrations'`;
-        assert.equal(tables.length, 10);
+        assert.equal(tables.length, 12);
+        assert.ok(tables.some((t) => t.tablename === "provider_api_governor"));
+        assert.ok(tables.some((t) => t.tablename === "provider_webhook_inbox"));
       },
     );
     await t.test(
@@ -183,7 +188,12 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
           accountNumber: "VQRORDER1",
         });
         try {
-          const result = await service.check(f.oid, f.uid);
+          const untouched = await service.check(f.oid, f.uid);
+          assert.equal(
+            await db.payment.count({ where: { intentOrderId: f.oid } }),
+            0,
+          );
+          const result = await service.start(f.oid, f.uid);
           assert.equal(result.item.qrCode, "fixture-qr");
           assert.equal(result.item.accountNumber, "VQRORDER1");
           assert.equal(
@@ -476,7 +486,8 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
           find = provider.findPayout;
         let accepted,
           calls = 0;
-        provider.createPayout = async (d, k) => {
+        provider.createPayout = async (d, k, beforeSend) => {
+          await beforeSend?.();
           calls++;
           accepted = await create(d, k);
           throw new Error("response lost");
@@ -490,6 +501,11 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
               .operationState,
             "UNKNOWN",
           );
+          // Only accelerate due times inside this disposable fixture, never production.
+          await db.payment.update({
+            where: { id: r.item.id },
+            data: { nextAttemptAt: new Date(0) },
+          });
           await service.processRefund(r.item.id);
           assert.equal(calls, 1);
           assert.equal(
@@ -530,6 +546,10 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
         try {
           const a = await service.start(f.oid, f.uid);
           assert.equal(a.item.operationState, "UNKNOWN");
+          await db.payment.updateMany({
+            where: { intentOrderId: f.oid },
+            data: { nextAttemptAt: new Date(0) },
+          });
           const b = await service.check(f.oid, f.uid);
           assert.equal(b.item.operationState, "PROCESSING");
           assert.equal(b.item.paymentLinkId, accepted.paymentLinkId);
@@ -566,6 +586,7 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
             where: { id: p.id },
             data: {
               expiresAt: new Date(0),
+              nextAttemptAt: new Date(0),
               status: "EXPIRED",
               operationState: "UNKNOWN",
             },
@@ -668,7 +689,8 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
         });
         const r = await service.refund(ticket.id, f.uid);
         const create = provider.createPayout;
-        provider.createPayout = async (d, k) => {
+        provider.createPayout = async (d, k, beforeSend) => {
+          await beforeSend?.();
           const result = await create(d, k);
           result.transactions[0].state = "FAILED";
           return result;
@@ -729,7 +751,8 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
         const results = [];
         let calls = 0;
         provider.findPayout = async () => results;
-        provider.createPayout = async (d, key) => {
+        provider.createPayout = async (d, key, beforeSend) => {
+          await beforeSend?.();
           calls++;
           const p = await create(d, key);
           results.push(p);
@@ -779,7 +802,8 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
         let calls = 0;
         const keys = [];
         provider.findPayout = async () => results;
-        provider.createPayout = async (d, key) => {
+        provider.createPayout = async (d, key, beforeSend) => {
+          await beforeSend?.();
           calls++;
           keys.push(key);
           const p = {
@@ -819,19 +843,19 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
             });
             assert.equal(calls, i);
             assert.equal(p.snapshot.refundRetry.cycles, i);
-            if (i < 4) {
-              assert.equal(p.status, "PENDING");
-              assert.ok(p.nextAttemptAt.getTime() - Date.now() > 178000);
-              await service.processRefund(r.item.id);
-              assert.equal(calls, i);
-              await db.payment.update({
-                where: { id: r.item.id },
-                data: { nextAttemptAt: new Date(0) },
-              });
-            } else {
-              assert.equal(p.status, "NEEDS_ADMIN");
-              assert.equal(p.operationState, "NEEDS_REVIEW");
-            }
+            assert.equal(p.status, "NEEDS_ADMIN");
+            assert.equal(p.snapshot.refundRetry.phase, "WAITING_FUNDS");
+            assert.equal(p.snapshot.refundRetry.sendAttempts, i);
+            assert.equal(p.nextAttemptAt, null);
+            await service.processRefund(r.item.id);
+            assert.equal(calls, i);
+            if (i < 4)
+              await service.resumeFunds(
+                r.item.id,
+                randomUUID(),
+                randomUUID(),
+                "Fixture funds added",
+              );
           }
           await service.processRefund(r.item.id);
           assert.equal(calls, 4);
@@ -861,7 +885,8 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
         const results = [];
         let calls = 0;
         provider.findPayout = async () => results;
-        provider.createPayout = async (d, key) => {
+        provider.createPayout = async (d, key, beforeSend) => {
+          await beforeSend?.();
           calls++;
           results.push(await create(d, key));
           throw new Error("lost response fixture");
@@ -911,7 +936,8 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
           result;
         const keys = [];
         provider.findPayout = async () => (visible ? [result] : []);
-        provider.createPayout = async (d, key) => {
+        provider.createPayout = async (d, key, beforeSend) => {
+          await beforeSend?.();
           calls++;
           keys.push(key);
           result = await create(d, key);
@@ -928,14 +954,28 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
             where: { orderId: f.oid },
           });
           const r = await service.refund(ticket.id, f.uid);
-          for (let n = 1; n <= 4; n++) {
-            await service.processRefund(r.item.id);
-            assert.equal(calls, n);
-            await db.payment.update({
-              where: { id: r.item.id },
-              data: { nextAttemptAt: new Date(0) },
-            });
-          }
+          await service.processRefund(r.item.id);
+          const historical = await db.payment.findUniqueOrThrow({
+            where: { id: r.item.id },
+          });
+          // Seed durable metadata from an earlier release; v3 intentionally never performs four ambiguous POSTs.
+          await db.payment.update({
+            where: { id: r.item.id },
+            data: {
+              status: "NEEDS_ADMIN",
+              operationState: "NEEDS_REVIEW",
+              nextAttemptAt: new Date(0),
+              snapshot: {
+                ...historical.snapshot,
+                refundRetry: {
+                  ...historical.snapshot.refundRetry,
+                  version: 2,
+                  sendAttempts: 4,
+                  reconcileOnly: true,
+                },
+              },
+            },
+          });
           const p = await db.payment.findUniqueOrThrow({
             where: { id: r.item.id },
           });
@@ -959,7 +999,7 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
           await new PaymentsService(db, config, provider, {
             publish: () => {},
           }).processRefund(p.id);
-          assert.equal(calls, 4);
+          assert.equal(calls, 1);
           assert.equal(
             (await db.payment.findUniqueOrThrow({ where: { id: p.id } }))
               .operationState,
@@ -975,6 +1015,86 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
           provider.findPayout = find;
           config.set("REFUND_RETRY_ENABLED", false);
         }
+      },
+    );
+
+    await t.test(
+      "multi-cart12+2 checkout is idempotent and payment/refund retain historical combo lines",
+      async () => {
+        const f = await fixture("150000"),
+          a = randomUUID(),
+          b = randomUUID();
+        await db.combo.create({
+          data: {
+            id: a,
+            name: "Fixture combo A",
+            description: "isolated",
+            price: 100000,
+          },
+        });
+        await db.combo.create({
+          data: {
+            id: b,
+            name: "Fixture drink B",
+            description: "isolated",
+            price: 30000,
+          },
+        });
+        const booking = new BookingService(db, { publish: () => {} }, config);
+        const q = await booking.quote(f.oid, f.uid, {
+          combo_quantity: 0,
+          combo_items: [
+            { id: a, quantity: 12 },
+            { id: b, quantity: 2 },
+          ],
+          voucher_code: "FIRST50",
+        });
+        assert.equal(q.item.subtotal, "1410000");
+        assert.equal(q.item.bankAmount, "705000");
+        const first = await booking.checkout(f.oid, f.uid, q.item.quoteToken);
+        const again = await booking.checkout(f.oid, f.uid, q.item.quoteToken);
+        assert.deepEqual(first.item.comboItems, again.item.comboItems);
+        assert.equal(first.item.comboItems.length, 2);
+        assert.equal(
+          (await db.order.findUniqueOrThrow({ where: { id: f.oid } }))
+            .checkoutRevision,
+          1,
+        );
+        await db.combo.update({
+          where: { id: a },
+          data: { price: 999999, status: "UNAVAILABLE" },
+        });
+        await service.start(f.oid, f.uid);
+        await receipt(f, randomUUID(), 705000);
+        const ticket = await db.ticket.findUniqueOrThrow({
+          where: { orderId: f.oid },
+        });
+        assert.equal(
+          ticket.snapshot.comboItems.find((x) => x.id === a).unitPrice,
+          "100000",
+        );
+        assert.equal(
+          ticket.snapshot.comboItems.find((x) => x.id === a).quantity,
+          12,
+        );
+        const refund = await service.refund(ticket.id, f.uid);
+        await service.processRefund(refund.item.id);
+        const restored = await db.ticket.findUniqueOrThrow({
+          where: { id: ticket.id },
+        });
+        assert.equal(restored.status, "REFUNDED");
+        assert.deepEqual(
+          restored.snapshot.comboItems,
+          ticket.snapshot.comboItems,
+        );
+        assert.equal(
+          (
+            await db.payment.findUniqueOrThrow({
+              where: { id: refund.item.id },
+            })
+          ).expectedAmount.toString(),
+          "705000",
+        );
       },
     );
   } finally {

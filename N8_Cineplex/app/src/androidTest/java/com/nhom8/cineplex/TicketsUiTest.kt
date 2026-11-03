@@ -26,7 +26,7 @@ class TicketsUiTest {
         override suspend fun tickets() = listOf(fixtureTicket())
         override suspend fun ticket(id: String) = fixtureTicket()
         override suspend fun qr(id: String) = "N8T:TEST-ONLY-NOT-A-REAL-TICKET"
-        override suspend fun payment(id: String) = ServerPayment("p", id, "PENDING", "READY", "50001", deadline, qrCode = "TEST-ONLY-NOT-A-REAL-PAYMENT", description = "N8 TEST", accountName = "N8 TEST", accountNumber = "0000000000")
+        override suspend fun payment(id: String) = ServerPayment("p", id, "PENDING", "READY", "50001", deadline, qrCode = "TEST-ONLY-NOT-A-REAL-PAYMENT", description = "N8 TEST", accountName = "N8 TEST", accountNumber = "0000000000",checkoutUrl = "https://pay.payos.vn/web/fixture")
         override suspend fun checkPayment(id: String) = payment(id)
         override suspend fun refund(id: String) = ServerRefund("refund", "PENDING", "PROCESSING", "50001", "MB ••••1234")
     }
@@ -51,6 +51,7 @@ class TicketsUiTest {
         compose.waitUntil(5000) { state.payment != null }
         compose.onNodeWithTag("payment-fixed-amount").assertTextEquals("50.001đ")
         compose.onNodeWithTag("native-ticket-qr").assertExists()
+        compose.onNodeWithText("Mở trang thanh toán payOS").assertDoesNotExist()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
         screenshot("week9-payment-fixed-amount")
         compose.onNodeWithText("Kiểm tra thanh toán").performScrollTo().performClick()

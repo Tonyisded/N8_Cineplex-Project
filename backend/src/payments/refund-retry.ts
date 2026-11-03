@@ -3,7 +3,15 @@ import type { Recipient } from "./payment-domain.js";
 export const REFUND_RETRY_LIMIT = 4;
 export const REFUND_RETRY_DELAY_MS = 180_000;
 export type RefundRetry = {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
+  phase?:
+    "READY" | "DISPATCHING" | "AWAITING_RESULT" | "WAITING_FUNDS" | "DONE";
+  requestVersion?: number;
+  requestHash?: string;
+  requestCipher?: string;
+  pollStep?: number;
+  resumeRequestId?: string;
+  resumeRequests?: { id: string; hash: string }[];
   sendAttempts?: number;
   reconcileOnly?: boolean;
   firstError?: RefundErrorEvent;
@@ -17,7 +25,10 @@ export type RefundRetry = {
 };
 export function initialRefundRetry(id: string): RefundRetry {
   return {
-    version: 2,
+    version: 3,
+    phase: "READY",
+    requestVersion: 1,
+    pollStep: 0,
     sendAttempts: 0,
     reconcileOnly: false,
     cycles: 0,
@@ -31,7 +42,20 @@ export function readRefundRetry(value: unknown): RefundRetry {
   const s = value as RefundRetry;
   if (
     !s ||
-    ![1, 2].includes(s.version) ||
+    ![1, 2, 3].includes(s.version) ||
+    (s.version === 3 &&
+      (!s.phase ||
+        ![
+          "READY",
+          "DISPATCHING",
+          "AWAITING_RESULT",
+          "WAITING_FUNDS",
+          "DONE",
+        ].includes(s.phase) ||
+        s.requestVersion !== 1 ||
+        !Number.isInteger(s.pollStep) ||
+        s.pollStep! < 0 ||
+        s.pollStep! > 3)) ||
     !Number.isSafeInteger(s.cycles) ||
     s.cycles < 0 ||
     (s.sendAttempts !== undefined &&
@@ -52,7 +76,7 @@ export function readRefundRetry(value: unknown): RefundRetry {
     throw new Error("Invalid persisted refund retry state");
   return {
     ...s,
-    version: 2,
+    version: s.version,
     sendAttempts:
       s.sendAttempts ??
       (s.dispatched ? Math.min(s.cycles, REFUND_RETRY_LIMIT) : 0),
@@ -200,4 +224,19 @@ export function safeRefundError(
       ? { providerCode: code }
       : {}),
   };
+}
+
+export function sparseRefundAt(
+  now: Date,
+  step: number,
+  retryAfter?: string | null,
+) {
+  const base = [180, 600, 1800, 3600][Math.min(Math.max(step, 0), 3)];
+  return new Date(
+    Math.max(
+      refundRetryAt(now, retryAfter).getTime(),
+      now.getTime() +
+        Math.min(3600, base + Math.floor(Math.random() * 11)) * 1000,
+    ),
+  );
 }

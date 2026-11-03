@@ -1,3 +1,4 @@
+import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -11,6 +12,7 @@ import {
   Max,
   MaxLength,
   ValidateIf,
+  ValidateNested,
 } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
@@ -28,6 +30,14 @@ export class CreateOrderDto {
   seat_ids!: string[];
 }
 
+export class ComboItemDto {
+  @ApiProperty({ format: "uuid" }) @IsUUID() id!: string;
+  @ApiProperty({ minimum: 1, maximum: 2147483647 })
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  quantity!: number;
+}
 export class QuoteDto {
   @ApiProperty({ format: "uuid", required: false, nullable: true })
   @IsOptional()
@@ -35,14 +45,26 @@ export class QuoteDto {
   combo_id?: string | null;
   @ApiProperty({
     minimum: 0,
-    maximum: 9,
+    maximum: 2147483647,
     description:
-      "No combo: omit/null combo_id and quantity 0. One complete combo: UUID and integer quantity 1-9. Prices are server-calculated.",
+      "No combo: omit/null combo_id and quantity 0. One complete combo: UUID and positive integer quantity. Prices are server-calculated.",
   })
   @IsInt()
   @Min(0)
-  @Max(9)
+  @Max(2147483647)
   combo_quantity!: number;
+  @ApiProperty({
+    required: false,
+    type: [ComboItemDto],
+    description:
+      "Multiple products, each ID unique. Do not combine with legacy combo selection.",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => ComboItemDto)
+  combo_items?: ComboItemDto[];
   @ApiProperty({
     required: false,
     description:

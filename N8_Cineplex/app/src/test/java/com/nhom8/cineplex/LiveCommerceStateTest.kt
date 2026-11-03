@@ -7,6 +7,16 @@ import org.junit.*
 import org.junit.Assert.*
 @OptIn(ExperimentalCoroutinesApi::class)
 class LiveCommerceStateTest {
+ @Test fun requestJsonMatchesStrictBackendContract() {
+  val json=kotlinx.serialization.json.Json {encodeDefaults=true;explicitNulls=false}
+  val checkout=json.parseToJsonElement(json.encodeToString(CheckoutBody.serializer(),CheckoutBody("signed-token"))) as kotlinx.serialization.json.JsonObject
+  assertEquals(setOf("quoteToken"),checkout.keys)
+  val legacy=json.parseToJsonElement(json.encodeToString(QuoteBody.serializer(),QuoteBody("a",12))) as kotlinx.serialization.json.JsonObject
+  assertFalse(legacy.containsKey("combo_items"))
+  val multi=json.parseToJsonElement(json.encodeToString(QuoteBody.serializer(),QuoteBody(combo_items=listOf(ComboItemBody("a",12),ComboItemBody("b",2))))) as kotlinx.serialization.json.JsonObject
+  assertEquals(2,(multi["combo_items"] as kotlinx.serialization.json.JsonArray).size)
+  assertFalse(multi.containsKey("combo_id"))
+ }
  @Before fun setup(){Dispatchers.setMain(StandardTestDispatcher())}
  @After fun cleanup(){Dispatchers.resetMain()}
  @Test fun serverQuoteIsAuthoritativeAndUnknownRetriesSameToken()=runTest {
@@ -38,7 +48,7 @@ class LiveCommerceStateTest {
   assertEquals(240000L,vm.estimatedSubtotal);assertEquals(LiveCommerceStep.COMBOS,vm.step)
   vm.select("a");assertEquals(340000L,vm.estimatedSubtotal)
   vm.quantity(2);assertEquals(440000L,vm.estimatedSubtotal)
-  vm.quantity(99);assertEquals(9,vm.quantity)
+  vm.quantity(99);assertEquals(99,vm.quantity)
   vm.quantity(0);assertNull(vm.selected);assertEquals(240000L,vm.estimatedSubtotal)
   vm.select("sold");assertNull(vm.selected)
   vm.select("a");vm.select("b");assertEquals(1,vm.quantity);assertEquals(319000L,vm.estimatedSubtotal)
@@ -50,6 +60,22 @@ class LiveCommerceStateTest {
   vm.clear();assertEquals(LiveCommerceStep.COMBOS,vm.step);assertEquals(0L,vm.estimatedSubtotal)
  }
 
+
+ @Test fun multipleProductsAndQuantityAboveNineAreIndependent()=runTest {
+  var body:QuoteBody?=null;var unavailable=false
+  val order=HoldOrder("multi","slot","PENDING_PAYMENT","150000","0","150000","150000","2030-01-01T00:00:00Z",listOf(OrderSeatDto("seat","A1","150000")))
+  val repo=object:CommerceBackend {
+   override suspend fun combos()=listOf(ServerCombo("a","Combo A","","100000",status="AVAILABLE"),ServerCombo("b","Drink","","30000",status=if(unavailable)"UNAVAILABLE" else "AVAILABLE"))
+   override suspend fun vouchers()=emptyList<ServerVoucher>()
+   override suspend fun quote(id:String,input:QuoteBody):ServerQuote {body=input;return ServerQuote("1410000","0","1410000","1410000","",order.expiresAt,"signed")}
+   override suspend fun checkout(id:String,token:String)=error("No financial operation")
+  }
+  val vm=LiveCommerceState(repo);vm.bind(order);advanceUntilIdle()
+  repeat(12){vm.adjust("a",1)};repeat(2){vm.adjust("b",1)}
+  assertEquals(12,vm.cart["a"]);assertEquals(2,vm.cart["b"]);assertEquals(1410000L,vm.estimatedSubtotal)
+  vm.continueToCheckout();advanceUntilIdle();assertEquals(listOf(ComboItemBody("a",12),ComboItemBody("b",2)),body!!.combo_items);assertNull(body!!.combo_id);assertEquals(0,body!!.combo_quantity)
+  vm.backToCombos();vm.adjust("b",-1);assertEquals(12,vm.cart["a"]);assertEquals(1,vm.cart["b"]);unavailable=true;vm.load();advanceUntilIdle();vm.adjust("b",-1);assertNull(vm.cart["b"]);assertEquals(12,vm.cart["a"]);vm.select(null);assertTrue(vm.cart.isEmpty())
+ }
  private fun integrationOrder() = HoldOrder("integration-order", "slot", "PENDING_PAYMENT", "350000", "20000", "330000", "330000", "2030-01-01T00:00:00Z", listOf(OrderSeatDto("A1", "A1", "240000")), "combo", 1)
  private fun integrationQuote(o: HoldOrder) = ServerQuote(o.subtotal, o.discount, o.totalAmount, o.bankAmount, "CINE20", o.expiresAt, "integration-token")
  private fun integrationRepo(o: HoldOrder) = object : CommerceBackend {

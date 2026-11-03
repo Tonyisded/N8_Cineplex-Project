@@ -96,7 +96,8 @@ function fixture(t, create) {
       stats.queries++;
       return structuredClone(stats.results);
     },
-    createPayout: async (body, key) => {
+    createPayout: async (body, key, beforeSend) => {
+      await beforeSend?.();
       stats.creates.push({ body: { ...body }, key, time: Date.now() });
       return create ? create(stats, body, key) : payout();
     },
@@ -114,135 +115,111 @@ function fixture(t, create) {
     provider,
     config,
     service,
-    advance: () => t.mock.timers.tick(180000),
+    advance: () =>
+      t.mock.timers.tick(
+        Math.max(0, (row.nextAttemptAt?.getTime() ?? Date.now()) - Date.now()),
+      ),
   };
 }
-test("retry finalizes once, stops after success, leaves notifications and same business reference intact", async (t) => {
+
+test("v3 fresh success uses one POST, zero queries, finalizes once and preserves notices", async (t) => {
   const f = fixture(t);
-  const s = f.service();
-  await Promise.all([s.processRefund(id), s.processRefund(id)]);
-  assert.equal(f.stats.creates.length, 1);
-  assert.equal(f.row.operationState, "SUCCEEDED");
-  assert.equal(f.order.status, "REFUNDED");
-  assert.equal(f.ticket.status, "REFUNDED");
-  assert.equal(f.row.snapshot.refundRetry.cycles, 1);
-  f.advance();
   await f.service().processRefund(id);
   assert.equal(f.stats.creates.length, 1);
+  assert.equal(f.stats.queries, 0);
+  assert.equal(f.row.operationState, "SUCCEEDED");
+  assert.equal(f.row.snapshot.refundRetry.sendAttempts, 1);
+  assert.equal(f.ticket.status, "REFUNDED");
   assert.deepEqual(f.row.notificationState, { requested: { sentAt: "keep" } });
-});
-test("four durable unfunded attempts, >=180 seconds apart; restart does not reset budget; fifth call cannot dispatch", async (t) => {
-  const f = fixture(t, (stats) => {
-    const p = payout("FAILED", { errorCode: "PAYOUT_INSUFFICIENT_FUNDS" });
-    p.id = "failed" + stats.creates.length;
-    stats.results.push(p);
-    return p;
-  });
-  for (let i = 0; i < 4; i++) {
-    await f.service().processRefund(id);
-    assert.equal(f.stats.creates.length, i + 1);
-    if (i < 3) {
-      assert.equal(f.row.status, "PENDING");
-      t.mock.timers.tick(179999);
-      await f.service().processRefund(id);
-      assert.equal(f.stats.creates.length, i + 1);
-      t.mock.timers.tick(1);
-    }
-  }
-  assert.equal(f.row.status, "NEEDS_ADMIN");
-  assert.equal(f.row.operationState, "NEEDS_REVIEW");
-  assert.equal(f.row.snapshot.refundRetry.cycles, 4);
-  assert.equal(new Set(f.stats.creates.map((x) => x.key)).size, 4);
   assert.ok(
-    f.stats.creates.every(
-      (x) =>
-        x.body.referenceId === "REF-fixture" &&
-        x.body.amount === 100000 &&
-        x.body.toAccountNumber === recipient.account,
-    ),
+    !f.row.snapshot.refundRetry.requestCipher.includes(recipient.account),
   );
   f.advance();
   await f.service().processRefund(id);
-  assert.equal(f.stats.creates.length, 4);
+  assert.equal(f.stats.creates.length, 1);
 });
-test("timeout then empty query only replays the exact persisted key; never invents a second key", async (t) => {
+test("ambiguous POST429 never replays on empty query, retains key, budget and journal", async (t) => {
   const f = fixture(t, () => {
-    throw new Error("network uncertain");
+    throw Object.assign(new Error("SECRET"), { status: 429 });
   });
   await f.service().processRefund(id);
-  f.advance();
-  await f.service().processRefund(id);
-  assert.equal(f.stats.creates.length, 2);
-  assert.equal(f.stats.creates[0].key, f.stats.creates[1].key);
-  assert.deepEqual(f.stats.creates[0].body, f.stats.creates[1].body);
-  assert.equal(f.row.snapshot.refundRetry.dispatches, 1);
-  assert.equal(f.row.status, "PENDING");
+  const key = f.row.snapshot.refundRetry.key;
+  for (let i = 0; i < 8; i++) {
+    f.advance();
+    await f.service().processRefund(id);
+  }
+  assert.equal(f.stats.creates.length, 1);
+  assert.equal(f.row.snapshot.refundRetry.sendAttempts, 1);
+  assert.equal(f.stats.queries, 8);
+  assert.equal(f.row.snapshot.refundRetry.key, key);
+  assert.ok(!JSON.stringify(f.row.snapshot).includes("SECRET"));
 });
-test("timeout after provider success is recovered by authoritative query, without another payout", async (t) => {
+test("late success after response loss finalizes through authoritative list without another POST", async (t) => {
   const f = fixture(t, (stats) => {
     stats.results.push(payout());
     throw new Error("response lost");
   });
   await f.service().processRefund(id);
-  assert.equal(f.row.status, "PENDING");
   f.advance();
   await f.service().processRefund(id);
   assert.equal(f.row.operationState, "SUCCEEDED");
   assert.equal(f.stats.creates.length, 1);
 });
-test("bank failure with a reference never gets a new payout during reconciliation", async (t) => {
-  const f = fixture(t, (stats) => {
-    const p = payout("FAILED", {
-      errorCode: "PAYOUT_BANK_SYSTEM_ERROR",
-      reference: "bank-reference",
-      transactionDatetime: "2030-01-01T00:00:00Z",
-    });
-    stats.results.push(p);
-    return p;
-  });
-  for (let i = 0; i < 4; i++) {
-    await f.service().processRefund(id);
-    if (i < 3) {
-      assert.equal(f.row.status, "PENDING");
-      f.advance();
-    }
-  }
-  assert.equal(f.row.status, "PENDING");
+test("confirmed insufficient funds stops and waits for admin without balance polling", async (t) => {
+  const f = fixture(t, () =>
+    payout("FAILED", { errorCode: "PAYOUT_INSUFFICIENT_FUNDS" }),
+  );
+  await f.service().processRefund(id);
+  assert.equal(f.row.snapshot.refundRetry.phase, "WAITING_FUNDS");
+  assert.equal(f.row.operationState, "NEEDS_REVIEW");
+  assert.equal(f.row.nextAttemptAt, null);
+  for (let i = 0; i < 8; i++) await f.service().processRefund(id);
   assert.equal(f.stats.creates.length, 1);
-  assert.equal(f.stats.queries, 4);
+  assert.equal(f.stats.queries, 0);
 });
-test("429 honors Retry-After without consuming send budget or stopping reconciliation", async (t) => {
+test("known pending ID is queried by GET only, no LIST and no duplicate POST", async (t) => {
+  const f = fixture(t, () => payout("PROCESSING"));
+  let gets = 0;
+  f.provider.getPayout = async () => {
+    gets++;
+    return payout("PROCESSING");
+  };
+  await f.service().processRefund(id);
+  for (let i = 0; i < 3; i++) {
+    f.advance();
+    await f.service().processRefund(id);
+  }
+  assert.equal(gets, 3);
+  assert.equal(f.stats.queries, 0);
+  assert.equal(f.stats.creates.length, 1);
+});
+test("query429 honors Retry-After600 without spending send budget", async (t) => {
   const f = fixture(t);
+  f.row.snapshot.refundRetry.phase = "AWAITING_RESULT";
   f.provider.findPayout = async () => {
     f.stats.queries++;
-    throw { headers: new Headers({ "retry-after": "600" }) };
+    throw { status: 429, headers: new Headers({ "retry-after": "600" }) };
   };
-  for (let i = 0; i < 4; i++) {
-    await f.service().processRefund(id);
-    if (i < 3) {
-      assert.equal(f.row.status, "PENDING");
-      f.advance();
-      await f.service().processRefund(id);
-      assert.equal(f.stats.queries, i + 1);
-      t.mock.timers.tick(420000);
-    }
-  }
-  assert.equal(f.row.status, "PENDING");
-  assert.equal(f.stats.creates.length, 0);
-  assert.equal(f.stats.queries, 4);
+  await f.service().processRefund(id);
+  assert.equal(f.row.nextAttemptAt.getTime() - Date.now(), 600000);
+  t.mock.timers.tick(599999);
+  await f.service().processRefund(id);
+  assert.equal(f.stats.queries, 1);
+  assert.equal(f.row.snapshot.refundRetry.sendAttempts, 0);
 });
-test("invalid signed payout or duplicate successes requires immediate review, never credits a ticket", async (t) => {
+test("wrong recipient or multiple successes require review and cannot restore a ticket", async (t) => {
   const f = fixture(t);
-  f.stats.results = [payout("SUCCEEDED", { toAccountNumber: "9999999" })];
+  f.row.snapshot.refundRetry.phase = "AWAITING_RESULT";
+  f.stats.results = [payout("SUCCEEDED", { toAccountNumber: "wrong" })];
   await f.service().processRefund(id);
   assert.equal(f.row.status, "NEEDS_ADMIN");
   assert.equal(f.ticket.status, "REFUND_PENDING");
+  assert.equal(f.row.nextAttemptAt, null);
   assert.equal(f.stats.creates.length, 0);
-  const s = { ...initialRefundRetry(id), cycles: 1 };
   assert.equal(
     refundRetryDecision(
       [payout(), { ...payout(), id: "other" }],
-      s,
+      initialRefundRetry(id),
       "REF-fixture",
       "100000",
       recipient,
@@ -250,86 +227,63 @@ test("invalid signed payout or duplicate successes requires immediate review, ne
     "REVIEW",
   );
 });
-test("pending bank processing is queried only, never duplicated; kill switch blocks dispatch", async (t) => {
+test("kill switch prevents first dispatch", async (t) => {
   const f = fixture(t);
-  f.stats.results = [payout("PROCESSING")];
-  await f.service().processRefund(id);
-  assert.equal(f.stats.creates.length, 0);
-  assert.equal(f.row.status, "PENDING");
-  f.advance();
-  f.stats.results = [];
   f.config.set("REFUND_PAYOUT_ENABLED", false);
   await f.service().processRefund(id);
   assert.equal(f.stats.creates.length, 0);
+  assert.equal(f.row.snapshot.refundRetry.sendAttempts, 0);
 });
-test("retry state validates bounds and server scheduling never retries earlier than180s", () => {
-  assert.equal(refundRetryAt(new Date(0)).getTime(), 180000);
-  assert.equal(refundRetryAt(new Date(0), "1").getTime(), 180000);
-  assert.equal(refundRetryAt(new Date(0), "600").getTime(), 600000);
-  assert.equal(refundRetryAt(new Date(0), "invalid").getTime(), 180000);
-  for (const cycles of [-1, 1.5])
-    assert.throws(() => readRefundRetry({ ...initialRefundRetry(id), cycles }));
-});
-
-test("180 second delay starts after response/error completion, not request start", async (t) => {
+test("polling progresses3/10/30/60min measured after completion and stops below due", async (t) => {
   const f = fixture(t, () => {
-    t.mock.timers.tick(15000);
-    throw new Error("slow timeout");
+    throw new Error("lost");
   });
-  await f.service().processRefund(id);
-  assert.equal(f.row.nextAttemptAt.getTime() - Date.now(), 180000);
-  t.mock.timers.tick(179999);
-  await f.service().processRefund(id);
+  for (const seconds of [180, 600, 1800, 3600]) {
+    await f.service().processRefund(id);
+    const wait = f.row.nextAttemptAt.getTime() - Date.now();
+    assert.ok(
+      wait >= seconds * 1000 &&
+        wait <= Math.min(3600000, seconds * 1000 + 10000),
+    );
+    const calls = f.stats.queries;
+    t.mock.timers.tick(wait - 1);
+    await f.service().processRefund(id);
+    assert.equal(f.stats.queries, calls);
+    t.mock.timers.tick(1);
+  }
   assert.equal(f.stats.creates.length, 1);
 });
-
-test("four send attempts stop POSTs but later authoritative success is still finalized", async (t) => {
-  const f = fixture(t, () => {
-    throw Object.assign(new Error("secret account payload MUST_NOT_LOG"), {
-      status: 429,
-      code: "429",
-    });
+test("historical four-send row stays queryable, never issues fifth POST, accepts late success", async (t) => {
+  const f = fixture(t);
+  Object.assign(f.row.snapshot.refundRetry, {
+    version: 2,
+    phase: undefined,
+    sendAttempts: 4,
+    dispatches: 1,
+    dispatched: true,
+    reconcileOnly: true,
+    cycles: 4,
   });
-  const logs = [];
-  t.mock.method(console, "warn", (...args) => logs.push(args.join(" ")));
-  for (let i = 0; i < 4; i++) {
-    await f.service().processRefund(id);
-    f.advance();
-  }
-  assert.equal(f.stats.creates.length, 4);
-  assert.equal(f.row.snapshot.refundRetry.sendAttempts, 4);
-  assert.equal(f.row.status, "NEEDS_ADMIN");
-  assert.equal(f.row.snapshot.refundRetry.reconcileOnly, true);
-  assert.ok(f.row.nextAttemptAt);
+  f.row.status = "NEEDS_ADMIN";
+  f.row.operationState = "NEEDS_REVIEW";
   await f.service().processRefund(id);
-  assert.equal(f.stats.creates.length, 4);
-  assert.equal(f.row.snapshot.refundRetry.cycles, 5);
+  assert.equal(f.stats.creates.length, 0);
   f.stats.results = [payout()];
   f.advance();
   await f.service().processRefund(id);
   assert.equal(f.row.operationState, "SUCCEEDED");
-  assert.equal(f.ticket.status, "REFUNDED");
-  assert.equal(f.stats.creates.length, 4);
-  assert.equal(f.row.nextAttemptAt, null);
-  assert.ok(logs.some((x) => x.includes("429")));
-  assert.ok(!logs.join("").includes("MUST_NOT_LOG"));
-  assert.ok(!JSON.stringify(f.row.snapshot).includes("MUST_NOT_LOG"));
+  assert.equal(f.stats.creates.length, 0);
 });
-test("query errors do not consume send budget; bounded journal excludes messages, headers and raw codes", async (t) => {
+test("read failures leave send budget intact and bounded journal excludes raw messages and headers", async (t) => {
   const f = fixture(t);
-  let broken = true;
+  f.row.snapshot.refundRetry.phase = "AWAITING_RESULT";
   f.provider.findPayout = async () => {
-    f.stats.queries++;
-    if (broken)
-      throw {
-        status: 503,
-        code: "SECRET_API_KEY",
-        message: "ACCOUNT123456789",
-        headers: new Headers({ authorization: "TOKEN_SECRET" }),
-      };
-    return [];
+    throw {
+      status: 503,
+      message: "SECRET_PAYLOAD",
+      headers: new Headers({ authorization: "TOKEN_SECRET" }),
+    };
   };
-  t.mock.method(console, "warn", () => {});
   for (let i = 0; i < 10; i++) {
     await f.service().processRefund(id);
     f.advance();
@@ -337,13 +291,16 @@ test("query errors do not consume send budget; bounded journal excludes messages
   assert.equal(f.row.snapshot.refundRetry.sendAttempts, 0);
   assert.equal(f.row.snapshot.refundRetry.errors.length, 8);
   assert.equal(f.row.snapshot.refundRetry.lastError.httpStatus, 503);
-  const saved = JSON.stringify(f.row.snapshot);
-  for (const secret of ["SECRET_API_KEY", "ACCOUNT123456789", "TOKEN_SECRET"])
-    assert.ok(!saved.includes(secret));
-  broken = false;
-  await f.service().processRefund(id);
-  assert.equal(f.stats.creates.length, 1);
-  assert.equal(f.row.operationState, "SUCCEEDED");
+  assert.ok(!JSON.stringify(f.row.snapshot).includes("SECRET"));
+});
+test("retry parser bounds remain strict", () => {
+  assert.throws(() =>
+    readRefundRetry({ ...initialRefundRetry(id), cycles: -1 }),
+  );
+  assert.throws(() =>
+    readRefundRetry({ ...initialRefundRetry(id), sendAttempts: 5 }),
+  );
+  assert.equal(refundRetryAt(new Date(0), "600").getTime(), 600000);
 });
 test("persisted v1 metadata migrates conservatively, safe error serializer only includes allowlisted fields", () => {
   const state = readRefundRetry({

@@ -1,4 +1,6 @@
-﻿import { ProxyAgent, fetch as proxyFetch } from "undici";
+import { createHash } from "node:crypto";
+import { ProviderGovernor } from "./provider-governor.js";
+import { ProxyAgent, fetch as proxyFetch } from "undici";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
@@ -9,7 +11,29 @@ import {
 } from "@payos/node";
 @Injectable()
 export class PayosAdapter {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly governor: ProviderGovernor,
+  ) {}
+  private run<T>(
+    kind: "COLLECT" | "PAYOUT",
+    operation: string,
+    call: () => Promise<T>,
+  ) {
+    if (!this.governor) throw new Error("Provider governor is required");
+    const key =
+      kind +
+      ":" +
+      createHash("sha256")
+        .update(this.config.getOrThrow<string>(`PAYOS_${kind}_CLIENT_ID`))
+        .digest("hex");
+    return this.governor.execute(
+      key,
+      operation,
+      kind === "PAYOUT" ? 5000 : 1000,
+      call,
+    );
+  }
   private payoutAgent?: ProxyAgent;
   async onModuleDestroy() {
     await this.payoutAgent?.close();
@@ -41,7 +65,7 @@ export class PayosAdapter {
       } as RequestInit,
     };
   }
-  private client(kind: "COLLECT" | "PAYOUT") {
+  #client(kind: "COLLECT" | "PAYOUT") {
     const prefix = `PAYOS_${kind}_`;
     return new PayOS({
       clientId: this.config.getOrThrow<string>(prefix + "CLIENT_ID"),
@@ -51,34 +75,67 @@ export class PayosAdapter {
       timeout: 15000,
       logLevel: "off",
       ...(kind === "PAYOUT" ? this.payoutTransport() : {}),
+      fetch: async (url, init) => {
+        const transport = kind === "PAYOUT" ? this.payoutTransport() : {};
+        const response = await (transport.fetch ?? globalThis.fetch)(url, {
+          ...init,
+          signal: AbortSignal.any([
+            ...(init?.signal ? [init.signal] : []),
+            AbortSignal.timeout(15000),
+          ]),
+        });
+        if (
+          kind === "PAYOUT" &&
+          response.ok &&
+          !response.headers.get("x-signature")
+        )
+          throw new Error("Missing payout signature");
+        return response;
+      },
     });
   }
   createLink(data: CreatePaymentLinkRequest) {
-    return this.client("COLLECT").paymentRequests.create(data);
+    return this.run("COLLECT", "COLLECT_CREATE", () =>
+      this.#client("COLLECT").paymentRequests.create(data),
+    );
   }
   getLink(code: number) {
-    return this.client("COLLECT").paymentRequests.get(code);
+    return this.run("COLLECT", "COLLECT_GET", () =>
+      this.#client("COLLECT").paymentRequests.get(code),
+    );
   }
   cancelLink(code: number) {
-    return this.client("COLLECT").paymentRequests.cancel(
-      code,
-      "N8 hold closed",
+    return this.run("COLLECT", "COLLECT_CANCEL", () =>
+      this.#client("COLLECT").paymentRequests.cancel(code, "N8 hold closed"),
     );
   }
   verify(body: unknown) {
-    return this.client("COLLECT").webhooks.verify(body as Webhook);
+    return this.#client("COLLECT").webhooks.verify(body as Webhook);
   }
-  createPayout(data: PayoutRequest, key: string) {
-    return this.client("PAYOUT").payouts.create(data, key);
+  createPayout(
+    data: PayoutRequest,
+    key: string,
+    beforeSend?: () => Promise<void>,
+  ) {
+    return this.run("PAYOUT", "PAYOUT_CREATE", async () => {
+      await beforeSend?.();
+      return this.#client("PAYOUT").payouts.create(data, key);
+    });
   }
   getPayout(id: string) {
-    return this.client("PAYOUT").payouts.get(id);
+    return this.run("PAYOUT", "PAYOUT_GET", () =>
+      this.#client("PAYOUT").payouts.get(id),
+    );
+  }
+  payoutBalance() {
+    return this.run("PAYOUT", "PAYOUT_BALANCE", () =>
+      this.#client("PAYOUT").payoutsAccount.balance(),
+    );
   }
   async findPayout(referenceId: string) {
-    const page = await this.client("PAYOUT").payouts.list({
-      referenceId,
-      limit: 10,
-    });
+    const page = await this.run("PAYOUT", "PAYOUT_LIST", () =>
+      this.#client("PAYOUT").payouts.list({ referenceId, limit: 10 }),
+    );
     return page.data.filter((p) => p.referenceId === referenceId);
   }
 }

@@ -34,7 +34,9 @@ test("payout SDK uses fixed authenticated CONNECT proxy, never falls back direct
     direct++;
     throw new Error("DIRECT_FIXTURE");
   });
-  const adapter = new PayosAdapter(config);
+  const adapter = new PayosAdapter(config, {
+    execute: async (_key, _op, _interval, call) => call(),
+  });
   try {
     await assert.rejects(adapter.findPayout("fixture"));
     assert.ok(connections.length >= 1);

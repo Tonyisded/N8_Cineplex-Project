@@ -1,4 +1,5 @@
-﻿import { Module } from "@nestjs/common";
+import { ProviderGovernor } from "./provider-governor.js";
+import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
 import { BookingModule } from "../booking/booking.module.js";
 import { PayosAdapter } from "./payos.adapter.js";
@@ -17,7 +18,7 @@ import {
     PayosWebhookController,
     PaymentIssuesController,
   ],
-  providers: [PayosAdapter, PaymentsService],
+  providers: [ProviderGovernor, PayosAdapter, PaymentsService],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}
