@@ -22,7 +22,8 @@ class LiveCommerceUiTest {
    override suspend fun combos()=listOf(ServerCombo("combo","Combo 2 người — Bơ","Bơ", "100000",status="AVAILABLE"), ServerCombo("popcorn","Bắp vừa — Bơ","Bắp", "49000",status="AVAILABLE"), ServerCombo("drink","Nước 500 ml","Nước", "35000",status="AVAILABLE"))
    override suspend fun vouchers()=listOf(ServerVoucher("CINE20","Voucher","", "300000", "cinema"), ServerVoucher("FIRST50","Chào bạn mới","", "0", "welcome"))
    override suspend fun quote(id:String,body:QuoteBody):ServerQuote {
-    val subtotal=240000+100000*body.combo_quantity
+    val prices=mapOf("combo" to 100000,"popcorn" to 49000,"drink" to 35000)
+    val subtotal=240000+(body.combo_items?.sumOf{prices.getValue(it.id)*it.quantity} ?: (prices[body.combo_id]?:0)*body.combo_quantity)
     val discount=if(body.voucher_code=="CINE20"&&subtotal>=300000)20000 else 0
     return ServerQuote("$subtotal","$discount","${subtotal-discount}","${subtotal-discount}",if(discount>0)"CINE20" else "",seats.order!!.expiresAt,"server-token").also { lastQuote=it }
    }
@@ -34,6 +35,7 @@ class LiveCommerceUiTest {
   compose.waitUntil(5000){seats.seats.isNotEmpty()}
   compose.runOnUiThread{seats.select("A1");seats.continueToSummary{}}
   compose.waitUntil(5000){seats.held&&state.items.isNotEmpty()}
+  compose.onNodeWithText("Mỗi đơn chọn một loại",substring=true).assertDoesNotExist()
   val deadline=seats.deadlineMillis
   compose.onNodeWithTag("combo-image-combo").assertIsDisplayed()
   compose.onNodeWithText("Mã ưu đãi").assertDoesNotExist()
@@ -45,19 +47,21 @@ class LiveCommerceUiTest {
   compose.onNodeWithTag("commerce-total").assertTextEquals("440.000đ")
   compose.onNodeWithTag("combo-minus-combo").performClick()
   compose.onNodeWithTag("combo-plus-popcorn").performScrollTo().performClick()
-  compose.onNodeWithText("Đổi món đã chọn?").assertIsDisplayed()
-  compose.onNodeWithText("Giữ món cũ").performClick()
+  compose.onNodeWithText("Đổi món đã chọn?").assertDoesNotExist()
+  compose.onNodeWithTag("combo-count-combo").assertTextEquals("1")
+  compose.onNodeWithTag("combo-count-popcorn").assertTextEquals("1")
+  compose.onNodeWithTag("commerce-total").assertTextEquals("389.000đ")
+  compose.onNodeWithTag("combo-minus-popcorn").performScrollTo().performClick()
   compose.onNodeWithTag("commerce-total").assertTextEquals("340.000đ")
+  repeat(11){compose.onNodeWithTag("combo-plus-combo").performScrollTo().performClick()}
+  compose.onNodeWithTag("combo-count-combo").assertTextEquals("12")
+  compose.onNodeWithTag("commerce-total").assertTextEquals("1.440.000đ")
   compose.onNodeWithTag("combo-plus-popcorn").performScrollTo().performClick()
-  compose.onNodeWithText("Đổi món").performClick()
-  compose.onNodeWithTag("commerce-total").assertTextEquals("289.000đ")
-  compose.onNodeWithTag("combo-plus-combo").performScrollTo().performClick()
-  compose.onNodeWithText("Đổi món").performClick()
-  compose.onNodeWithTag("commerce-total").assertTextEquals("340.000đ")
+  compose.onNodeWithTag("commerce-total").assertTextEquals("1.489.000đ")
   screenshot("combo-inline-quantity")
   compose.onNodeWithTag("commerce-next").performClick()
   compose.waitUntil(5000){state.quote!=null}
-  compose.onNodeWithTag("commerce-total").assertTextEquals("340.000đ")
+  compose.onNodeWithTag("commerce-total").assertTextEquals("1.489.000đ")
   compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
   compose.waitUntil(5000){state.step==LiveCommerceStep.COMBOS}
   assertEquals("combo",state.selected);assertEquals(deadline,seats.deadlineMillis)
@@ -67,8 +71,9 @@ class LiveCommerceUiTest {
   compose.onNodeWithText("−0đ").assertDoesNotExist()
   compose.onNodeWithTag("commerce-promo").performScrollTo().performClick()
   compose.onNodeWithText("Chọn CINE20").performClick()
+  compose.onNodeWithText("Áp dụng").performClick()
   compose.waitUntil(5000){state.quote?.promotionCode=="CINE20"}
-  compose.onNodeWithTag("commerce-total").assertTextEquals("320.000đ")
+  compose.onNodeWithTag("commerce-total").assertTextEquals("1.469.000đ")
   screenshot("checkout-server-price")
   compose.onNodeWithTag("commerce-next").performClick()
   compose.waitUntil(5000){state.confirmed}
@@ -119,6 +124,7 @@ class LiveCommerceUiTest {
   compose.waitUntil(5000) {state.quote!=null}
   compose.onNodeWithTag("commerce-promo").performScrollTo().performClick()
   compose.onNodeWithText("Chọn $code").performClick()
+  compose.onNodeWithText("Áp dụng").performClick()
   compose.waitUntil(5000) {state.quote?.promotionCode==code}
   compose.onNodeWithText("110.000đ").assertExists()
   compose.onNodeWithText("350.000đ").assertExists()

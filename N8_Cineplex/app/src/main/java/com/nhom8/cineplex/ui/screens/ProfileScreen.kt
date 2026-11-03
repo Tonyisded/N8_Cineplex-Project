@@ -71,7 +71,7 @@ fun ProfileScreen(vm: CineplexViewModel) {
                 }
             }
         }
-        if (!staff) CustomerNavigation(3, vm::back, vm::account, vm::coming, vm::tickets)
+        if (!staff) CustomerNavigation(4, vm::back, vm::account, vm::coming, vm::tickets, vm::vouchers)
     }
 }
 

@@ -14,8 +14,8 @@ android {
         applicationId = "com.nhom8.cineplex"
         minSdk = 24
         targetSdk = 37
-        versionCode = 8
-        versionName = "1.7-compact-mobile"
+        versionCode = 9
+        versionName = "1.8"
 
         buildConfigField("String", "FIREBASE_APPLICATION_ID", "\"${providers.gradleProperty("firebaseApplicationId").getOrElse("")}\"")
         buildConfigField("String", "FIREBASE_API_KEY", "\"${providers.gradleProperty("firebaseApiKey").getOrElse("")}\"")

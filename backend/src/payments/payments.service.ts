@@ -122,7 +122,10 @@ export class PaymentsService {
     const comboUnitPrice = order.comboQuantity
       ? String(comboTotal / BigInt(order.comboQuantity))
       : "0";
+    const comboItems = Array.isArray(order.comboItems) ? order.comboItems : [];
+    const multiple = comboItems.length > 1;
     return json({
+      comboItems,
       ticketId,
       bookingCode,
       email: order.user.email,
@@ -136,9 +139,16 @@ export class PaymentsService {
         seatCode: s.seatCode,
         price: s.price.toString(),
       })),
-      comboName: order.combo?.name ?? null,
-      comboQuantity: order.comboQuantity,
-      comboUnitPrice,
+      comboName: multiple
+        ? comboItems
+            .map((x) => {
+              const v = x as { name: string; quantity: number };
+              return `${v.name} × ${v.quantity}`;
+            })
+            .join(", ")
+        : (order.combo?.name ?? null),
+      comboQuantity: multiple ? 1 : order.comboQuantity,
+      comboUnitPrice: multiple ? comboTotal.toString() : comboUnitPrice,
       subtotal: order.subtotal.toString(),
       discount: order.discount.toString(),
       totalAmount: order.totalAmount.toString(),

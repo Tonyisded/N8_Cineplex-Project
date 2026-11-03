@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN combo_items JSONB NOT NULL DEFAULT '[]';

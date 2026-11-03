@@ -2,7 +2,19 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { BadRequestException } from "@nestjs/common";
 
 export const fingerprint = (value: unknown) =>
-  createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  createHash("sha256")
+    .update(
+      JSON.stringify(value, (_key, item) =>
+        item && typeof item === "object" && !Array.isArray(item)
+          ? Object.fromEntries(
+              Object.keys(item)
+                .sort()
+                .map((key) => [key, item[key]]),
+            )
+          : item,
+      ),
+    )
+    .digest("hex");
 export function signQuote(value: unknown, secret: string) {
   const body = Buffer.from(JSON.stringify(value)).toString("base64url");
   return (

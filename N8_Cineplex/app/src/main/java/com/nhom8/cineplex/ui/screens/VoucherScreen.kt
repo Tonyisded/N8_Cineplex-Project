@@ -137,10 +137,10 @@ fun VoucherPicker(items: List<ServerVoucher>, selected: String, subtotal: Long, 
 }
 @Composable fun DemoVoucherPicker(choose: (String) -> Unit) = VoucherPicker(previewVouchers, "", Long.MAX_VALUE, true, choose)
 @Composable
-fun VoucherWalletScreen(state: CommerceState, back: () -> Unit) {
+fun VoucherWalletScreen(state: CommerceState, back: () -> Unit, vm: com.nhom8.cineplex.ui.CineplexViewModel? = null) {
     val live = state.live
     LaunchedEffect(live) { live?.wallet() }
-    Scaffold(topBar = { TextButton(back) { Text("‹ Voucher của tôi") } }, containerColor = Color(0xFFF6F7F9)) { padding ->
+    Scaffold(bottomBar={vm?.let {com.nhom8.cineplex.ui.components.CustomerNavigation(2,it::customerHome,it::account,it::coming,it::tickets,it::vouchers)}},topBar = { TextButton(back) { Text("‹ Voucher của tôi") } }, containerColor = Color(0xFFF6F7F9)) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Ưu đãi dành cho bạn", style = MaterialTheme.typography.headlineSmall)
             Text("Chọn voucher ở bước kiểm tra đơn. Voucher lần đầu chỉ dành cho tài khoản chưa mua vé; hủy hoặc hết hạn giữ ghế sẽ trả lại lượt dùng.")

@@ -12,8 +12,10 @@ import java.util.concurrent.TimeUnit
 
 @Serializable data class ServerCombo(val id:String,val name:String,val description:String,val price:String,val imageUrl:String?=null,val status:String)
 @Serializable data class ComboResponse(val serverTime:String,val items:List<ServerCombo>)
-@Serializable data class QuoteBody(val combo_id:String?=null,val combo_quantity:Int=0,val voucher_code:String="")
-@Serializable data class ServerQuote(val subtotal:String,val discount:String,val totalAmount:String,val bankAmount:String,val promotionCode:String,val expiresAt:String,val quoteToken:String)
+@Serializable data class ComboItemBody(val id:String,val quantity:Int)
+@Serializable data class ServerComboLine(val id:String,val name:String,val unitPrice:String,val quantity:Int,val totalPrice:String)
+@Serializable data class QuoteBody(val combo_id:String?=null,val combo_quantity:Int=0,val voucher_code:String="",val combo_items:List<ComboItemBody>?=null)
+@Serializable data class ServerQuote(val subtotal:String,val discount:String,val totalAmount:String,val bankAmount:String,val promotionCode:String,val expiresAt:String,val quoteToken:String,val comboItems:List<ServerComboLine> = emptyList())
 @Serializable data class QuoteResponse(val serverTime:String,val item:ServerQuote)
 @Serializable data class CheckoutBody(val quoteToken:String)
 @Serializable data class ServerVoucher(val code:String,val title:String,val description:String,val minimum:String,val illustration:String)
@@ -33,7 +35,7 @@ interface CommerceBackend {
 class ApiCommerceRepository(private val account:ApiAccountRepository):CommerceBackend {
  private val api=Retrofit.Builder().baseUrl(BuildConfig.API_BASE_URL)
   .client(cineplexHttpClient())
-  .addConverterFactory(Json {ignoreUnknownKeys=true;encodeDefaults=true}.asConverterFactory("application/json".toMediaType())).build().create(CommerceApi::class.java)
+  .addConverterFactory(Json {ignoreUnknownKeys=true;encodeDefaults=true;explicitNulls=false}.asConverterFactory("application/json".toMediaType())).build().create(CommerceApi::class.java)
  override suspend fun combos()=api.combos().items.also { rows -> check(rows.all { it.price.toLong()>=0 }) }
  override suspend fun vouchers()=account.withAuthorization { api.vouchers(it).items }
  override suspend fun quote(id:String,body:QuoteBody)=account.withAuthorization { api.quote(it,id,body).item.also { q->check(q.subtotal.toLong()>=0 && q.discount.toLong()>=0 && q.totalAmount.toLong()==q.subtotal.toLong()-q.discount.toLong() && q.bankAmount.toLong()==q.totalAmount.toLong() && q.bankAmount.toLong()>=0) } }

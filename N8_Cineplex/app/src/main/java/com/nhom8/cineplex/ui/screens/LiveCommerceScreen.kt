@@ -49,7 +49,6 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
     val active = seats.held && seats.secondsLeft > 0 && seats.online
     val choosing = state.step == LiveCommerceStep.COMBOS
     val keyboard = LocalSoftwareKeyboardController.current
-    var replacement by remember { mutableStateOf<ServerCombo?>(null) }
     BackHandler(!choosing) { state.backToCombos() }
     Scaffold(
         containerColor = Color(0xFFF6F7F9),
@@ -110,7 +109,7 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
             if (state.message.isNotBlank()) Text(state.message, color = MaterialTheme.colorScheme.error)
             if (choosing) {
                 Text("Thêm chút ngon, trọn buổi phim", fontSize = 25.sp, fontWeight = FontWeight.Bold)
-                Text("Chọn số lượng ngay trên món bạn thích. Mỗi đơn chọn một loại; đổi món sẽ thay lựa chọn cũ.", color = commerceMuted, fontSize = 14.sp)
+                Text("Chọn nhiều món bạn thích. Tăng giảm số lượng riêng, không giới hạn theo số ghế.", color = commerceMuted, fontSize = 14.sp)
                 if (state.items.isEmpty()) {
                     if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     else TextButton(state::load) { Text("Tải lại danh sách bắp nước") }
@@ -118,16 +117,10 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                 state.items.sortedWith(compareBy<ServerCombo> { if (it.name.startsWith("Combo", true)) 0 else 1 }.thenBy { it.name }).forEach { item ->
                     ComboProductCard(
                         item = item,
-                        count = if (state.selected == item.id) state.quantity else 0,
+                        count = state.cart[item.id] ?: 0,
                         enabled = active && !state.busy && !state.unknown,
-                        decrease = { state.quantity(state.quantity - 1) },
-                        increase = {
-                            when {
-                                state.selected == item.id -> state.quantity(state.quantity + 1)
-                                state.selected == null -> state.select(item.id)
-                                else -> replacement = item
-                            }
-                        }
+                        decrease = { state.adjust(item.id,-1) },
+                        increase = { state.adjust(item.id,1) }
                     )
                 }
                 Text("Ảnh minh hoạ · Giá mỗi phần đã gồm lựa chọn vị/cỡ.", color = commerceMuted, fontSize = 12.sp)
@@ -138,9 +131,11 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
                     Text("Đơn vé của bạn", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text("Ghế ${seats.order?.seats?.joinToString { it.seatCode }.orEmpty()}", color = commerceMuted)
                     CommerceAmount("Tiền vé", vnd(state.seatSubtotal))
-                    state.chosen?.let { item ->
-                        Text("${item.name} × ${state.quantity}", color = commerceMuted)
-                        CommerceAmount("Bắp nước", state.quote?.subtotal?.toLong()?.minus(state.seatSubtotal)?.let(::vnd) ?: "—")
+                    val quotedItems=state.quote?.comboItems.orEmpty()
+                    if(quotedItems.isNotEmpty()) quotedItems.forEach {item->CommerceAmount("${item.name} × ${item.quantity}",vnd(item.totalPrice.toLong()))}
+                    else if(state.cart.isNotEmpty()) {
+                        state.items.filter{state.cart.containsKey(it.id)}.forEach {item->Text("${item.name} × ${state.cart[item.id]}",color=commerceMuted)}
+                        CommerceAmount("Bắp nước",state.quote?.subtotal?.toLong()?.minus(state.seatSubtotal)?.let(::vnd)?:"—")
                     }
                     TextButton({ state.backToCombos() }, enabled = !state.busy && !state.unknown) { Text("Đổi bắp nước") }
                 }
@@ -168,15 +163,7 @@ fun LiveCommerceScreen(vm: CineplexViewModel, seats: SeatSelectionViewModel, sta
             TextButton({ seats.cancelHold { state.wallet(); vm.back() } }, enabled = active && !state.busy) { Text("Hủy giữ ghế", color = commerceMuted) }
         }
     }
-    replacement?.let { item ->
-        AlertDialog(
-            onDismissRequest = { replacement = null },
-            title = { Text("Đổi món đã chọn?") },
-            text = { Text("Mỗi đơn chọn một loại bắp nước. Thay ${state.chosen?.name.orEmpty()} bằng ${item.name}?") },
-            confirmButton = { TextButton({ state.select(item.id); replacement = null }) { Text("Đổi món") } },
-            dismissButton = { TextButton({ replacement = null }) { Text("Giữ món cũ") } }
-        )
-    }
+
 }
 
 @Composable
@@ -205,7 +192,7 @@ private fun ComboProductCard(item: ServerCombo, count: Int, enabled: Boolean, de
                     ) { Text("−", fontSize = 24.sp) }
                     Text(count.toString(), Modifier.widthIn(min = 32.dp).testTag("combo-count-${item.id}"), fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     FilledTonalIconButton(
-                        onClick = increase, enabled = enabled && available && count < 9,
+                        onClick = increase, enabled = enabled && available && count < Int.MAX_VALUE,
                         modifier = Modifier.size(48.dp).testTag("combo-plus-${item.id}").semantics { contentDescription = "Tăng số lượng ${item.name}" }, shape = CircleShape,
                         colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = Color(0xFFF5E8EC), contentColor = commerceAccent)
                     ) { Text("+", fontSize = 24.sp) }

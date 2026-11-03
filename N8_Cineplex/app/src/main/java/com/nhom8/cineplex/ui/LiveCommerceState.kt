@@ -11,6 +11,7 @@ enum class LiveCommerceStep { COMBOS, CHECKOUT }
 class LiveCommerceState(private val repo: CommerceBackend, val transactions: TicketsState? = null) : ViewModel() {
     var items by mutableStateOf<List<ServerCombo>>(emptyList()); private set
     var vouchers by mutableStateOf<List<ServerVoucher>>(emptyList()); private set
+    val cart = mutableStateMapOf<String,Int>()
     var selected by mutableStateOf<String?>(null); private set
     var quantity by mutableStateOf(0); private set
     var promo by mutableStateOf(""); private set
@@ -22,7 +23,7 @@ class LiveCommerceState(private val repo: CommerceBackend, val transactions: Tic
     var step by mutableStateOf(LiveCommerceStep.COMBOS); private set
     var seatSubtotal by mutableStateOf(0L); private set
     val chosen get() = items.firstOrNull { it.id == selected }
-    val comboSubtotal get() = (chosen?.price?.toLong() ?: 0L) * quantity
+    val comboSubtotal get() = cart.entries.sumOf { (id,n) -> (items.firstOrNull { it.id==id }?.price?.toLong() ?: 0L)*n }
     val estimatedSubtotal get() = seatSubtotal + comboSubtotal
     private var orderId = ""
     private var expiresAt = ""
@@ -31,7 +32,7 @@ class LiveCommerceState(private val repo: CommerceBackend, val transactions: Tic
 
     fun clear() {
         generation++; job?.cancel(); orderId = ""; expiresAt = ""; quote = null
-        items = emptyList(); vouchers = emptyList(); selected = null; quantity = 0
+        cart.clear(); items = emptyList(); vouchers = emptyList(); selected = null; quantity = 0
         promo = ""; confirmed = false; unknown = false; busy = false; message = ""
         step = LiveCommerceStep.COMBOS; seatSubtotal = 0
     }
@@ -39,6 +40,8 @@ class LiveCommerceState(private val repo: CommerceBackend, val transactions: Tic
         if (order == null || order.id == orderId) return
         clear(); orderId = order.id; expiresAt = order.expiresAt
         selected = order.comboId; quantity = order.comboQuantity
+        if(order.comboItems.isNotEmpty())order.comboItems.forEach {cart[it.id]=it.quantity} else order.comboId?.let {cart[it]=order.comboQuantity}
+        selected=cart.keys.firstOrNull();quantity=cart[selected]?:0
         // totalAmount may already contain a combo; seat snapshots do not.
         seatSubtotal = order.seats.sumOf { it.price.toLong() }
         load()
@@ -61,12 +64,18 @@ class LiveCommerceState(private val repo: CommerceBackend, val transactions: Tic
     fun select(id: String?) {
         if (busy || unknown) return
         if (id != null && items.none { it.id == id && it.status == "AVAILABLE" }) return
-        selected = id; quantity = if (id == null) 0 else 1; changed()
+        cart.clear();if(id!=null)cart[id]=1; selected = id; quantity = if (id == null) 0 else 1; changed()
     }
-    fun quantity(n: Int) {
-        if (busy || unknown || selected == null) return
-        if (n <= 0) { selected = null; quantity = 0 } else quantity = n.coerceAtMost(9)
-        changed()
+    fun quantity(n: Int) { selected?.let { setQuantity(it,n) } }
+    fun adjust(id:String,delta:Int) {val current=cart[id]?:0;if(delta>0 && current==Int.MAX_VALUE)return;setQuantity(id,current+delta)}
+    private fun setQuantity(id:String,n:Int) {
+        if(busy||unknown)return
+        val item=items.firstOrNull {it.id==id}?:return
+        if(n>(cart[id]?:0) && item.status!="AVAILABLE")return
+        val next=cart.toMutableMap();if(n<=0)next.remove(id) else next[id]=n
+        val total=next.entries.fold(java.math.BigInteger.valueOf(seatSubtotal)){sum,(key,count)->sum+java.math.BigInteger(items.first {it.id==key}.price)*java.math.BigInteger.valueOf(count.toLong())}
+        if(total>java.math.BigInteger("99999999999999")){message="Giỏ bắp nước vượt giới hạn số tiền giao dịch.";return}
+        cart.clear();cart.putAll(next);selected=cart.keys.firstOrNull();quantity=cart[selected]?:0;changed()
     }
     fun promotion(value: String) {
         if (busy || unknown) return
@@ -74,7 +83,7 @@ class LiveCommerceState(private val repo: CommerceBackend, val transactions: Tic
         promo = value; changed()
     }
     fun continueToCheckout() {
-        if (busy || unknown || (selected != null && chosen?.status != "AVAILABLE")) return
+        if (busy || unknown || cart.keys.any { id->items.none {it.id==id && it.status=="AVAILABLE"} }) return
         step = LiveCommerceStep.CHECKOUT
         confirmed = false
         price()
@@ -87,7 +96,7 @@ class LiveCommerceState(private val repo: CommerceBackend, val transactions: Tic
     fun price() {
         if (busy || unknown) return
         val version = generation
-        val input = QuoteBody(selected, quantity, promo)
+        val input = if(cart.size<=1) QuoteBody(selected,quantity,promo) else QuoteBody(voucher_code=promo,combo_items=cart.entries.sortedBy{it.key}.map{ComboItemBody(it.key,it.value)})
         busy = true; message = ""; quote = null
         job = viewModelScope.launch {
             try {

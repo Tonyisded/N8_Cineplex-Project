@@ -50,6 +50,7 @@ export function publicOrder(order: Order) {
     showtimeId: order.showtimeId,
     comboId: order.comboId,
     comboQuantity: order.comboQuantity,
+    comboItems: order.comboItems ?? [],
     status: order.status,
     subtotal: order.subtotal.toString(),
     discount: order.discount.toString(),
@@ -308,25 +309,62 @@ export class BookingService implements OnApplicationBootstrap {
       order.discount.toString(),
       order.totalAmount.toString(),
       order.voucherCode ?? null,
+      order.comboItems ?? [],
     ];
   }
   private async pricing(tx: Tx, order: Order, body: QuoteDto) {
-    const comboId = body.combo_id?.toLowerCase() ?? null;
-    if (
-      (!comboId && body.combo_quantity !== 0) ||
-      (comboId && body.combo_quantity < 1)
-    )
-      throw new BadRequestException({
-        code: "COMBO_INVALID",
-        message: "Chọn tối đa một loại combo và số lượng hợp lệ.",
-      });
-    let combo = null;
-    if (comboId) {
-      await tx.$queryRaw`SELECT id FROM combos WHERE id=${comboId}::uuid FOR SHARE`;
-      combo = await tx.combo.findUnique({ where: { id: comboId } });
+    const multi = body.combo_items !== undefined;
+    if (multi && !Array.isArray(body.combo_items))
+      throw new BadRequestException("Invalid combo list");
+    if (multi && (body.combo_id || body.combo_quantity !== 0))
+      throw new BadRequestException("Do not mix combo formats");
+    const requested = multi
+      ? body.combo_items!
+      : body.combo_id
+        ? [{ id: body.combo_id, quantity: body.combo_quantity }]
+        : [];
+    if (!multi && !body.combo_id && body.combo_quantity !== 0)
+      throw new BadRequestException("Invalid combo quantity");
+    const seen = new Set<string>();
+    const comboItems: {
+      id: string;
+      name: string;
+      unitPrice: string;
+      quantity: number;
+      totalPrice: string;
+    }[] = [];
+    for (const line of [...requested].sort((a, b) =>
+      a.id.localeCompare(b.id),
+    )) {
+      const id = line.id.toLowerCase();
+      if (
+        seen.has(id) ||
+        !Number.isInteger(line.quantity) ||
+        line.quantity < 1 ||
+        line.quantity > 2147483647
+      )
+        throw new BadRequestException("Invalid combo item");
+      seen.add(id);
+      await tx.$queryRaw`SELECT id FROM combos WHERE id=${id}::uuid FOR SHARE`;
+      const combo = await tx.combo.findUnique({ where: { id } });
       if (!combo || combo.status !== "AVAILABLE")
         throw conflict("COMBO_UNAVAILABLE", "Combo không còn khả dụng.");
+      comboItems.push({
+        id,
+        name: combo.name,
+        unitPrice: combo.price.toString(),
+        quantity: line.quantity,
+        totalPrice: String(
+          BigInt(combo.price.toString()) * BigInt(line.quantity),
+        ),
+      });
     }
+    const comboTotal = comboItems.reduce(
+      (sum, line) => sum + BigInt(line.totalPrice),
+      0n,
+    );
+    const comboId = comboItems.length === 1 ? comboItems[0].id : null;
+    const comboQuantity = comboItems.length === 1 ? comboItems[0].quantity : 0;
     const user = await tx.user.findUniqueOrThrow({
       where: { id: order.userId },
     });
@@ -360,14 +398,15 @@ export class BookingService implements OnApplicationBootstrap {
     }
     const price = voucherPrice(
       seats,
-      combo?.price.toString() ?? "0",
-      body.combo_quantity,
+      comboTotal.toString(),
+      1,
       body.voucher_code ?? "",
     );
     return {
       ...price,
       comboId,
-      comboQuantity: body.combo_quantity,
+      comboQuantity,
+      comboItems,
       voucherCode: body.voucher_code || null,
     };
   }
@@ -404,6 +443,7 @@ export class BookingService implements OnApplicationBootstrap {
           price.discount,
           price.totalAmount,
           price.voucherCode,
+          price.comboItems,
         ];
         const quoteToken = signQuote(
           {
@@ -484,6 +524,7 @@ export class BookingService implements OnApplicationBootstrap {
           price.discount,
           price.totalAmount,
           price.voucherCode,
+          price.comboItems,
         ];
         if (fingerprint(target) !== fingerprint(quote.target))
           throw conflict(
@@ -510,6 +551,7 @@ export class BookingService implements OnApplicationBootstrap {
           data: {
             comboId: price.comboId,
             comboQuantity: price.comboQuantity,
+            comboItems: price.comboItems,
             subtotal: price.subtotal,
             discount: price.discount,
             totalAmount: price.totalAmount,

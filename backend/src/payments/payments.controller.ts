@@ -118,8 +118,21 @@ const snapshotSchema: SchemaObject = {
         properties: { seatCode: { type: "string" }, price: money },
       },
     },
+    comboItems: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: uuid,
+          name: { type: "string" },
+          quantity: { type: "integer", minimum: 1, maximum: 2147483647 },
+          unitPrice: money,
+          totalPrice: money,
+        },
+      },
+    },
     comboName: optionalText,
-    comboQuantity: { type: "integer", minimum: 0, maximum: 9 },
+    comboQuantity: { type: "integer", minimum: 0, maximum: 2147483647 },
     comboUnitPrice: money,
     subtotal: money,
     discount: money,

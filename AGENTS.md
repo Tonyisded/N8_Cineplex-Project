@@ -1,5 +1,18 @@
 # AGENTS.md — N8 Cineplex
 
+## Voucher, nhiều combo và APK v1.8 — 2026-11-03
+
+<!-- V18_VOUCHER_MULTI_COMBO_QR_20261103 -->
+Source Android đã đồng bộ trực tiếp tại `D:\NT118\N8_Cineplex-Project\N8_Cineplex`, build/cài từ chính Gradle root; versionCode9/versionName1.8. Thanh điều hướng có5 mục: Trang chủ, Khám phá, Voucher, Vé của tôi, Tài khoản; Voucher mở ví ưu đãi đã xác thực hiện có. Giỏ bắp nước giữ nhiều loại cùng lúc, tăng/giảm độc lập, bỏ giới hạn9 và giới hạn theo số ghế; vẫn kiểm tra kiểu số nguyên, sản phẩm khả dụng và giới hạn kỹ thuật số tiền DB. Bỏ đúng nút mở trang thanh toán payOS; giữ QR thanh toán trong ứng dụng, kiểm tra trạng thái và thông tin chuyển khoản.
+
+Backend mở rộng combo_items có giá do server tính, canonical lines lưu JSONB vào order và snapshot vé/email/lịch sử; voucher giảm trên toàn hóa đơn. Giữ định dạng combo cũ cho client7/8, không đổi điều kiện hoàn hoặc tạo chi thử. Fingerprint canonical hóa khóa object để JSONB không phá checkout replay. Migration `20261103010000_multi_combo_cart` chỉ thêm cột mặc định[], đã backup riêng mode600 và migrate VPS; không reset/xóa dữ liệu, không sửa provider/proxy credential/Nginx. API đã recreate healthy/restart0; health/Swagger/combos7,8,9 trả200, bản6 trả426, webhook unsigned400. Runtime5hash booking/pricing/payment/email/Prisma Order khớp build source. VPS minimum7/latest9, APK HTTPS tải lại khớp SHA256 `5249593c68f070d15baad17cfbd7f701f51cf8b739dee17e9fcc9a4ee1caded7`; giữ APK/tag/release cũ.
+
+Gate mới: Windows backend154/154, build/typecheck/format đạt; Linux154/154 và PostgreSQL cô lập28/28 với provider giả, có cart12+2, checkout replay1revision, payment/refund giữ giá/lịch sử dù catalog đổi. Android90unit, native14/14 (VoucherNavigation, LiveCommerce, Tickets, Voucher, CheckoutPolish), build/lint/install đạt; thêm nav360dp/fontScale1.3 đạt1/1 (nav không đổi sau lượt đó). Không uninstall/clear data; giữ session, SDK/IDE/local.properties/signing. APK build root, bản kéo từ emulator và artifact1.8 cùng hash trên. Lỗi test JSON trước sửa đã được lưu: trường comboItems thừa trong CheckoutBody bị strict DTO từ chối; bỏ trường và test serializer chặn tái phát, không nới validation server. Các lỗi fixture JWT, source upload thiếu và JSONB hash trước sửa đều giữ evidence, không nhận lượt fail là pass.
+
+Cùng lệnh Gradle `assembleDebug cleanTestDebugUnitTest testDebugUnitTest`: BASELINE88/version8 → MODIFIED90/version9 → ROLLBACK88/version8; cùng `npm run build && npm test`:150→154→150, exit0. `ROLLBACK.sh --voucher-combo` đã chạy trên bản sao modified,339hash pristine khớp `VOUCHER_MULTI_COMBO_BASELINE.zip`; root/emulator/VPS vẫn MODIFIED. Bốn role tiếp tục `D:\NT118\verification\week9-payos-ticket-refund\MODIFIED_FILE.zip`, `DIFF_FILE.patch`, `VERIFICATION.txt`, `ROLLBACK.sh`, mở rộng chứ không thay bộ. Không restore DB để đảo giao dịch tài chính; khi rollback vận hành giữ cột/metadata và đối soát trước khi tạo chi mới.
+
+Chuẩn bị công bố trên nhánh `feat/nguyen-voucher-multi-combo-v1.8`, tag/tên release chỉ `v1.8`; source governor ở commit0b3069a được tách rõ, không giấu logic tài chính trong commit UI. Trạng thái công bố chỉ chốt sau push/tag/download thực sự thành công. README root vẫn0byte, không đưa env/key/token/log/evidence/APK vào Git. APK ký debug cho nhóm thử, chưa thử điện thoại vật lý/CI remote hoặc thu–chi thật mới trong đợt UI này; không coi đây là nghiệm thu toàn bộ tiền thật tuần9.
+
 ## Quy định tên release — 2026-11-03
 
 <!-- RELEASE_NUMERIC_NAMING_20261103 -->

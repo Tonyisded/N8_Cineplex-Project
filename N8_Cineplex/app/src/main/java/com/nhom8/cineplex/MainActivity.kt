@@ -182,7 +182,7 @@ fun CineplexApp(vm: CineplexViewModel, seats: SeatSelectionViewModel = remember 
                         Screen.ADMIN -> AdminScreen(vm, commerce.live?.transactions)
                         Screen.STAFF_HOME -> StaffScreen(vm)
                         Screen.PROFILE -> ProfileScreen(vm)
-                        Screen.VOUCHERS -> VoucherWalletScreen(commerce,vm::back)
+                        Screen.VOUCHERS -> VoucherWalletScreen(commerce,vm::back,vm)
                         Screen.TICKETS -> TicketsScreen(vm,commerce.live?.transactions)
                     }
                 }

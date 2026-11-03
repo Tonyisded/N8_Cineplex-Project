@@ -1,3 +1,4 @@
+import { BookingService } from "../../dist/booking/booking.service.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID, randomBytes } from "node:crypto";
@@ -10,6 +11,7 @@ if (!url || !url.includes("w9_test"))
   throw new Error("Only disposable w9_test database allowed");
 const config = new ConfigService({
   DATABASE_URL: url,
+  JWT_ACCESS_SECRET: randomBytes(32).toString("hex"),
   PAYMENT_LIVE_ENABLED: true,
   REFUND_PAYOUT_ENABLED: true,
   TICKET_QR_SECRET: randomBytes(32).toString("hex"),
@@ -1013,6 +1015,86 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
           provider.findPayout = find;
           config.set("REFUND_RETRY_ENABLED", false);
         }
+      },
+    );
+
+    await t.test(
+      "multi-cart12+2 checkout is idempotent and payment/refund retain historical combo lines",
+      async () => {
+        const f = await fixture("150000"),
+          a = randomUUID(),
+          b = randomUUID();
+        await db.combo.create({
+          data: {
+            id: a,
+            name: "Fixture combo A",
+            description: "isolated",
+            price: 100000,
+          },
+        });
+        await db.combo.create({
+          data: {
+            id: b,
+            name: "Fixture drink B",
+            description: "isolated",
+            price: 30000,
+          },
+        });
+        const booking = new BookingService(db, { publish: () => {} }, config);
+        const q = await booking.quote(f.oid, f.uid, {
+          combo_quantity: 0,
+          combo_items: [
+            { id: a, quantity: 12 },
+            { id: b, quantity: 2 },
+          ],
+          voucher_code: "FIRST50",
+        });
+        assert.equal(q.item.subtotal, "1410000");
+        assert.equal(q.item.bankAmount, "705000");
+        const first = await booking.checkout(f.oid, f.uid, q.item.quoteToken);
+        const again = await booking.checkout(f.oid, f.uid, q.item.quoteToken);
+        assert.deepEqual(first.item.comboItems, again.item.comboItems);
+        assert.equal(first.item.comboItems.length, 2);
+        assert.equal(
+          (await db.order.findUniqueOrThrow({ where: { id: f.oid } }))
+            .checkoutRevision,
+          1,
+        );
+        await db.combo.update({
+          where: { id: a },
+          data: { price: 999999, status: "UNAVAILABLE" },
+        });
+        await service.start(f.oid, f.uid);
+        await receipt(f, randomUUID(), 705000);
+        const ticket = await db.ticket.findUniqueOrThrow({
+          where: { orderId: f.oid },
+        });
+        assert.equal(
+          ticket.snapshot.comboItems.find((x) => x.id === a).unitPrice,
+          "100000",
+        );
+        assert.equal(
+          ticket.snapshot.comboItems.find((x) => x.id === a).quantity,
+          12,
+        );
+        const refund = await service.refund(ticket.id, f.uid);
+        await service.processRefund(refund.item.id);
+        const restored = await db.ticket.findUniqueOrThrow({
+          where: { id: ticket.id },
+        });
+        assert.equal(restored.status, "REFUNDED");
+        assert.deepEqual(
+          restored.snapshot.comboItems,
+          ticket.snapshot.comboItems,
+        );
+        assert.equal(
+          (
+            await db.payment.findUniqueOrThrow({
+              where: { id: refund.item.id },
+            })
+          ).expectedAmount.toString(),
+          "705000",
+        );
       },
     );
   } finally {
