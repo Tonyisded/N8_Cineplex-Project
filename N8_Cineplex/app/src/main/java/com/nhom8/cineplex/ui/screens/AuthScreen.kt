@@ -26,7 +26,7 @@ fun AuthScreen(vm: CineplexViewModel) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 1024.dp
         val scroll = rememberScrollState()
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(scroll).padding(horizontal = if(wide) 48.dp else 24.dp,vertical = 32.dp),horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(scroll).padding(horizontal = if(wide) 48.dp else 20.dp,vertical = 20.dp),horizontalAlignment = Alignment.CenterHorizontally) {
             if(wide) Row(Modifier.widthIn(max = 1040.dp).fillMaxWidth(),horizontalArrangement = Arrangement.spacedBy(64.dp),verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f),horizontalAlignment = Alignment.CenterHorizontally,verticalArrangement = Arrangement.spacedBy(32.dp)) {
                     CineplexLogo(240.dp)
@@ -37,8 +37,8 @@ fun AuthScreen(vm: CineplexViewModel) {
                     AuthPanel(vm,Modifier.padding(32.dp))
                 }
             } else {
-                CineplexLogo(160.dp)
-                Spacer(Modifier.height(32.dp))
+                CineplexLogo(112.dp)
+                Spacer(Modifier.height(20.dp))
                 AuthPanel(vm,Modifier.widthIn(max = 440.dp).fillMaxWidth())
             }
         }
@@ -52,13 +52,13 @@ private fun AuthPanel(vm: CineplexViewModel, modifier: Modifier) {
     val manager = LocalFocusManager.current
     fun submit() { manager.clearFocus(); vm.submit(); vm.errors.keys.firstOrNull()?.let { focus[it]?.requestFocus() } }
     LaunchedEffect(vm.success) { if(vm.success) focus.getValue("password").requestFocus() }
-    Column(modifier,verticalArrangement = Arrangement.spacedBy(24.dp)) {
+    Column(modifier,verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if(staff) {
             LinkButton("Đăng nhập khách hàng",{ vm.navigate(Screen.LOGIN) },icon = "back")
             Text("CINEPLEX STAFF",color = C.Primary,fontWeight = FontWeight.Bold,letterSpacing = 1.2.sp)
         } else PrototypeTabs(listOf("Đăng nhập","Đăng ký"),if(signup) 1 else 0,{ vm.navigate(if(it == 1) Screen.SIGNUP else Screen.LOGIN) },auth = true)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if(signup) "Bắt đầu trải nghiệm Cineplex" else if(staff) "Đăng nhập nhân viên" else "Hẹn bạn ở rạp",fontFamily = FontFamily.SansSerif,fontWeight = FontWeight.Bold,fontSize = 32.sp,lineHeight = 42.sp)
+            Text(if(signup) "Bắt đầu trải nghiệm Cineplex" else if(staff) "Đăng nhập nhân viên" else "Hẹn bạn ở rạp",fontFamily = FontFamily.SansSerif,fontWeight = FontWeight.Bold,fontSize = 24.sp,lineHeight = 32.sp)
             Muted(if(signup) "Đăng ký để đặt vé và quản lý vé của bạn." else if(staff) "Đăng nhập để tiếp tục công việc tại rạp." else "Một bộ phim hay đang chờ bạn. Đăng nhập để tiếp tục.")
         }
         if(signup) LabeledField("name","Họ và tên","Nhập họ và tên của bạn",vm.form.name,{ vm.update(vm.form.copy(name = it)) },vm.errors["name"],!vm.loading,focus.getValue("name"),{ vm.validateField("name") })

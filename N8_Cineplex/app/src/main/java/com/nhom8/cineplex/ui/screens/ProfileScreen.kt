@@ -41,20 +41,20 @@ fun ProfileScreen(vm: CineplexViewModel) {
             val tablet = maxWidth >= 768.dp
             Column(
                 Modifier.widthIn(max = 960.dp).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(horizontal = if (tablet) 48.dp else 24.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(32.dp)
+                    .padding(horizontal = if (tablet) 48.dp else 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(vm::back, modifier = Modifier.size(48.dp).semantics {
                         contentDescription = when(session.role) { Role.ADMIN -> "Quay lại dashboard quản trị"; Role.STAFF -> "Quay lại trang nhân viên"; Role.CUSTOMER -> "Quay lại Trang chủ" }
                     }) { CineplexIcon("back") }
                     Spacer(Modifier.weight(1f))
-                    CineplexLogo()
+                    CineplexLogo(88.dp)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("TÀI KHOẢN CINEPLEX", color = C.Primary, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                     Text("Thông tin cá nhân", Modifier.semantics { heading() }, fontFamily = FontFamily.SansSerif,
-                        fontWeight = FontWeight.Bold, fontSize = 32.sp, lineHeight = 42.sp)
+                        fontWeight = FontWeight.Bold, fontSize = 24.sp, lineHeight = 32.sp)
                     Muted("Thông tin của bạn, gọn trong một nơi.")
                 }
                 if (tablet) {
@@ -63,7 +63,7 @@ fun ProfileScreen(vm: CineplexViewModel) {
                         ProfileContent(vm, session, role, Modifier.weight(1.6f))
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(32.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         ProfileIdentity(session, role, staff, Modifier.fillMaxWidth())
                         HorizontalDivider(color = C.Line)
                         ProfileContent(vm, session, role, Modifier.fillMaxWidth())
@@ -78,7 +78,7 @@ fun ProfileScreen(vm: CineplexViewModel) {
 @Composable
 private fun ProfileIdentity(session: Session, role: String, staff: Boolean, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Surface(Modifier.size(80.dp), shape = CircleShape, color = C.Raised, border = BorderStroke(1.dp, C.Line)) {
+        Surface(Modifier.size(64.dp), shape = CircleShape, color = C.Raised, border = BorderStroke(1.dp, C.Line)) {
             Box(contentAlignment = Alignment.Center) {
                 UserAvatar(session, Modifier.fillMaxSize())
             }
@@ -117,7 +117,7 @@ private fun ProfileContent(vm: CineplexViewModel, session: Session, role: String
                 }
             }) { Text("Upload") } }, dismissButton = { TextButton(onClick = { selected = null }) { Text("Hủy") } })
     }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(32.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Surface(shape = RoundedCornerShape(16.dp), color = C.Surface, border = BorderStroke(1.dp, C.Line)) {
             Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 ProfileHeading("Thông tin tài khoản")

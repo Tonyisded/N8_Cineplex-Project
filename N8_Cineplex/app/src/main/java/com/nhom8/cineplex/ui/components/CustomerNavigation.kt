@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,7 +36,7 @@ fun CustomerNavigation(selectedIndex: Int, onHome: () -> Unit, onAccount: () -> 
                     verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
                 ) {
                     CineplexIcon(icon, color = color)
-                    Text(label, color = color)
+                    Text(label, color = color, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

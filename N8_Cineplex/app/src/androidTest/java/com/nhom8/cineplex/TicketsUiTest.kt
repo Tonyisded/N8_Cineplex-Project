@@ -79,6 +79,8 @@ class TicketsUiTest {
         compose.onNodeWithTag("native-ticket-qr").assertDoesNotExist()
         compose.onNodeWithText("Vé đã hủy · tiền hoàn đang xử lý").assertExists()
         assertEquals("N8-DEMO-TEST-ONLY", state.selected!!.bookingCode)
+        compose.onNodeWithText("Tài khoản nhận:", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("MB ••••1234", substring = true).assertDoesNotExist()
         screenshot("week9-refund-pending")
     }
     @Test fun adminCannotResolveAnUnknownTransferOrSubmitEmptyReference() {
