@@ -1,5 +1,11 @@
 # AGENTS.md — N8 Cineplex
 
+## Xác nhận phát hành v1.8 — 2026-11-03
+
+Đã commit/push source `76de661e68574cc6bc2cd5039e816927d712549f` lên `feat/nguyen-voucher-multi-combo-v1.8`, annotated tag/tên GitHub Release đúng `v1.8`, không sửa tag cũ. Release kiểm thử: https://github.com/Tonyisded/N8_Cineplex-Project/releases/tag/v1.8. Asset `N8-Cineplex-1.8.apk` (versionCode9/versionName1.8) và SHA256SUMS.txt đã upload; tải công khai từ GitHub và đối chiếu SHA256 `5249593c68f070d15baad17cfbd7f701f51cf8b739dee17e9fcc9a4ee1caded7` khớp APK root/emulator/VPS. Author/committer được GitHub nhận cùng tài khoản thnguyen290106, dùng noreply. Source governor trước đó ở commit0b3069a cũng đã được push cùng nhánh, tách khỏi commit tính năng UI.
+
+Mục này thay trạng thái “chuẩn bị công bố” của mục dưới; kết quả90unit/14native,154backend/28PostgreSQL và rollback88→90→88/150→154→150 là các lượt kiểm tra của đợt này, không coi upload release là test mới. Chỉ cập nhật tài liệu xác nhận sau phát hành, không di chuyển tag khỏi source đã build. Hai plan ngoài ytuong và hai MD trong root cùng có xác nhận này. README root giữ0byte; không commit bí mật/log/evidence/APK. Bốn role hiện hữu đã được đóng gói lại và mở đọc, source chính/candidate giữ bản mới. Giới hạn ký debug/chưa máy vật lý/chưa giao dịch tiền thật mới không thay đổi.
+
 ## Voucher, nhiều combo và APK v1.8 — 2026-11-03
 
 <!-- V18_VOUCHER_MULTI_COMBO_QR_20261103 -->
