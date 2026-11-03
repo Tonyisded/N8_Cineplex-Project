@@ -1,4 +1,5 @@
-﻿import { Injectable } from "@nestjs/common";
+﻿import { ProxyAgent, fetch as proxyFetch } from "undici";
+import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   PayOS,
@@ -9,6 +10,37 @@ import {
 @Injectable()
 export class PayosAdapter {
   constructor(private readonly config: ConfigService) {}
+  private payoutAgent?: ProxyAgent;
+  async onModuleDestroy() {
+    await this.payoutAgent?.close();
+  }
+  private payoutTransport() {
+    const enabled = this.config.get("PAYOS_PAYOUT_PROXY_ENABLED");
+    if (enabled !== true && enabled !== "true") return {};
+    if (!this.payoutAgent) {
+      const username =
+        this.config.get<string>("PAYOS_PAYOUT_PROXY_USERNAME") ?? "";
+      const password =
+        this.config.get<string>("PAYOS_PAYOUT_PROXY_PASSWORD") ?? "";
+      this.payoutAgent = new ProxyAgent({
+        uri: this.config.getOrThrow<string>("PAYOS_PAYOUT_PROXY_SERVER"),
+        ...(username
+          ? {
+              token:
+                "Basic " +
+                Buffer.from(username + ":" + password).toString("base64"),
+            }
+          : {}),
+      });
+    }
+    return {
+      fetch: proxyFetch as unknown as typeof globalThis.fetch,
+      fetchOptions: {
+        dispatcher: this.payoutAgent,
+        redirect: "error",
+      } as RequestInit,
+    };
+  }
   private client(kind: "COLLECT" | "PAYOUT") {
     const prefix = `PAYOS_${kind}_`;
     return new PayOS({
@@ -18,6 +50,7 @@ export class PayosAdapter {
       maxRetries: 0,
       timeout: 15000,
       logLevel: "off",
+      ...(kind === "PAYOUT" ? this.payoutTransport() : {}),
     });
   }
   createLink(data: CreatePaymentLinkRequest) {

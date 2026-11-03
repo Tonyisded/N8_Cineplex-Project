@@ -24,6 +24,13 @@ import {
   ticketQrPayload,
   tokenHash,
 } from "./payment-domain.js";
+import {
+  initialRefundRetry,
+  readRefundRetry,
+  refundRetryDecision,
+  refundRetryAt,
+  REFUND_RETRY_LIMIT,
+} from "./refund-retry.js";
 import type { Transaction, Payout } from "@payos/node";
 const include = {
   seats: true,
@@ -774,8 +781,16 @@ export class PaymentsService {
                 this.config.getOrThrow<string>("PAYMENT_DATA_ENCRYPTION_KEY"),
               )
             : null;
+        const retryId =
+          !zero && recipient && this.enabled("REFUND_RETRY_ENABLED")
+            ? randomUUID()
+            : undefined;
         const p = await tx.payment.create({
           data: {
+            id: retryId,
+            snapshot: retryId
+              ? json({ refundRetry: initialRefundRetry(retryId) })
+              : undefined,
             kind: "REFUND",
             orderId: order.id,
             refundOrderId: order.id,
@@ -835,6 +850,9 @@ export class PaymentsService {
     return this.wrap(this.publicRefund(p));
   }
   private async processRefund(id: string) {
+    const candidate = await this.db.payment.findUnique({ where: { id } });
+    if (candidate && obj(candidate.snapshot).refundRetry !== undefined)
+      return this.processRetryRefund(id);
     if (!(await this.lease(id))) return;
     try {
       const p = await this.db.payment.findUniqueOrThrow({ where: { id } });
@@ -936,6 +954,156 @@ export class PaymentsService {
       await this.db.payment.update({
         where: { id },
         data: { leaseUntil: null },
+      });
+    }
+  }
+  private async processRetryRefund(id: string) {
+    const now = await this.now(this.db);
+    const claimed = await this.db.payment.updateMany({
+      where: {
+        id,
+        kind: "REFUND",
+        operationState: { in: ["REQUESTED", "PROCESSING", "UNKNOWN"] },
+        AND: [
+          { OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }] },
+          { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
+        ],
+      },
+      data: {
+        leaseUntil: new Date(now.getTime() + 120_000),
+        nextAttemptAt: refundRetryAt(now),
+        attempts: { increment: 1 },
+      },
+    });
+    if (claimed.count !== 1) return;
+    let p: Payment | undefined;
+    let state: ReturnType<typeof readRefundRetry> | undefined;
+    let result: Payout | undefined;
+    let review = false;
+    let retryAfter: string | null | undefined;
+    try {
+      p = await this.db.payment.findUniqueOrThrow({ where: { id } });
+      if (!p.orderId || !p.recipientCipher) {
+        review = true;
+        return;
+      }
+      state = readRefundRetry(obj(p.snapshot).refundRetry);
+      if (state.cycles >= REFUND_RETRY_LIMIT) {
+        review = true;
+        return;
+      }
+      state.cycles++;
+      await this.db.payment.update({
+        where: { id },
+        data: {
+          snapshot: json({ ...obj(p.snapshot), refundRetry: state }),
+          operationState: "UNKNOWN",
+        },
+      });
+      const recipient = openRecipient(
+        p.recipientCipher,
+        this.config.getOrThrow<string>("PAYMENT_DATA_ENCRYPTION_KEY"),
+      );
+      const results = await this.provider.findPayout(p.paymentCode);
+      const choice = refundRetryDecision(
+        results,
+        state,
+        p.paymentCode,
+        p.expectedAmount.toString(),
+        recipient,
+      );
+      if (choice.action === "REVIEW") {
+        review = true;
+        return;
+      }
+      if (choice.action === "SUCCESS") {
+        result = choice.result;
+        return;
+      }
+      if (
+        choice.action === "SEND" &&
+        this.enabled("REFUND_PAYOUT_ENABLED") &&
+        this.enabled("REFUND_RETRY_ENABLED")
+      ) {
+        if (choice.newAttempt) state.key = `${id}:retry:${state.cycles}`;
+        if (!state.dispatched || choice.newAttempt) {
+          state.baseIds = results.map((p) => p.id);
+          state.dispatches++;
+        }
+        state.dispatched = true;
+        await this.db.payment.update({
+          where: { id },
+          data: { snapshot: json({ ...obj(p.snapshot), refundRetry: state }) },
+        });
+        const sent = await this.provider.createPayout(
+          {
+            referenceId: p.paymentCode,
+            amount: Number(p.expectedAmount.toString()),
+            description: `N8 hoan ${id.slice(0, 8)}`,
+            toBin: recipient.bin,
+            toAccountNumber: recipient.account,
+          },
+          state.key,
+        );
+        const verified = refundRetryDecision(
+          [sent],
+          { ...state, baseIds: [] },
+          p.paymentCode,
+          p.expectedAmount.toString(),
+          recipient,
+        );
+        if (verified.action === "REVIEW") {
+          review = true;
+          return;
+        }
+        await this.db.payment.update({
+          where: { id },
+          data: { providerObjectId: sent.id },
+        });
+        if (verified.action === "SUCCESS") result = sent;
+      }
+    } catch (error) {
+      // Never log SDK errors/headers: they can contain credentials or beneficiary details.
+      const headers = (error as { headers?: Headers })?.headers;
+      retryAfter = headers?.get?.("retry-after");
+      if (!state) review = true;
+    } finally {
+      const completedAt = await this.now(this.db);
+      const next = refundRetryAt(completedAt, retryAfter);
+      const success = !!result;
+      review =
+        review || (!success && (state?.cycles ?? 0) >= REFUND_RETRY_LIMIT);
+      await this.db.$transaction(async (tx) => {
+        const current = await tx.payment.findUniqueOrThrow({ where: { id } });
+        if (current.operationState === "SUCCEEDED") return;
+        if (success && p?.orderId) {
+          const order = await this.lockOrder(tx, p.orderId);
+          if (order.status !== "REFUND_PENDING")
+            throw fail("REFUND_STATE_CHANGED", "Trạng thái hoàn cần kiểm tra.");
+          await tx.order.update({
+            where: { id: order.id },
+            data: { status: "REFUNDED" },
+          });
+          await tx.ticket.update({
+            where: { orderId: order.id },
+            data: { status: "REFUNDED", refundedAt: completedAt },
+          });
+        }
+        await tx.payment.update({
+          where: { id },
+          data: {
+            status: success ? "RESOLVED" : review ? "NEEDS_ADMIN" : "PENDING",
+            operationState: success
+              ? "SUCCEEDED"
+              : review
+                ? "NEEDS_REVIEW"
+                : "PROCESSING",
+            providerObjectId: result?.id ?? current.providerObjectId,
+            paidAt: success ? completedAt : null,
+            nextAttemptAt: success || review ? null : next,
+            leaseUntil: null,
+          },
+        });
       });
     }
   }

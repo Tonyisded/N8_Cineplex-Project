@@ -91,11 +91,41 @@ export function validateEnvironment(env: Record<string, unknown>) {
     "REFUND_PAYOUT_ENABLED",
     "TRANSACTION_EMAIL_ENABLED",
     "FCM_ENABLED",
+    "PAYOS_PAYOUT_PROXY_ENABLED",
+    "REFUND_RETRY_ENABLED",
   ];
   for (const key of switches)
     if (!["true", "false"].includes(String(env[key] ?? "false")))
       throw new Error(`${key} must be true or false`);
   const enabled = (key: string) => String(env[key] ?? "false") === "true";
+  if (enabled("REFUND_RETRY_ENABLED") && !enabled("PAYOS_PAYOUT_PROXY_ENABLED"))
+    throw new Error("REFUND_RETRY_ENABLED requires fixed payout proxy");
+  if (enabled("PAYOS_PAYOUT_PROXY_ENABLED")) {
+    let proxy: URL;
+    try {
+      proxy = new URL(String(env.PAYOS_PAYOUT_PROXY_SERVER));
+    } catch {
+      throw new Error("PAYOS_PAYOUT_PROXY_SERVER must be configured");
+    }
+    if (
+      !["http:", "https:"].includes(proxy.protocol) ||
+      proxy.username ||
+      proxy.password ||
+      proxy.pathname !== "/" ||
+      proxy.search ||
+      proxy.hash
+    )
+      throw new Error("Invalid PAYOS_PAYOUT_PROXY_SERVER");
+    if (
+      Boolean(env.PAYOS_PAYOUT_PROXY_USERNAME) !==
+      Boolean(env.PAYOS_PAYOUT_PROXY_PASSWORD)
+    )
+      throw new Error(
+        "Payout proxy username/password must be configured together",
+      );
+    if (env.NODE_TLS_REJECT_UNAUTHORIZED === "0")
+      throw new Error("Payout proxy requires TLS certificate verification");
+  }
   if (enabled("PAYMENT_LIVE_ENABLED") || enabled("REFUND_PAYOUT_ENABLED")) {
     for (const key of ["TICKET_QR_SECRET", "PAYMENT_DATA_ENCRYPTION_KEY"]) {
       if (typeof env[key] !== "string" || (env[key] as string).length < 32)
