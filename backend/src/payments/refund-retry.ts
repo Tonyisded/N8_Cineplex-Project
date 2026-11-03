@@ -3,7 +3,12 @@ import type { Recipient } from "./payment-domain.js";
 export const REFUND_RETRY_LIMIT = 4;
 export const REFUND_RETRY_DELAY_MS = 180_000;
 export type RefundRetry = {
-  version: 1;
+  version: 1 | 2;
+  sendAttempts?: number;
+  reconcileOnly?: boolean;
+  firstError?: RefundErrorEvent;
+  lastError?: RefundErrorEvent;
+  errors?: RefundErrorEvent[];
   cycles: number;
   key: string;
   baseIds: string[];
@@ -12,7 +17,9 @@ export type RefundRetry = {
 };
 export function initialRefundRetry(id: string): RefundRetry {
   return {
-    version: 1,
+    version: 2,
+    sendAttempts: 0,
+    reconcileOnly: false,
     cycles: 0,
     key: id,
     baseIds: [],
@@ -24,10 +31,14 @@ export function readRefundRetry(value: unknown): RefundRetry {
   const s = value as RefundRetry;
   if (
     !s ||
-    s.version !== 1 ||
-    !Number.isInteger(s.cycles) ||
+    ![1, 2].includes(s.version) ||
+    !Number.isSafeInteger(s.cycles) ||
     s.cycles < 0 ||
-    s.cycles > REFUND_RETRY_LIMIT ||
+    (s.sendAttempts !== undefined &&
+      (!Number.isInteger(s.sendAttempts) ||
+        s.sendAttempts < 0 ||
+        s.sendAttempts > REFUND_RETRY_LIMIT)) ||
+    (s.reconcileOnly !== undefined && typeof s.reconcileOnly !== "boolean") ||
     !Number.isInteger(s.dispatches) ||
     s.dispatches < 0 ||
     s.dispatches > REFUND_RETRY_LIMIT ||
@@ -39,7 +50,15 @@ export function readRefundRetry(value: unknown): RefundRetry {
     typeof s.dispatched !== "boolean"
   )
     throw new Error("Invalid persisted refund retry state");
-  return { ...s, baseIds: [...s.baseIds] };
+  return {
+    ...s,
+    version: 2,
+    sendAttempts:
+      s.sendAttempts ??
+      (s.dispatched ? Math.min(s.cycles, REFUND_RETRY_LIMIT) : 0),
+    reconcileOnly: s.reconcileOnly ?? false,
+    baseIds: [...s.baseIds],
+  };
 }
 export function refundRetryDecision(
   results: Payout[],
@@ -115,4 +134,70 @@ export function refundRetryAt(now: Date, retryAfter?: string | null) {
       Number.isFinite(server) ? server : 0,
     ),
   );
+}
+
+export type RefundErrorEvent = {
+  at: string;
+  phase: string;
+  elapsedMs: number;
+  cycle: number;
+  sendAttempts: number;
+  kind: string;
+  httpStatus?: number;
+  providerCode?: string;
+};
+export function safeRefundError(
+  error: unknown,
+  phase: string,
+  now: Date,
+  elapsedMs: number,
+  cycle: number,
+  sendAttempts: number,
+): RefundErrorEvent {
+  const e = error as {
+    status?: unknown;
+    code?: unknown;
+    constructor?: { name?: string };
+  } | null;
+  const kind = e?.constructor?.name ?? "Error";
+  const code = String(e?.code ?? "");
+  return {
+    at: now.toISOString(),
+    phase: ["query", "send", "provider", "validation", "finalize"].includes(
+      phase,
+    )
+      ? phase
+      : "query",
+    elapsedMs: Math.min(120000, Math.max(0, Math.round(elapsedMs))),
+    cycle,
+    sendAttempts,
+    kind: [
+      "APIError",
+      "ConnectionError",
+      "TimeoutError",
+      "ConnectionTimeoutError",
+      "TooManyRequestError",
+      "InvalidSignatureError",
+      "UnauthorizedError",
+      "ForbiddenError",
+      "SignatureError",
+      "Error",
+      "TypeError",
+    ].includes(kind)
+      ? kind
+      : "Error",
+    ...(Number.isInteger(e?.status) &&
+    Number(e?.status) >= 100 &&
+    Number(e?.status) <= 599
+      ? { httpStatus: Number(e?.status) }
+      : {}),
+    ...(/^\d{1,6}$/.test(code) ||
+    [
+      "PAYOUT_INSUFFICIENT_FUNDS",
+      "PAYOUT_BANK_SYSTEM_ERROR",
+      "PAYOUT_VALIDATION",
+    ].includes(code)
+      ? { providerCode: code }
+      : {}),
+  };
 }

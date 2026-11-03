@@ -8,6 +8,7 @@ import {
   refundRetryDecision,
   refundRetryAt,
   readRefundRetry,
+  safeRefundError,
 } from "../dist/payments/refund-retry.js";
 import { sealRecipient } from "../dist/payments/payment-domain.js";
 const recipient = { bin: "970436", account: "123456789", name: "FIXTURE" };
@@ -66,8 +67,12 @@ function fixture(t, create) {
       update: async (x) => update(x),
       updateMany: async (x) => {
         if (
-          !["REQUESTED", "PROCESSING", "UNKNOWN"].includes(
-            row.operationState,
+          !(
+            ["REQUESTED", "PROCESSING", "UNKNOWN"].includes(
+              row.operationState,
+            ) ||
+            (row.operationState === "NEEDS_REVIEW" &&
+              row.snapshot.refundRetry.reconcileOnly)
           ) ||
           (row.nextAttemptAt && row.nextAttemptAt > new Date()) ||
           (row.leaseUntil && row.leaseUntil > new Date())
@@ -185,7 +190,7 @@ test("timeout after provider success is recovered by authoritative query, withou
   assert.equal(f.row.operationState, "SUCCEEDED");
   assert.equal(f.stats.creates.length, 1);
 });
-test("bank failure with a reference never gets a new payout; four reconciliation cycles then review", async (t) => {
+test("bank failure with a reference never gets a new payout during reconciliation", async (t) => {
   const f = fixture(t, (stats) => {
     const p = payout("FAILED", {
       errorCode: "PAYOUT_BANK_SYSTEM_ERROR",
@@ -202,11 +207,11 @@ test("bank failure with a reference never gets a new payout; four reconciliation
       f.advance();
     }
   }
-  assert.equal(f.row.status, "NEEDS_ADMIN");
+  assert.equal(f.row.status, "PENDING");
   assert.equal(f.stats.creates.length, 1);
   assert.equal(f.stats.queries, 4);
 });
-test("429 honors Retry-After, keeps frontend processing, and reaches review without payout on fourth failed query", async (t) => {
+test("429 honors Retry-After without consuming send budget or stopping reconciliation", async (t) => {
   const f = fixture(t);
   f.provider.findPayout = async () => {
     f.stats.queries++;
@@ -222,7 +227,7 @@ test("429 honors Retry-After, keeps frontend processing, and reaches review with
       t.mock.timers.tick(420000);
     }
   }
-  assert.equal(f.row.status, "NEEDS_ADMIN");
+  assert.equal(f.row.status, "PENDING");
   assert.equal(f.stats.creates.length, 0);
   assert.equal(f.stats.queries, 4);
 });
@@ -262,7 +267,7 @@ test("retry state validates bounds and server scheduling never retries earlier t
   assert.equal(refundRetryAt(new Date(0), "1").getTime(), 180000);
   assert.equal(refundRetryAt(new Date(0), "600").getTime(), 600000);
   assert.equal(refundRetryAt(new Date(0), "invalid").getTime(), 180000);
-  for (const cycles of [-1, 5, 1.5])
+  for (const cycles of [-1, 1.5])
     assert.throws(() => readRefundRetry({ ...initialRefundRetry(id), cycles }));
 });
 
@@ -276,4 +281,98 @@ test("180 second delay starts after response/error completion, not request start
   t.mock.timers.tick(179999);
   await f.service().processRefund(id);
   assert.equal(f.stats.creates.length, 1);
+});
+
+test("four send attempts stop POSTs but later authoritative success is still finalized", async (t) => {
+  const f = fixture(t, () => {
+    throw Object.assign(new Error("secret account payload MUST_NOT_LOG"), {
+      status: 429,
+      code: "429",
+    });
+  });
+  const logs = [];
+  t.mock.method(console, "warn", (...args) => logs.push(args.join(" ")));
+  for (let i = 0; i < 4; i++) {
+    await f.service().processRefund(id);
+    f.advance();
+  }
+  assert.equal(f.stats.creates.length, 4);
+  assert.equal(f.row.snapshot.refundRetry.sendAttempts, 4);
+  assert.equal(f.row.status, "NEEDS_ADMIN");
+  assert.equal(f.row.snapshot.refundRetry.reconcileOnly, true);
+  assert.ok(f.row.nextAttemptAt);
+  await f.service().processRefund(id);
+  assert.equal(f.stats.creates.length, 4);
+  assert.equal(f.row.snapshot.refundRetry.cycles, 5);
+  f.stats.results = [payout()];
+  f.advance();
+  await f.service().processRefund(id);
+  assert.equal(f.row.operationState, "SUCCEEDED");
+  assert.equal(f.ticket.status, "REFUNDED");
+  assert.equal(f.stats.creates.length, 4);
+  assert.equal(f.row.nextAttemptAt, null);
+  assert.ok(logs.some((x) => x.includes("429")));
+  assert.ok(!logs.join("").includes("MUST_NOT_LOG"));
+  assert.ok(!JSON.stringify(f.row.snapshot).includes("MUST_NOT_LOG"));
+});
+test("query errors do not consume send budget; bounded journal excludes messages, headers and raw codes", async (t) => {
+  const f = fixture(t);
+  let broken = true;
+  f.provider.findPayout = async () => {
+    f.stats.queries++;
+    if (broken)
+      throw {
+        status: 503,
+        code: "SECRET_API_KEY",
+        message: "ACCOUNT123456789",
+        headers: new Headers({ authorization: "TOKEN_SECRET" }),
+      };
+    return [];
+  };
+  t.mock.method(console, "warn", () => {});
+  for (let i = 0; i < 10; i++) {
+    await f.service().processRefund(id);
+    f.advance();
+  }
+  assert.equal(f.row.snapshot.refundRetry.sendAttempts, 0);
+  assert.equal(f.row.snapshot.refundRetry.errors.length, 8);
+  assert.equal(f.row.snapshot.refundRetry.lastError.httpStatus, 503);
+  const saved = JSON.stringify(f.row.snapshot);
+  for (const secret of ["SECRET_API_KEY", "ACCOUNT123456789", "TOKEN_SECRET"])
+    assert.ok(!saved.includes(secret));
+  broken = false;
+  await f.service().processRefund(id);
+  assert.equal(f.stats.creates.length, 1);
+  assert.equal(f.row.operationState, "SUCCEEDED");
+});
+test("persisted v1 metadata migrates conservatively, safe error serializer only includes allowlisted fields", () => {
+  const state = readRefundRetry({
+    version: 1,
+    cycles: 4,
+    key: id,
+    baseIds: [],
+    dispatched: true,
+    dispatches: 1,
+  });
+  assert.equal(state.sendAttempts, 4);
+  assert.throws(() =>
+    readRefundRetry({ ...initialRefundRetry(id), sendAttempts: 5 }),
+  );
+  const e = safeRefundError(
+    {
+      status: 429,
+      code: "606",
+      message: "SECRET",
+      headers: { secret: "TOKEN" },
+    },
+    "send",
+    new Date(0),
+    50,
+    7,
+    4,
+  );
+  assert.equal(e.httpStatus, 429);
+  assert.equal(e.providerCode, "606");
+  assert.ok(!JSON.stringify(e).includes("SECRET"));
+  assert.equal(e.elapsedMs, 50);
 });

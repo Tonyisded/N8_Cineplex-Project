@@ -900,6 +900,83 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
         }
       },
     );
+    await t.test(
+      "after four sends, real PostgreSQL review row remains queryable and late success finalizes without fifth send",
+      async () => {
+        const create = provider.createPayout,
+          find = provider.findPayout;
+        config.set("REFUND_RETRY_ENABLED", true);
+        let visible = false,
+          calls = 0,
+          result;
+        const keys = [];
+        provider.findPayout = async () => (visible ? [result] : []);
+        provider.createPayout = async (d, key) => {
+          calls++;
+          keys.push(key);
+          result = await create(d, key);
+          throw Object.assign(new Error("fixture response lost"), {
+            status: 429,
+            code: "429",
+          });
+        };
+        try {
+          const f = await fixture();
+          await service.start(f.oid, f.uid);
+          await receipt(f, randomUUID());
+          const ticket = await db.ticket.findUniqueOrThrow({
+            where: { orderId: f.oid },
+          });
+          const r = await service.refund(ticket.id, f.uid);
+          for (let n = 1; n <= 4; n++) {
+            await service.processRefund(r.item.id);
+            assert.equal(calls, n);
+            await db.payment.update({
+              where: { id: r.item.id },
+              data: { nextAttemptAt: new Date(0) },
+            });
+          }
+          const p = await db.payment.findUniqueOrThrow({
+            where: { id: r.item.id },
+          });
+          assert.equal(p.operationState, "NEEDS_REVIEW");
+          assert.equal(p.snapshot.refundRetry.sendAttempts, 4);
+          assert.equal(p.snapshot.refundRetry.reconcileOnly, true);
+          assert.equal(p.snapshot.refundRetry.lastError.httpStatus, 429);
+          assert.equal(new Set(keys).size, 1);
+          const due = await db.payment.findMany({
+            where: {
+              id: p.id,
+              operationState: "NEEDS_REVIEW",
+              snapshot: {
+                path: ["refundRetry", "reconcileOnly"],
+                equals: true,
+              },
+            },
+          });
+          assert.equal(due.length, 1);
+          visible = true;
+          await new PaymentsService(db, config, provider, {
+            publish: () => {},
+          }).processRefund(p.id);
+          assert.equal(calls, 4);
+          assert.equal(
+            (await db.payment.findUniqueOrThrow({ where: { id: p.id } }))
+              .operationState,
+            "SUCCEEDED",
+          );
+          assert.equal(
+            (await db.ticket.findUniqueOrThrow({ where: { id: ticket.id } }))
+              .status,
+            "REFUNDED",
+          );
+        } finally {
+          provider.createPayout = create;
+          provider.findPayout = find;
+          config.set("REFUND_RETRY_ENABLED", false);
+        }
+      },
+    );
   } finally {
     await db.$disconnect();
   }
