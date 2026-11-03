@@ -720,6 +720,186 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
         assert.ok(issues.items.every((p) => p.kind !== "INTENT"));
       },
     );
+    await t.test(
+      "fixed-proxy retry marker: PostgreSQL concurrent workers create/finalize exactly once",
+      async () => {
+        const create = provider.createPayout,
+          find = provider.findPayout;
+        config.set("REFUND_RETRY_ENABLED", true);
+        const results = [];
+        let calls = 0;
+        provider.findPayout = async () => results;
+        provider.createPayout = async (d, key) => {
+          calls++;
+          const p = await create(d, key);
+          results.push(p);
+          return p;
+        };
+        try {
+          const f = await fixture();
+          await service.start(f.oid, f.uid);
+          await receipt(f, randomUUID());
+          const ticket = await db.ticket.findUniqueOrThrow({
+            where: { orderId: f.oid },
+          });
+          const r = await service.refund(ticket.id, f.uid);
+          await Promise.all(
+            Array.from({ length: 6 }, () => service.processRefund(r.item.id)),
+          );
+          const p = await db.payment.findUniqueOrThrow({
+            where: { id: r.item.id },
+          });
+          assert.equal(calls, 1);
+          assert.equal(p.operationState, "SUCCEEDED");
+          assert.equal(p.snapshot.refundRetry.cycles, 1);
+          assert.equal(
+            (await db.ticket.findUniqueOrThrow({ where: { id: ticket.id } }))
+              .status,
+            "REFUNDED",
+          );
+          assert.ok(
+            !JSON.stringify(
+              (await service.refundState(ticket.id, f.uid)).item,
+            ).includes("refundRetry"),
+          );
+        } finally {
+          config.set("REFUND_RETRY_ENABLED", false);
+          provider.createPayout = create;
+          provider.findPayout = find;
+        }
+      },
+    );
+    await t.test(
+      "durable retry budget and delay in real PostgreSQL; fixture-only due acceleration",
+      async () => {
+        const create = provider.createPayout,
+          find = provider.findPayout;
+        config.set("REFUND_RETRY_ENABLED", true);
+        const results = [];
+        let calls = 0;
+        const keys = [];
+        provider.findPayout = async () => results;
+        provider.createPayout = async (d, key) => {
+          calls++;
+          keys.push(key);
+          const p = {
+            id: "retry-fixture-" + key,
+            referenceId: d.referenceId,
+            transactions: [
+              {
+                referenceId: d.referenceId,
+                amount: d.amount,
+                toBin: d.toBin,
+                toAccountNumber: d.toAccountNumber,
+                state: "FAILED",
+                errorCode: "PAYOUT_INSUFFICIENT_FUNDS",
+                reference: null,
+                transactionDatetime: null,
+              },
+            ],
+          };
+          results.push(p);
+          return p;
+        };
+        try {
+          const f = await fixture();
+          await service.start(f.oid, f.uid);
+          await receipt(f, randomUUID());
+          const ticket = await db.ticket.findUniqueOrThrow({
+            where: { orderId: f.oid },
+          });
+          const r = await service.refund(ticket.id, f.uid);
+          for (let i = 1; i <= 4; i++) {
+            await Promise.all([
+              service.processRefund(r.item.id),
+              service.processRefund(r.item.id),
+            ]);
+            const p = await db.payment.findUniqueOrThrow({
+              where: { id: r.item.id },
+            });
+            assert.equal(calls, i);
+            assert.equal(p.snapshot.refundRetry.cycles, i);
+            if (i < 4) {
+              assert.equal(p.status, "PENDING");
+              assert.ok(p.nextAttemptAt.getTime() - Date.now() > 178000);
+              await service.processRefund(r.item.id);
+              assert.equal(calls, i);
+              await db.payment.update({
+                where: { id: r.item.id },
+                data: { nextAttemptAt: new Date(0) },
+              });
+            } else {
+              assert.equal(p.status, "NEEDS_ADMIN");
+              assert.equal(p.operationState, "NEEDS_REVIEW");
+            }
+          }
+          await service.processRefund(r.item.id);
+          assert.equal(calls, 4);
+          assert.equal(new Set(keys).size, 4);
+          assert.equal(
+            (await db.ticket.findUniqueOrThrow({ where: { id: ticket.id } }))
+              .status,
+            "REFUND_PENDING",
+          );
+          assert.equal(
+            await db.payment.count({ where: { refundOrderId: f.oid } }),
+            1,
+          );
+        } finally {
+          config.set("REFUND_RETRY_ENABLED", false);
+          provider.createPayout = create;
+          provider.findPayout = find;
+        }
+      },
+    );
+    await t.test(
+      "timeout after successful provider dispatch recovers after process restart with no second debit",
+      async () => {
+        const create = provider.createPayout,
+          find = provider.findPayout;
+        config.set("REFUND_RETRY_ENABLED", true);
+        const results = [];
+        let calls = 0;
+        provider.findPayout = async () => results;
+        provider.createPayout = async (d, key) => {
+          calls++;
+          results.push(await create(d, key));
+          throw new Error("lost response fixture");
+        };
+        try {
+          const f = await fixture();
+          await service.start(f.oid, f.uid);
+          await receipt(f, randomUUID());
+          const ticket = await db.ticket.findUniqueOrThrow({
+            where: { orderId: f.oid },
+          });
+          const r = await service.refund(ticket.id, f.uid);
+          await service.processRefund(r.item.id);
+          assert.equal(
+            (await db.payment.findUniqueOrThrow({ where: { id: r.item.id } }))
+              .status,
+            "PENDING",
+          );
+          await db.payment.update({
+            where: { id: r.item.id },
+            data: { nextAttemptAt: new Date(0) },
+          });
+          await new PaymentsService(db, config, provider, {
+            publish: () => {},
+          }).processRefund(r.item.id);
+          assert.equal(calls, 1);
+          assert.equal(
+            (await db.payment.findUniqueOrThrow({ where: { id: r.item.id } }))
+              .operationState,
+            "SUCCEEDED",
+          );
+        } finally {
+          config.set("REFUND_RETRY_ENABLED", false);
+          provider.createPayout = create;
+          provider.findPayout = find;
+        }
+      },
+    );
   } finally {
     await db.$disconnect();
   }

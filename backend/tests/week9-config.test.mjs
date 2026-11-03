@@ -45,3 +45,44 @@ test("Android compatibility configuration cannot enable blocking without a publi
   ])
     assert.throws(() => validateEnvironment({ ...e, ...config }));
 });
+
+test("fixed proxy/retry is opt-in, validates credentials and cannot disable TLS", () => {
+  const e = base();
+  const enabled = {
+    PAYOS_PAYOUT_PROXY_ENABLED: "true",
+    PAYOS_PAYOUT_PROXY_SERVER: "http://proxy.fixture.invalid:3128",
+  };
+  assert.equal(validateEnvironment(e).REFUND_RETRY_ENABLED, false);
+  assert.equal(validateEnvironment(e).PAYOS_PAYOUT_PROXY_ENABLED, false);
+  assert.throws(() =>
+    validateEnvironment({ ...e, REFUND_RETRY_ENABLED: "true" }),
+  );
+  for (const url of [
+    "socks5://proxy.fixture.invalid",
+    "http://user:password@proxy.fixture.invalid",
+    "http://proxy.fixture.invalid/path",
+    "http://proxy.fixture.invalid/?q=1",
+  ])
+    assert.throws(() =>
+      validateEnvironment({ ...e, ...enabled, PAYOS_PAYOUT_PROXY_SERVER: url }),
+    );
+  assert.throws(() =>
+    validateEnvironment({
+      ...e,
+      ...enabled,
+      PAYOS_PAYOUT_PROXY_USERNAME: "fixture",
+    }),
+  );
+  assert.throws(() =>
+    validateEnvironment({
+      ...e,
+      ...enabled,
+      NODE_TLS_REJECT_UNAUTHORIZED: "0",
+    }),
+  );
+  assert.equal(
+    validateEnvironment({ ...e, ...enabled, REFUND_RETRY_ENABLED: "true" })
+      .REFUND_RETRY_ENABLED,
+    true,
+  );
+});
