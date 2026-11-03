@@ -1,5 +1,20 @@
 # AGENTS.md — N8 Cineplex
 
+## Nhật ký lỗi hoàn tiền an toàn và tiếp tục đối soát — 2026-11-03
+
+Theo yêu cầu mới, đã sửa source root/candidate, kiểm thử và deploy VPS; không còn là phương án chỉ sửa riêng VPS. Chính sách snapshot.refundRetry v2 tách sendAttempts (tối đa4 lượt chuẩn bị/gửi HTTP, tính cả replay) khỏi cycles đối soát. Lỗi query không tiêu lượt gửi. Sau đủ4 lượt gửi, chuyển cần kiểm tra/reconcileOnly nhưng vẫn query theo lịch; tuyệt đối không có POST thứ5. Kết quả success đến muộn, ký/đúng reference/số tiền/bank/account, vẫn finalization transaction REFUNDED rồi dừng query. Sai dữ liệu/kết quả không hợp lệ vẫn dừng để kiểm tra, không tự chi lại. Key/body bền vững và quy tắc không đổi key khi chưa rõ kết quả giữ nguyên; mọi lượt vẫn dùng proxy Việt cố định, không đổi IP.
+
+Marker v1 đang active được đọc tương thích và quy đổi budget bảo thủ; nghĩa vụ cũ đã NEEDS_REVIEW nhưng không có cờ reconcileOnly không tự requeue. Khoản50.000đ đã SUCCEEDED được kiểm tra đọc lại, không có thêm lệnh chi. Điều tra lỗi lịch sử trước nâng cấp vẫn không thể khôi phục mã lỗi đã bị bỏ qua; không kết luận lỗi cũ là429 chỉ từ suy đoán.
+
+safeRefundError chỉ lấy trường cho phép: refund UUID, thời điểm, phase, cycle/sendAttempts, thời gian vòng xử lý, loại exception thuộc danh sách, HTTP status và provider code số/enum cho phép. Không ghi message/stack SDK, headers, payload, secret/token/key, số tài khoản hoặc thông tin người nhận. Lưu firstError bất biến, lastError và tối đa8 lỗi gần nhất trong snapshot, đồng thời console refund_failure để đối chiếu Docker logs. JSON notification_state không bị ghi đè. Public DTO/frontend không lộ counter/journal; không thay Android/APK, min7/latest8 và release1.7 giữ nguyên.
+
+Gate mới: build/typecheck/format và150/150 local; Linux153/153 gồm3proxy; PostgreSQL cô lập21/21 với provider giả, có ca4 lần gửi rồi nhận kết quả success sau khởi động lại mà không gửi lần5. Test query lỗi10vòng vẫn không tiêu send budget; log/journal không chứa marker secret, message hay header thử nghiệm, bộ đệm giới hạn8. Thời gian giả/đẩy due chỉ trong fixture cô lập, không nhận là E2E ngân hàng thật. VPS đã recreate API sau tất cả gate thành công; health/Swagger/combos200, webhook unsigned400, proxy đọc số dư payOS đạt. Hai SHA256 JS runtime khớp source build root, healthy/restart0. Không migration hoặc đổi .env/secrets/Nginx/PostgreSQL/volume; giữ image trước-refund-log để phục hồi vận hành.
+
+Cùng npm run build && npm test: BASELINE147 → MODIFIED150 → ROLLBACK147, exit0. ROLLBACK.sh --refund-log đã thực thi trên bản sao; REFUND_LOG_RECONCILE_BASELINE.zip giữ336publicfile pristine, root/candidate/VPS vẫn MODIFIED. Bốn role cũ ở D:\NT118\verification\week9-payos-ticket-refund được mở rộng, không thay bộ; tuyệt đối không restore DB để đảo chuyển khoản thật. Khi hạ image cũ phải ngăn tạo chi mới và giữ/đối soát metadata v2 vì parser cũ không hiểu v2. Lỗi unit đầu do fake lease chưa nhận diện reconcileOnly được giữ, sửa fake theo predicate thật và bổ sung regression PostgreSQL, không bỏ assertion.
+
+Phần backend này được bàn giao để commit/push trên nhánh riêng fix/nguyen-refund-observability-20261103 theo yêu cầu; chỉ nhận công bố sau ls-remote khớp và ledger ngoài repo. Không thay tag/release1.7, không commit env/log/verification hay chạy chi thử tiền thật mới. Chưa xác nhận CI remote/máy vật lý; việc nhận tiền cuối vẫn cần người dùng đối chiếu ngân hàng.
+
+
 ## Proxy Việt cố định và retry hoàn tiền có giới hạn — 2026-11-03
 
 <!-- FIXED_PAYOUT_PROXY_REFUND_RETRY_20261103 -->

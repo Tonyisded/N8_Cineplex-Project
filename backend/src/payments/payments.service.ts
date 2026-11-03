@@ -30,6 +30,7 @@ import {
   refundRetryDecision,
   refundRetryAt,
   REFUND_RETRY_LIMIT,
+  safeRefundError,
 } from "./refund-retry.js";
 import type { Transaction, Payout } from "@payos/node";
 const include = {
@@ -963,7 +964,13 @@ export class PaymentsService {
       where: {
         id,
         kind: "REFUND",
-        operationState: { in: ["REQUESTED", "PROCESSING", "UNKNOWN"] },
+        OR: [
+          { operationState: { in: ["REQUESTED", "PROCESSING", "UNKNOWN"] } },
+          {
+            operationState: "NEEDS_REVIEW",
+            snapshot: { path: ["refundRetry", "reconcileOnly"], equals: true },
+          },
+        ],
         AND: [
           { OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }] },
           { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
@@ -981,6 +988,31 @@ export class PaymentsService {
     let result: Payout | undefined;
     let review = false;
     let retryAfter: string | null | undefined;
+    let phase = "query";
+    let invalid = false;
+    const recordError = async (error: unknown, stage = phase) => {
+      const event = safeRefundError(
+        error,
+        stage,
+        new Date(),
+        Date.now() - now.getTime(),
+        state?.cycles ?? 0,
+        state?.sendAttempts ?? 0,
+      );
+      console.warn(
+        "refund_failure",
+        JSON.stringify({ refundId: id, ...event }),
+      );
+      if (state && p) {
+        state.firstError ??= event;
+        state.lastError = event;
+        state.errors = [...(state.errors ?? []).slice(-7), event];
+        await this.db.payment.update({
+          where: { id },
+          data: { snapshot: json({ ...obj(p.snapshot), refundRetry: state }) },
+        });
+      }
+    };
     try {
       p = await this.db.payment.findUniqueOrThrow({ where: { id } });
       if (!p.orderId || !p.recipientCipher) {
@@ -988,10 +1020,6 @@ export class PaymentsService {
         return;
       }
       state = readRefundRetry(obj(p.snapshot).refundRetry);
-      if (state.cycles >= REFUND_RETRY_LIMIT) {
-        review = true;
-        return;
-      }
       state.cycles++;
       await this.db.payment.update({
         where: { id },
@@ -1014,6 +1042,9 @@ export class PaymentsService {
       );
       if (choice.action === "REVIEW") {
         review = true;
+        invalid = true;
+        state.reconcileOnly = false;
+        await recordError({ code: "PAYOUT_VALIDATION" }, "validation");
         return;
       }
       if (choice.action === "SUCCESS") {
@@ -1022,6 +1053,8 @@ export class PaymentsService {
       }
       if (
         choice.action === "SEND" &&
+        !state.reconcileOnly &&
+        (state.sendAttempts ?? 0) < REFUND_RETRY_LIMIT &&
         this.enabled("REFUND_PAYOUT_ENABLED") &&
         this.enabled("REFUND_RETRY_ENABLED")
       ) {
@@ -1031,6 +1064,8 @@ export class PaymentsService {
           state.dispatches++;
         }
         state.dispatched = true;
+        state.sendAttempts = (state.sendAttempts ?? 0) + 1;
+        phase = "send";
         await this.db.payment.update({
           where: { id },
           data: { snapshot: json({ ...obj(p.snapshot), refundRetry: state }) },
@@ -1054,8 +1089,16 @@ export class PaymentsService {
         );
         if (verified.action === "REVIEW") {
           review = true;
+          invalid = true;
+          state.reconcileOnly = false;
+          await recordError({ code: "PAYOUT_VALIDATION" }, "validation");
           return;
         }
+        if (sent.transactions[0].state === "FAILED")
+          await recordError(
+            { code: sent.transactions[0].errorCode },
+            "provider",
+          );
         await this.db.payment.update({
           where: { id },
           data: { providerObjectId: sent.id },
@@ -1067,12 +1110,25 @@ export class PaymentsService {
       const headers = (error as { headers?: Headers })?.headers;
       retryAfter = headers?.get?.("retry-after");
       if (!state) review = true;
+      await recordError(error);
     } finally {
       const completedAt = await this.now(this.db);
       const next = refundRetryAt(completedAt, retryAfter);
       const success = !!result;
-      review =
-        review || (!success && (state?.cycles ?? 0) >= REFUND_RETRY_LIMIT);
+      if (
+        !success &&
+        state &&
+        !invalid &&
+        ((state.sendAttempts ?? 0) >= REFUND_RETRY_LIMIT || state.reconcileOnly)
+      ) {
+        review = true;
+        state.reconcileOnly = true;
+      }
+      if (state && p)
+        await this.db.payment.update({
+          where: { id },
+          data: { snapshot: json({ ...obj(p.snapshot), refundRetry: state }) },
+        });
       await this.db.$transaction(async (tx) => {
         const current = await tx.payment.findUniqueOrThrow({ where: { id } });
         if (current.operationState === "SUCCEEDED") return;
@@ -1100,7 +1156,8 @@ export class PaymentsService {
                 : "PROCESSING",
             providerObjectId: result?.id ?? current.providerObjectId,
             paidAt: success ? completedAt : null,
-            nextAttemptAt: success || review ? null : next,
+            nextAttemptAt:
+              success || (review && !state?.reconcileOnly) ? null : next,
             leaseUntil: null,
           },
         });
@@ -1260,8 +1317,26 @@ export class PaymentsService {
       const due = await this.db.payment.findMany({
         where: {
           kind: { in: ["INTENT", "REFUND"] },
-          operationState: { in: ["REQUESTED", "PROCESSING", "UNKNOWN"] },
-          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          AND: [
+            {
+              OR: [
+                {
+                  operationState: {
+                    in: ["REQUESTED", "PROCESSING", "UNKNOWN"],
+                  },
+                },
+                {
+                  kind: "REFUND",
+                  operationState: "NEEDS_REVIEW",
+                  snapshot: {
+                    path: ["refundRetry", "reconcileOnly"],
+                    equals: true,
+                  },
+                },
+              ],
+            },
+            { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] },
+          ],
         },
         take: 20,
         orderBy: { createdAt: "asc" },
