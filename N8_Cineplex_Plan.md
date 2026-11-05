@@ -1,5 +1,12 @@
 # N8 Cineplex — Master Plan
 
+## Xác nhận công bố bản sửa payout — 2026-11-05
+
+<!-- PAYOUT_FIX_GITHUB_PUBLICATION_20261105 -->
+Đã commit/push source `148a6b6ab8d6a9156d846803d5ad3b321c3a5546` lên nhánh mới `fix/nguyen-payos-payout-uuid-20261105`; `git ls-remote` khớp source commit sau push. Commit thể hiện rõ hai sửa backend: giữ phân loại lỗi payout an toàn và dùng UUIDv4 bền vững khi resume sau thiếu quỹ; không giấu logic tài chính trong commit UI. Lượt kiểm tra trước công bố mới: build/typecheck/format và179/179unit tại backend source chính đạt.29PostgreSQL và BASELINE176 → MODIFIED179 → ROLLBACK176, exit0, là bằng chứng đã chạy của đợt sửa trước, không nhận là chạy mới khi push. Khóa44/nonUUID →36/UUID →44/nonUUID; replay cùng approval giữ khóa, counter/body/hash không đổi. Bốn role hiện hữu ở `D:\NT118\verification\week9-payos-ticket-refund` tiếp tục được mở rộng/mở đọc; không thay bộ hoặc rollback DB tài chính.
+
+Khoản hoàn CLAYFACE đã SUCCEEDED/REFUNDED, chỉ1success theo signed provider list; công bố GitHub không gửi thêm lệnh chi. Giữ kết quả VPS đã deploy; không thay env/key/token, proxy/TLS, DB/Nginx/volume hoặc dữ liệu người dùng. README root0byte; không commit log/evidence/APK. Android không đổi nên không tạo APK/release/tag mới, giữ nguyên v1.8 và minimum7/latest9; không chạy lại Android/CI remote hay tự xác nhận số dư ngân hàng người nhận. Các mục “chưa commit/push” bên dưới mô tả thời điểm trước xác nhận công bố này. Bản ghi xác nhận được commit riêng sau source đã push; không di chuyển tag cũ.
+
 ## Sửa khóa idempotency và hoàn CLAYFACE thành công — 2026-11-05
 
 <!-- PAYOUT_UUID_KEY_FIX_SUCCESS_20261105 -->
