@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { randomUUID, randomBytes } from "node:crypto";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../dist/prisma.service.js";
+import { PayosAdapter } from "../../dist/payments/payos.adapter.js";
 import { PaymentsService } from "../../dist/payments/payments.service.js";
 import { FcmController } from "../../dist/notifications/fcm.controller.js";
 const url = process.env.DATABASE_URL;
@@ -1095,6 +1096,81 @@ test("PostgreSQL transaction and concurrency integration, isolated fake financia
           ).expectedAmount.toString(),
           "705000",
         );
+      },
+    );
+    await t.test(
+      "real refund journal preserves unsigned-success HTTP evidence and never finalizes money or ticket",
+      async () => {
+        const f = await fixture("179000");
+        await service.start(f.oid, f.uid);
+        await receipt(f, randomUUID(), 179000);
+        const ticket = await db.ticket.findUniqueOrThrow({
+          where: { orderId: f.oid },
+        });
+        config.set("REFUND_RETRY_ENABLED", true);
+        const marker = "SECRET_RECIPIENT_TOKEN_MARKER";
+        for (const name of ["CLIENT_ID", "API_KEY", "CHECKSUM_KEY"])
+          config.set("PAYOS_PAYOUT_" + name, randomBytes(32).toString("hex"));
+        const adapter = new PayosAdapter(config, {
+          execute: async (_channel, _operation, _interval, call) => call(),
+        });
+        let calls = 0;
+        adapter.payoutTransport = () => ({
+          fetch: async () => {
+            calls++;
+            return new Response(
+              JSON.stringify({
+                code: "00",
+                desc: marker,
+                data: { id: "untrusted", transactions: [] },
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json",
+                  "x-secret": marker,
+                },
+              },
+            );
+          },
+        });
+        try {
+          const refund = await service.refund(ticket.id, f.uid);
+          const before = await db.payment.findUniqueOrThrow({
+            where: { id: refund.item.id },
+          });
+          const worker = new PaymentsService(db, config, adapter, {
+            publish: () => {},
+          });
+          await worker.processRefund(refund.item.id);
+          const payment = await db.payment.findUniqueOrThrow({
+            where: { id: refund.item.id },
+          });
+          const event = payment.snapshot.refundRetry.lastError;
+          assert.equal(event.kind, "InvalidSignatureError");
+          assert.equal(event.httpStatus, 200);
+          assert.equal(event.signaturePresent, false);
+          assert.ok(
+            !JSON.stringify(payment.snapshot.refundRetry).includes(marker),
+          );
+          assert.equal(payment.snapshot.refundRetry.sendAttempts, 1);
+          assert.equal(payment.paidAt, null);
+          assert.equal(payment.operationState, "PROCESSING");
+          assert.equal(calls, 1);
+          assert.deepEqual(payment.notificationState, before.notificationState);
+          assert.equal(
+            (await db.ticket.findUniqueOrThrow({ where: { id: ticket.id } }))
+              .status,
+            "REFUND_PENDING",
+          );
+          assert.equal(
+            (await db.order.findUniqueOrThrow({ where: { id: f.oid } })).status,
+            "REFUND_PENDING",
+          );
+        } finally {
+          config.set("REFUND_RETRY_ENABLED", false);
+          await adapter.onModuleDestroy();
+        }
       },
     );
   } finally {

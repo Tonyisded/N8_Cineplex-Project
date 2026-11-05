@@ -163,7 +163,11 @@ test("PostgreSQL governor/inbox/resume contract", async (t) => {
         const row = await db.payment.findUniqueOrThrow({ where: { id } });
         assert.equal(row.operationState, "REQUESTED");
         assert.equal(row.snapshot.refundRetry.sendAttempts, 1);
-        assert.equal(row.snapshot.refundRetry.key, id + ":retry:2");
+        assert.match(
+          row.snapshot.refundRetry.key,
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        );
+        assert.notEqual(row.snapshot.refundRetry.key, id);
         await assert.rejects(
           service.resumeFunds(
             id,

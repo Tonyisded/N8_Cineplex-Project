@@ -160,6 +160,56 @@ export function refundRetryAt(now: Date, retryAfter?: string | null) {
   );
 }
 
+export function safeProviderCode(value: unknown): string | undefined {
+  const code =
+    typeof value === "string" || typeof value === "number" ? String(value) : "";
+  return /^\d{1,6}$/.test(code) ||
+    [
+      "PAYOUT_INSUFFICIENT_FUNDS",
+      "PAYOUT_BANK_SYSTEM_ERROR",
+      "PAYOUT_VALIDATION",
+    ].includes(code)
+    ? code
+    : undefined;
+}
+export function safeTransportCode(error: unknown): string | undefined {
+  let current = error as {
+    transportCode?: unknown;
+    code?: unknown;
+    cause?: unknown;
+  } | null;
+  for (let i = 0; current && i < 4; i++) {
+    for (const code of [current.transportCode, current.code]) {
+      if (
+        typeof code === "string" &&
+        [
+          "ENOTFOUND",
+          "EAI_AGAIN",
+          "ECONNREFUSED",
+          "ECONNRESET",
+          "ETIMEDOUT",
+          "EHOSTUNREACH",
+          "ENETUNREACH",
+          "EPIPE",
+          "UND_ERR_CONNECT_TIMEOUT",
+          "UND_ERR_HEADERS_TIMEOUT",
+          "UND_ERR_BODY_TIMEOUT",
+          "UND_ERR_SOCKET",
+          "UND_ERR_ABORTED",
+          "ABORT_ERR",
+          "CERT_HAS_EXPIRED",
+          "DEPTH_ZERO_SELF_SIGNED_CERT",
+          "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+          "ERR_TLS_CERT_ALTNAME_INVALID",
+        ].includes(code)
+      )
+        return code;
+    }
+    current = current.cause as typeof current;
+  }
+  return undefined;
+}
+
 export type RefundErrorEvent = {
   at: string;
   phase: string;
@@ -169,6 +219,8 @@ export type RefundErrorEvent = {
   kind: string;
   httpStatus?: number;
   providerCode?: string;
+  transportCode?: string;
+  signaturePresent?: boolean;
 };
 export function safeRefundError(
   error: unknown,
@@ -181,10 +233,12 @@ export function safeRefundError(
   const e = error as {
     status?: unknown;
     code?: unknown;
+    signaturePresent?: unknown;
     constructor?: { name?: string };
   } | null;
   const kind = e?.constructor?.name ?? "Error";
-  const code = String(e?.code ?? "");
+  const code = safeProviderCode(e?.code);
+  const transportCode = safeTransportCode(error);
   return {
     at: now.toISOString(),
     phase: ["query", "send", "provider", "validation", "finalize"].includes(
@@ -197,6 +251,9 @@ export function safeRefundError(
     sendAttempts,
     kind: [
       "APIError",
+      "BadRequestError",
+      "NotFoundError",
+      "UserAbortError",
       "ConnectionError",
       "TimeoutError",
       "ConnectionTimeoutError",
@@ -215,13 +272,10 @@ export function safeRefundError(
     Number(e?.status) <= 599
       ? { httpStatus: Number(e?.status) }
       : {}),
-    ...(/^\d{1,6}$/.test(code) ||
-    [
-      "PAYOUT_INSUFFICIENT_FUNDS",
-      "PAYOUT_BANK_SYSTEM_ERROR",
-      "PAYOUT_VALIDATION",
-    ].includes(code)
-      ? { providerCode: code }
+    ...(code ? { providerCode: code } : {}),
+    ...(transportCode ? { transportCode } : {}),
+    ...(typeof e?.signaturePresent === "boolean"
+      ? { signaturePresent: e.signaturePresent }
       : {}),
   };
 }

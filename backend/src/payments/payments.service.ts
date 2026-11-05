@@ -1387,7 +1387,7 @@ export class PaymentsService {
       state.phase = "READY";
       state.reconcileOnly = false;
       state.pollStep = 0;
-      state.key = `${id}:retry:${(state.sendAttempts ?? 0) + 1}`;
+      state.key = randomUUID();
       const updated = await tx.payment.update({
         where: { id },
         data: {
