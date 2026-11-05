@@ -1,14 +1,25 @@
 import { createHash } from "node:crypto";
+import { safeProviderCode, safeTransportCode } from "./refund-retry.js";
 import { ProviderGovernor } from "./provider-governor.js";
 import { ProxyAgent, fetch as proxyFetch } from "undici";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   PayOS,
+  APIError,
+  ConnectionError,
+  ConnectionTimeoutError,
+  UserAbortError,
+  InvalidSignatureError,
   type CreatePaymentLinkRequest,
   type PayoutRequest,
   type Webhook,
 } from "@payos/node";
+type PayoutDiagnostics = {
+  status?: number;
+  signaturePresent?: boolean;
+  failure?: Error;
+};
 @Injectable()
 export class PayosAdapter {
   constructor(
@@ -65,7 +76,7 @@ export class PayosAdapter {
       } as RequestInit,
     };
   }
-  #client(kind: "COLLECT" | "PAYOUT") {
+  #client(kind: "COLLECT" | "PAYOUT", diagnostic?: PayoutDiagnostics) {
     const prefix = `PAYOS_${kind}_`;
     return new PayOS({
       clientId: this.config.getOrThrow<string>(prefix + "CLIENT_ID"),
@@ -77,22 +88,91 @@ export class PayosAdapter {
       ...(kind === "PAYOUT" ? this.payoutTransport() : {}),
       fetch: async (url, init) => {
         const transport = kind === "PAYOUT" ? this.payoutTransport() : {};
-        const response = await (transport.fetch ?? globalThis.fetch)(url, {
-          ...init,
-          signal: AbortSignal.any([
-            ...(init?.signal ? [init.signal] : []),
-            AbortSignal.timeout(15000),
-          ]),
-        });
-        if (
-          kind === "PAYOUT" &&
-          response.ok &&
-          !response.headers.get("x-signature")
-        )
-          throw new Error("Missing payout signature");
-        return response;
+        try {
+          const response = await (transport.fetch ?? globalThis.fetch)(url, {
+            ...init,
+            signal: AbortSignal.any([
+              ...(init?.signal ? [init.signal] : []),
+              AbortSignal.timeout(15000),
+            ]),
+          });
+          if (diagnostic) {
+            diagnostic.status = response.status;
+            diagnostic.signaturePresent = !!response.headers.get("x-signature");
+          }
+          return response;
+        } catch (error) {
+          if (!diagnostic) throw error;
+          const e = error as { name?: string };
+          const transportCode = safeTransportCode(error);
+          const timeout =
+            e?.name === "TimeoutError" ||
+            init?.signal?.reason?.name === "TimeoutError" ||
+            [
+              "ETIMEDOUT",
+              "UND_ERR_CONNECT_TIMEOUT",
+              "UND_ERR_HEADERS_TIMEOUT",
+              "UND_ERR_BODY_TIMEOUT",
+            ].includes(transportCode ?? "");
+          diagnostic.failure = Object.assign(
+            timeout
+              ? new ConnectionTimeoutError("Payout transport timed out")
+              : init?.signal?.aborted
+                ? new UserAbortError("Payout request aborted")
+                : new ConnectionError("Payout transport failed"),
+            { transportCode },
+          );
+          throw diagnostic.failure;
+        }
       },
     });
+  }
+  private async payout<T>(call: (client: PayOS) => Promise<T>): Promise<T> {
+    const diagnostic: PayoutDiagnostics = {};
+    let result: T;
+    try {
+      result = await call(this.#client("PAYOUT", diagnostic));
+    } catch (error) {
+      // SDK replaces fetch exceptions; keep request-scoped safe evidence outside it.
+      if (diagnostic.failure) throw diagnostic.failure;
+      const e = error as { status?: number; code?: unknown; headers?: Headers };
+      const retry = e?.headers?.get?.("retry-after");
+      const headers = new Headers();
+      if (retry && /^\d{1,10}$/.test(retry)) headers.set("retry-after", retry);
+      else if (retry && Number.isFinite(Date.parse(retry)))
+        headers.set("retry-after", new Date(retry).toUTCString());
+      const status = diagnostic.status ?? e?.status;
+      const payload = {
+        code: safeProviderCode(e?.code),
+        desc: "Payout API request failed",
+      };
+      const safe =
+        error instanceof InvalidSignatureError
+          ? new InvalidSignatureError("Payout signature validation failed")
+          : status === undefined
+            ? new APIError(
+                undefined,
+                payload,
+                "Payout request setup failed",
+                headers,
+              )
+            : APIError.generateError(
+                status,
+                payload,
+                "Payout API request failed",
+                headers,
+              );
+      throw Object.assign(safe, {
+        status,
+        signaturePresent: diagnostic.signaturePresent,
+      });
+    }
+    if (!diagnostic.signaturePresent)
+      throw Object.assign(
+        new InvalidSignatureError("Missing payout signature"),
+        { status: diagnostic.status, signaturePresent: false },
+      );
+    return result;
   }
   createLink(data: CreatePaymentLinkRequest) {
     return this.run("COLLECT", "COLLECT_CREATE", () =>
@@ -119,22 +199,22 @@ export class PayosAdapter {
   ) {
     return this.run("PAYOUT", "PAYOUT_CREATE", async () => {
       await beforeSend?.();
-      return this.#client("PAYOUT").payouts.create(data, key);
+      return this.payout((client) => client.payouts.create(data, key));
     });
   }
   getPayout(id: string) {
     return this.run("PAYOUT", "PAYOUT_GET", () =>
-      this.#client("PAYOUT").payouts.get(id),
+      this.payout((client) => client.payouts.get(id)),
     );
   }
   payoutBalance() {
     return this.run("PAYOUT", "PAYOUT_BALANCE", () =>
-      this.#client("PAYOUT").payoutsAccount.balance(),
+      this.payout((client) => client.payoutsAccount.balance()),
     );
   }
   async findPayout(referenceId: string) {
     const page = await this.run("PAYOUT", "PAYOUT_LIST", () =>
-      this.#client("PAYOUT").payouts.list({ referenceId, limit: 10 }),
+      this.payout((client) => client.payouts.list({ referenceId, limit: 10 })),
     );
     return page.data.filter((p) => p.referenceId === referenceId);
   }
