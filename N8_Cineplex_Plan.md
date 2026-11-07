@@ -1,5 +1,15 @@
 # N8 Cineplex — Master Plan
 
+## Xác nhận công bố v1.9 — 2026-11-07
+
+<!-- EMAIL_VERIFICATION_V19_GITHUB_PUBLICATION_20261107 -->
+Đã commit/push source5d647cfae15a6dd42e0ddf619aa7b706da22ec4d lên branch mới feat/nguyen-required-email-verification-v1.9, annotated tag/tên release chỉ v1.9, không sửa main hoặc di chuyển tag cũ. GitHub xác nhận Author/Committer cùng tài khoản thnguyen290106, dùng noreply, không co-author. Release kiểm thử: https://github.com/Tonyisded/N8_Cineplex-Project/releases/tag/v1.9. Asset N8-Cineplex-1.9.apk versionCode10/versionName1.9 và SHA256SUMS.txt đã upload; tải công khai từ GitHub kiểm chứng SHA2563517e6d1eaf0011486659d9a8f7a7ad706a96290922933b024d8618b40dc86df khớp APK root/emulator. Đây là APK ký debug/prerelease, không nhận là bản Play Store.
+
+Gate mới trước công bố: backend build/typecheck/format180/180; Android build/lint93/93 và native2/2 cho hai đường vào cùng form xác minh. Gmail thật1/1,360dp/fontScale1.3 và BASELINE/ROLLBACK các mục dưới là bằng chứng phát triển đã chạy, không nhận là test mới khi upload. Live test nay nhận liveEmailGateEmail qua instrumentation argument có liveEmailGate=true; không hardcode/công bố email cá nhân trong phần thêm mới. Không chạy lại live test hoặc xóa tài khoản trong lần công bố này.
+
+Bản ghi này thay trạng thái chưa commit/push/release bên dưới, giữ lịch sử và tag ở source đã build. README root0byte, không commit APK/log/evidence/env/key/token. Cùng4role ngoài Git tiếp tục mở rộng/mở đọc. VPS auth đã deploy từ lượt phát triển; phát hành GitHub không deploy lại hoặc đổi manifest minimum7/latest9, APK tải qua VPS vẫn bản trước. Chưa ép cập nhật các máy cũ; muốn áp dụng rộng cần chuyển download/manifest sau khi có yêu cầu triển khai. Chưa kiểm tra CI remote/máy vật lý hoặc tạo thu–chi thật mới.
+
+
 ## Form yêu cầu xác minh email và test lại Gmail — 2026-11-07
 
 <!-- REQUIRED_EMAIL_FORM_RETEST_20261107 -->
