@@ -1,5 +1,31 @@
 # AGENTS.md — N8 Cineplex
 
+## Form yêu cầu xác minh email và test lại Gmail — 2026-11-07
+
+<!-- REQUIRED_EMAIL_FORM_RETEST_20261107 -->
+Theo phản hồi mới, thay màn chữ đơn thuần bằng form thẻ riêng: biểu tượng thư, tiêu đề Vui lòng xác minh email, ô email chỉ đọc, hướng dẫn vào hộp thư, nút Gửi lại email xác minh, Đã xác minh? Đăng nhập và Dùng tài khoản khác. Cả đăng ký và đăng nhập chưa xác minh cùng dùng EmailVerificationScreen/VERIFY_EMAIL; không có trang phim bên dưới. Giữ gate backend đã deploy, không sửa điều kiện hoặc tạo phiên chưa xác minh.
+
+Đã xóa lại đúng tài khoản Gmail kiểm thử do người dùng chỉ định theo yêu cầu; trước xóa orders/tickets/payments/heldSeats0, sau xóa usersForEmail0, user khác không đổi. Đăng ký mới từ emulator, login trước xác minh vẫn vào cùng form, resend gửi thư mới; Gmail thread có2thư mới lúc15:00, chọn đúng thư mới nhất rồi xác nhận. Live runner OK(1test), HOME lúc15:02:24.626 giờ VN; đọc DB lại verified=true/orders0. Tài khoản mới được giữ sau test, nên đăng nhập sau đó vào HOME là đúng; muốn xem form tham khảo ảnh email-form-real-gmail.png và hai ảnh signup/login trong evidence. Không xóa Google/Gmail, không tạo thu–chi hay restore DB.
+
+Nghiệm thu đợt giao diện mới: Android93unit, build/lint đạt. Native cùng2ca/input cho đăng ký và login: BASELINE2fail thiếu required-email-form → MODIFIED2pass → ROLLBACK2fail, runner ghi FAILURES/OK đúng thực tế, không dùng adb exit0 để nhận pass. Thêm360dp/fontScale1.3 đạt2/2. ROLLBACK.sh --email-form chạy trên bản sao, khôi phục4hash pristine từ EMAIL_FORM_BASELINE.zip trước khi gắn lại evaluator2ca để kiểm thử; root/emulator giữ form mới. Cùng build/unit cả3trạng thái93/93, exit0. Patch standalone EMAIL_FORM.patch đã tái dựng byte bản mới; cùng4role cũ tiếp tục mở rộng, không thay lịch sử.
+
+Source/build/cài tại Gradle root project chính, versionCode10/versionName1.9 giữ cho bản chưa phát hành. APK root/installed SHA2563517e6d1eaf0011486659d9a8f7a7ad706a96290922933b024d8618b40dc86df khớp, thay hash bản1.9 thử trước (chưa có releaseGitHub1.9). Backend không đổi nên không deploy/build lại;180backend/19authLinux/180publicLinux thuộc lượt trước, không nhận là chạy mới. Không đổi VPS minimum7/latest9, credential/proxy/TLS hoặc dữ liệu người khác. Chưa commit/push/release/CI remote/máy vật lý. README root0byte, session mới được giữ, mật khẩu test không lưu; đăng nhập thiết bị khác dùng Quên mật khẩu qua Gmail.
+
+
+## Xác thực email bắt buộc cho khách hàng — 2026-11-07
+
+<!-- REQUIRED_EMAIL_GATE_20261107 -->
+Đã triển khai source chính Android/backend và deploy auth lên VPS. Đăng ký chuyển ngay sang VERIFY_EMAIL, có Gửi lại email xác thực và Tôi đã xác thực – Đăng nhập; không lưu mật khẩu chờ hoặc tự đăng nhập. Khách chưa có emailVerifiedAt không được cấp phiên trong session/refresh/authenticate; lỗi403 EMAIL_NOT_VERIFIED chỉ có sau kiểm tra credential/token hợp lệ. Android loại token, giữ email chờ, chặn catalog/điều hướng và khôi phục phiên chưa xác thực; kiểm tra generation tránh lỗi cũ xóa phiên mới. Giữ Google email_verified, cổng STAFF/ADMIN, reset/verify links30phút và throttle gửi lại3/phút. Không thêm schema/dependency hoặc API dò trạng thái email; catalog public không đổi.
+
+Theo ủy quyền, trước test Gmail đã xóa đúng tài khoản Gmail kiểm thử do người dùng chỉ định cũ,1đơnEXPIRED,1intentEXPIRED và1order_seat, không có vé/receipt/refund đang xử lý; kiểm tra user khác không đổi và bỏ backup tạm sau transaction. Không chạy script cleanup nhiều tài khoản, không xóa Google/Gmail hoặc clear data/uninstall emulator. E2E thật1/1: đăng ký mới → VERIFY_EMAIL → login chưa xác thực vẫn bị chặn → resend → quan sát2thư Gmail lúc14:45 → bấm link/xác nhận → login HOME lúc14:46:43.492 giờ VN. Tài khoản mới giữ verified=true/orders0; MainActivity mở lại khôi phục phiên và hiển thị phim. Mật khẩu test sinh ngẫu nhiên chỉ trong bộ nhớ, không đưa vào log/source; khi cần đăng nhập lại ngoài emulator dùng Quên mật khẩu qua chính Gmail.
+
+Gate Windows backend180/180, build/typecheck/format đạt; Linux auth production-overlay19/19 đạt. Android93/93unit, build/lint đạt; nativefixture1/1 và360dp/fontScale1.3 thêm1/1, liveGmail1/1. Source versionCode10/versionName1.9; APK root/installed SHA2567ee2381c778c42caf67047a2b42bc59161a3c247bfee31d0bcd71811d73e43ab khớp. Không nhận Gradle connected exit0 thiếu test là pass: đã phát hiện PATH adb36 khác SDK adb37 và chạy trực tiếp SDK runner, có OK(1test). Lỗi JAVA_HOME/encoding/fixture expectations, rollback thiếu DATABASE_URL và Linux theme/proxy fixture được giữ riêng, không hạ bảo vệ production để qua test.
+
+Cùng build/test: backend BASELINE179 → MODIFIED180 → ROLLBACK179; Android90 →93 →90, exit0. Probe cùng credential chưa xác thực: BASELINE UNVERIFIED_LOGIN_ALLOWED true → MODIFIED UNVERIFIED_LOGIN_BLOCKED EMAIL_NOT_VERIFIED403 → ROLLBACK UNVERIFIED_LOGIN_ALLOWED true. ROLLBACK.sh --email-gate chạy trên copy,344hash pristine khớp EMAIL_GATE_BASELINE.zip; root/emulator/VPS giữ MODIFIED. Bốn role cũ ở D:\NT118\verification\week9-payos-ticket-refund tiếp tục mở rộng, không rollback DB hoặc tài khoản đã xóa.
+
+VPS API healthy; auth runtimeSHA25643c602f224602f3e3a11f87307e9061b2abc261af24200dc9837d879d3a2d24f khớp root; env không đổi, không migration, không đổi payout/proxy/TLS/Nginx/volume. Health/movies/app-version200. Giữ backup image before-email-gate-20261107 và public delta riêng. Chưa commit/push/releaseGitHub hoặc phát hành rộng APK1.9; VPS minimum7/latest9 giữ nguyên, APK cũ có thể chưa có form mới nên cần công bố APK mới trước khi nâng minimum10. README root0byte, SDK/local.properties/signing gốc giữ nguyên. Chưa thử điện thoại vật lý/CI remote; không tạo giao dịch thu–chi.
+
+
 ## Xác nhận công bố bản sửa payout — 2026-11-05
 
 <!-- PAYOUT_FIX_GITHUB_PUBLICATION_20261105 -->

@@ -127,8 +127,18 @@ export class AuthService {
       );
     return u;
   }
+  private verifiedCustomer(u: User) {
+    if (u.role === "CUSTOMER" && !u.emailVerifiedAt)
+      throw new ForbiddenException({
+        code: "EMAIL_NOT_VERIFIED",
+        message: "Hãy xác thực email trước khi tiếp tục.",
+        email: u.email,
+      });
+  }
   async authenticate(token: string) {
-    return this.active(this.decode(token, "access").sub);
+    const u = await this.active(this.decode(token, "access").sub);
+    this.verifiedCustomer(u);
+    return u;
   }
   private async email(
     u: User,
@@ -173,6 +183,7 @@ export class AuthService {
     };
   }
   private async session(u: User) {
+    this.verifiedCustomer(u);
     const refreshToken = this.sign(u, "refresh");
     const result = await this.db.user.updateMany({
       where: { ...this.unchanged(u), role: u.role },
@@ -285,6 +296,7 @@ export class AuthService {
           "Phiên đã kết thúc. Vui lòng đăng nhập lại.",
         ),
       );
+    this.verifiedCustomer(u);
     return { accessToken: this.sign(u, "access"), expiresIn: 900 };
   }
   async logout(token: string) {
@@ -359,7 +371,7 @@ export class AuthService {
     return {
       message:
         purpose === "verify"
-          ? "Email đã được xác minh. Bạn có thể quay lại ứng dụng."
+          ? "Email đã được xác minh. Hãy quay lại ứng dụng và đăng nhập để tiếp tục."
           : "Email đã được đổi. Vui lòng đăng nhập lại.",
     };
   }

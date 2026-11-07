@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
 @Serializable data class TokenResponse(val accessToken: String, val refreshToken: String? = null, val expiresIn: Int, val user: UserProfile? = null) {
     override fun toString() = "TokenResponse(<redacted>)"
 }
-@Serializable data class MessageResponse(val message: String, val userId: String? = null, val emailSent: Boolean? = null)
+@Serializable data class MessageResponse(val message: String, val userId: String? = null, val emailSent: Boolean? = null, val email: String? = null)
 @Serializable data class FcmRegistrationResponse(val registered: Boolean)
 interface AccountApi {
     @POST("auth/register") suspend fun register(@Body body: JsonObject): MessageResponse
@@ -55,16 +55,23 @@ class ApiAccountRepository(context: Context) : AccountRepository {
     private fun body(vararg values: Pair<String, String>) = buildJsonObject { values.forEach { (k, v) -> put(k, v) } }
     override fun validate(form: AuthForm, signup: Boolean) = validateAuth(form, signup)
     private suspend fun <T> call(block: suspend () -> T): T {
+        val expected = generation
         try { return block() } catch (e: HttpException) {
+            if (expected != generation) throw ApiFailure("SESSION_CANCELED", "Yêu cầu đã bị hủy.")
             val obj = runCatching { json.parseToJsonElement(e.response()?.errorBody()?.string() ?: "{}").jsonObject }.getOrNull()
             val fields = obj?.get("fieldErrors")?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: emptyMap()
-            throw ApiFailure(obj?.get("code")?.jsonPrimitive?.content ?: "HTTP_${e.code()}", obj?.get("message")?.let { if (it is JsonPrimitive) it.content else "Dữ liệu không hợp lệ." } ?: "Không thực hiện được yêu cầu (${e.code()}).", fields)
+            if (obj?.get("code")?.jsonPrimitive?.content == "EMAIL_NOT_VERIFIED") mutex.withLock { generation++; access = null; vault.write(null) }
+            throw ApiFailure(obj?.get("code")?.jsonPrimitive?.content ?: "HTTP_${e.code()}", obj?.get("message")?.let { if (it is JsonPrimitive) it.content else "Dữ liệu không hợp lệ." } ?: "Không thực hiện được yêu cầu (${e.code()}).", fields, obj?.get("email")?.jsonPrimitive?.content)
         } catch (e: java.io.IOException) { throw ApiFailure("NETWORK_ERROR", "Không kết nối được máy chủ. Hãy kiểm tra mạng rồi thử lại.") }
     }
     private suspend fun establish(response: TokenResponse, expectedGeneration: Int): Session = mutex.withLock {
         if (expectedGeneration != generation) throw ApiFailure("SESSION_CANCELED", "Yêu cầu đã bị hủy.")
         val refresh = response.refreshToken ?: throw ApiFailure("INVALID_RESPONSE", "Máy chủ trả phiên không hợp lệ.")
         val user = response.user ?: throw ApiFailure("INVALID_RESPONSE", "Máy chủ không trả thông tin tài khoản.")
+        if (user.role == "CUSTOMER" && user.emailVerifiedAt == null) {
+            generation++; access = null; vault.write(null)
+            throw ApiFailure("EMAIL_NOT_VERIFIED", "Hãy xác thực email trước khi tiếp tục.", email = user.email)
+        }
         vault.write(refresh); access = response.accessToken; user.session()
     }
     private suspend fun refreshLocked(expectedGeneration: Int) {
@@ -89,7 +96,7 @@ class ApiAccountRepository(context: Context) : AccountRepository {
     }
     internal suspend fun <T> withAuthorization(block: suspend (String) -> T): T = authorized(block)
     internal suspend fun socketToken(): String = authorized { api.me(it); it.removePrefix("Bearer ") }
-    override suspend fun register(form: AuthForm): String = call { api.register(buildJsonObject { put("fullName", form.name.trim()); put("email", normalizeEmail(form.email)); put("password", form.password); put("consent", form.consent) }).message }
+    override suspend fun register(form: AuthForm): RegistrationResult = call { val result = api.register(buildJsonObject { put("fullName", form.name.trim()); put("email", normalizeEmail(form.email)); put("password", form.password); put("consent", form.consent) }); RegistrationResult(result.email ?: normalizeEmail(form.email), result.emailSent == true, result.message) }
     override suspend fun login(form: AuthForm, staff: Boolean): LoginResult = call {
         val expected = generation
         LoginResult.Success(establish(api.login(body("email" to normalizeEmail(form.email), "password" to form.password, "portal" to if (staff) "STAFF" else "CUSTOMER")), expected))
