@@ -4,11 +4,12 @@ import com.nhom8.cineplex.model.*
 import kotlinx.coroutines.delay
 import java.util.Locale
 
-class ApiFailure(val code: String, override val message: String, val fields: Map<String, String> = emptyMap()) : Exception(message)
+class ApiFailure(val code: String, override val message: String, val fields: Map<String, String> = emptyMap(), val email: String? = null) : Exception(message)
+data class RegistrationResult(val email: String, val emailSent: Boolean, val message: String)
 interface AccountRepository {
     fun normalizeEmail(value: String) = value.trim().lowercase(Locale.ROOT)
     fun validate(form: AuthForm, signup: Boolean): Map<String, String>
-    suspend fun register(form: AuthForm): String
+    suspend fun register(form: AuthForm): RegistrationResult
     suspend fun login(form: AuthForm, staff: Boolean): LoginResult
     suspend fun restore(): Session? = null
     suspend fun me(): Session = throw ApiFailure("UNAVAILABLE", "Không đọc được profile.")
@@ -26,10 +27,10 @@ interface AccountRepository {
 /** Explicit test adapter. The application never selects it on network failure. */
 class MockAccountAdapter(private val mock: MockAccountRepository) : AccountRepository {
     override fun validate(form: AuthForm, signup: Boolean) = mock.validate(form, signup)
-    override suspend fun register(form: AuthForm): String {
+    override suspend fun register(form: AuthForm): RegistrationResult {
         delay(900); val errors = mock.register(form)
         if (errors.isNotEmpty()) throw ApiFailure("VALIDATION_ERROR", "Dữ liệu không hợp lệ.", errors)
-        return "Đăng ký thành công! Vui lòng đăng nhập"
+        return RegistrationResult(normalizeEmail(form.email), true, "Hãy kiểm tra email để xác thực.")
     }
     override suspend fun login(form: AuthForm, staff: Boolean): LoginResult { delay(900); return mock.login(form, staff) }
 }

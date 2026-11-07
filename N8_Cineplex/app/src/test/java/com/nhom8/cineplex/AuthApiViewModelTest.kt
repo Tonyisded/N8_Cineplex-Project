@@ -15,11 +15,13 @@ class AuthApiViewModelTest {
     @Before fun setup() { Dispatchers.setMain(dispatcher) }
     @After fun teardown() { Dispatchers.resetMain() }
     private class FakeApi : AccountRepository {
-        var user = Session("Customer", Role.CUSTOMER, "owned@example.test", "uuid", hasPassword = true)
+        var user = Session("Customer", Role.CUSTOMER, "owned@example.test", "uuid", hasPassword = true, emailVerifiedAt = "2026-01-01T00:00:00Z")
+        var restoreUser: Session? = null
+        override suspend fun restore(): Session? = restoreUser
         var failure: ApiFailure? = null
         var loggedOut = false
         override fun validate(form: AuthForm, signup: Boolean) = validateAuth(form, signup)
-        override suspend fun register(form: AuthForm) = "Check email"
+        override suspend fun register(form: AuthForm) = RegistrationResult(form.email, true, "Check email")
         override suspend fun login(form: AuthForm, staff: Boolean): LoginResult { failure?.let { throw it }; return LoginResult.Success(user) }
         override suspend fun me(): Session { failure?.let { throw it }; return user }
         override suspend fun google(idToken: String) = user
@@ -56,5 +58,33 @@ class AuthApiViewModelTest {
         assertTrue(api.validate(form, true).isEmpty())
         assertTrue(api.validate(form.copy(password = "x".repeat(129)), true).containsKey("password"))
         assertFalse(form.toString().contains("password=        "))
+    }
+
+    @Test fun unverifiedSuccessNeverLoadsCatalog() = runTest(dispatcher) {
+        val api = FakeApi(); api.user = api.user.copy(emailVerifiedAt = null)
+        var calls = 0
+        val catalog = object : CatalogRepository by MockCatalogRepository {
+            override suspend fun movies(date: String): CatalogDay { calls++; return MockCatalogRepository.movies(date) }
+            override suspend fun comingSoon(): List<Movie> { calls++; return emptyList() }
+        }
+        val vm = CineplexViewModel(api, catalog); advanceUntilIdle()
+        vm.update(AuthForm(email = api.user.email, password = "secret-8")); vm.submit(); advanceUntilIdle()
+        assertEquals(Screen.VERIFY_EMAIL, vm.screen); assertNull(vm.session); assertEquals(0, calls)
+        vm.openMovie(MockMovies.all.first()); vm.customerHome(); vm.vouchers(); vm.tickets(); vm.refreshCatalog(); advanceUntilIdle()
+        assertEquals(Screen.VERIFY_EMAIL, vm.screen); assertEquals(0, calls)
+        vm.back(); assertEquals(Screen.LOGIN, vm.screen); assertEquals("", vm.form.password)
+    }
+    @Test fun backendVerificationFailureClearsCredentialsAndAllowsRetryAfterVerification() = runTest(dispatcher) {
+        val api = FakeApi(); api.failure = ApiFailure("EMAIL_NOT_VERIFIED", "Verify", email = api.user.email)
+        val vm = CineplexViewModel(api); advanceUntilIdle()
+        vm.update(AuthForm(email=api.user.email,password="secret-8")); vm.submit(); advanceUntilIdle()
+        assertEquals(Screen.VERIFY_EMAIL,vm.screen); assertEquals(api.user.email,vm.verificationEmail); assertEquals("",vm.form.password)
+        vm.verificationLogin(); api.failure=null; vm.update(vm.form.copy(password="secret-8")); vm.submit(); advanceUntilIdle()
+        assertEquals(Screen.HOME,vm.screen)
+    }
+    @Test fun restoredUnverifiedSessionAlwaysReturnsToVerification() = runTest(dispatcher) {
+        val api = FakeApi(); api.restoreUser = api.user.copy(emailVerifiedAt = null)
+        val vm = CineplexViewModel(api); advanceUntilIdle()
+        assertEquals(Screen.VERIFY_EMAIL,vm.screen);assertNull(vm.session);assertEquals(api.user.email,vm.verificationEmail)
     }
 }

@@ -5,7 +5,7 @@ import java.util.Locale
 
 /** Mock credentials live only in this process; no disk, saved state or logging. */
 class MockAccountRepository {
-    private class Account(val name: String, val email: String, val password: String, val role: Role)
+    private class Account(val name: String, val email: String, val password: String, val role: Role, val verified: Boolean = true)
     private val accounts = mutableListOf(
         Account("Khách hàng", "user@cineplex.test", "123456", Role.CUSTOMER),
         Account("Quản trị viên", "admin@cineplex.test", "123456", Role.ADMIN)
@@ -32,11 +32,11 @@ class MockAccountRepository {
             ?: return LoginResult.InvalidCredentials
         if (staff && account.role != Role.ADMIN) return LoginResult.Forbidden
         if (!staff && account.role == Role.ADMIN) return LoginResult.StaffRequired
-        return LoginResult.Success(Session(account.name, account.role, account.email))
+        return LoginResult.Success(Session(account.name, account.role, account.email, emailVerifiedAt = if(account.verified) "2026-01-01T00:00:00Z" else null))
     }
     fun register(form: AuthForm): Map<String, String> {
         val errors = validate(form, true)
-        if (errors.isEmpty()) accounts.add(Account(form.name.trim(), normalizeEmail(form.email), form.password, Role.CUSTOMER))
+        if (errors.isEmpty()) accounts.add(Account(form.name.trim(), normalizeEmail(form.email), form.password, Role.CUSTOMER, false))
         return errors
     }
     companion object { val process = MockAccountRepository() }

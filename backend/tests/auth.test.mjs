@@ -102,6 +102,11 @@ async function registered(f, email = "customer@example.test") {
 }
 const login = (f, email = "customer@example.test", portal = "CUSTOMER") =>
   f.auth.login({ email, password: "test-password-8", portal });
+async function verified(f) {
+  const r = await registered(f);
+  await f.auth.verifyEmail(f.emails.at(-1).token);
+  return r;
+}
 const rejectsCode = (promise, code) =>
   assert.rejects(promise, (e) => e.getResponse().code === code);
 
@@ -125,11 +130,14 @@ test("duplicate email and failed SMTP preserve the created account", async () =>
   assert.ok(f.rows.has(r.userId));
   await rejectsCode(registered(f), "EMAIL_EXISTS");
 });
-test("unverified login works; inactive login and wrong portals fail", async () => {
+test("unverified customer is blocked; inactive login and wrong portals fail", async () => {
   const f = fixture();
   const r = await registered(f);
+  await rejectsCode(login(f), "EMAIL_NOT_VERIFIED");
+  assert.equal(f.rows.get(r.userId).refreshTokenHash, null);
+  await f.auth.verifyEmail(f.emails[0].token);
   const s = await login(f);
-  assert.equal(s.user.emailVerifiedAt, null);
+  assert.ok(s.user.emailVerifiedAt);
   assert.equal(s.user.hasPassword, true);
   assert.equal("passwordHash" in s.user, false);
   assert.equal("refreshTokenHash" in s.user, false);
@@ -144,7 +152,7 @@ test("unverified login works; inactive login and wrong portals fail", async () =
 });
 test("one refresh session, old logout cannot clear new session, access has short TTL", async () => {
   const f = fixture();
-  await registered(f);
+  await verified(f);
   const a = await login(f),
     b = await login(f);
   assert.notEqual(a.refreshToken, b.refreshToken);
@@ -160,7 +168,7 @@ test("one refresh session, old logout cannot clear new session, access has short
 });
 test("wrong signature, purpose, expired token and removed user are rejected", async () => {
   const f = fixture();
-  const r = await registered(f),
+  const r = await verified(f),
     s = await login(f);
   await rejectsCode(f.auth.authenticate(s.refreshToken), "INVALID_TOKEN");
   await rejectsCode(
@@ -182,7 +190,7 @@ test("wrong signature, purpose, expired token and removed user are rejected", as
 });
 test("reset is single use and revokes refresh without adding OTP fields", async () => {
   const f = fixture();
-  await registered(f);
+  await verified(f);
   const s = await login(f);
   await f.auth.resend("customer@example.test", true);
   const token = f.emails.at(-1).token;
@@ -202,7 +210,7 @@ test("reset is single use and revokes refresh without adding OTP fields", async 
 });
 test("change password requires current password and revokes refresh", async () => {
   const f = fixture();
-  const r = await registered(f),
+  const r = await verified(f),
     s = await login(f);
   await rejectsCode(
     f.auth.changePassword(
@@ -221,7 +229,7 @@ test("change password requires current password and revokes refresh", async () =
 });
 test("change email waits for confirmation, checks uniqueness again and invalidates old link", async () => {
   const f = fixture();
-  const r = await registered(f);
+  const r = await verified(f);
   const s = await login(f);
   await f.auth.changeEmail(structuredClone(f.rows.get(r.userId)), {
     newEmail: "alias@example.test",
@@ -538,4 +546,24 @@ test("email and confirmation pages match the active Android palette and preserve
     assert.match(html, /Georgia/);
     assert.doesNotMatch(html, /#7c3aed|#17131b|127\.0\.0\.1/i);
   }
+});
+
+test("legacy tokens require verification and verification remains available", async () => {
+  const f = fixture();
+  const r = await verified(f);
+  const s = await login(f);
+  f.rows.get(r.userId).emailVerifiedAt = null;
+  await rejectsCode(f.auth.authenticate(s.accessToken), "EMAIL_NOT_VERIFIED");
+  await rejectsCode(f.auth.refresh(s.refreshToken), "EMAIL_NOT_VERIFIED");
+  await rejectsCode(
+    f.auth.login({
+      email: "customer@example.test",
+      password: "wrong",
+      portal: "CUSTOMER",
+    }),
+    "INVALID_CREDENTIALS",
+  );
+  await f.auth.resend("customer@example.test");
+  await f.auth.verifyEmail(f.emails.at(-1).token);
+  assert.ok((await login(f)).accessToken);
 });

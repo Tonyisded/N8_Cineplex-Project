@@ -34,11 +34,11 @@ class CineplexViewModelTest {
     }
     @Test fun registerPrefillLoginLogoutAndRetention() = runTest(dispatcher) {
         val vm = vm(); vm.navigate(Screen.SIGNUP); vm.update(AuthForm("An"," NEW@test.com ","abcdefgh","abcdefgh",true)); vm.submit(); advanceUntilIdle()
-        assertEquals(Screen.LOGIN,vm.screen); assertEquals(AuthForm(email = "new@test.com"),vm.form); assertTrue(vm.success)
-        vm.update(vm.form.copy(password = "abcdefgh")); vm.submit(); advanceUntilIdle(); assertEquals(Role.CUSTOMER,vm.session?.role)
-        vm.query = "Dune"; vm.soon = true; vm.account(); assertEquals(Screen.PROFILE,vm.screen); assertNull(vm.notice); assertEquals("new@test.com",vm.session?.email); vm.logout(); vm.back()
+        assertEquals(Screen.VERIFY_EMAIL,vm.screen); assertEquals("new@test.com",vm.verificationEmail); assertEquals(AuthForm(),vm.form); assertNull(vm.session); vm.verificationLogin(); assertEquals(AuthForm(email = "new@test.com"),vm.form)
+        vm.update(user()); vm.submit(); advanceUntilIdle(); assertEquals(Role.CUSTOMER,vm.session?.role)
+        vm.query = "Dune"; vm.soon = true; vm.account(); assertEquals(Screen.PROFILE,vm.screen); assertNull(vm.notice); assertEquals("user@cineplex.test",vm.session?.email); vm.logout(); vm.back()
         assertNull(vm.session); assertNull(vm.notice); assertEquals("",vm.query); assertFalse(vm.soon); assertEquals(Screen.LOGIN,vm.screen)
-        vm.update(AuthForm(email = "new@test.com",password = "abcdefgh")); vm.submit(); advanceUntilIdle(); assertEquals(Screen.HOME,vm.screen)
+        vm.update(user()); vm.submit(); advanceUntilIdle(); assertEquals(Screen.HOME,vm.screen)
     }
     @Test fun leavingPendingRegistrationCancelsCreation() = runTest(dispatcher) {
         val vm = vm(); vm.navigate(Screen.SIGNUP)
@@ -65,7 +65,7 @@ class CineplexViewModelTest {
         vm.update(user().copy(email = " USER@CINEPLEX.TEST ")); vm.submit(); advanceUntilIdle()
         vm.query = "Dune"; vm.soon = true; vm.account()
         assertEquals(Screen.PROFILE, vm.screen)
-        assertEquals(Session("Khách hàng", Role.CUSTOMER, "user@cineplex.test"), vm.session)
+        assertEquals(Session("Khách hàng", Role.CUSTOMER, "user@cineplex.test", emailVerifiedAt = "2026-01-01T00:00:00Z"), vm.session)
         vm.profileAction("edit"); vm.back()
         assertEquals(Screen.PROFILE, vm.screen); assertNull(vm.notice)
         vm.back(); assertEquals(Screen.HOME, vm.screen); assertEquals("Dune", vm.query); assertTrue(vm.soon)
